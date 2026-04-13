@@ -493,6 +493,10 @@ function buildNav(){
   // DASHBOARD section
   h+=`<div class="sb-section">Dashboard</div>`;
   h+=`<div class="sb-item" data-p="d-my" onclick="nav('d-my')">${ICONS.dash} Meu Painel</div>`;
+  if(isA()){
+    const runningNow=S.entries.filter(e=>e.is_running).length;
+    h+=`<div class="sb-item" data-p="d-adm" onclick="nav('d-adm')">${ICONS.dash} Painel ADM${runningNow?` <span class="sb-badge">${runningNow}</span>`:''}</div>`;
+  }
   if(isA()||isAcc()||isPL()){
     h+=`<div class="sb-item" data-p="d-client" onclick="nav('d-client')">${ICONS.clients} Por Cliente</div>`;
     h+=`<div class="sb-item" data-p="d-team" onclick="nav('d-team')">${ICONS.members} Por Time</div>`;
@@ -535,7 +539,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
 
 function nav(page){
   curPage=page;
@@ -551,7 +555,7 @@ async function renderPage(){
   try{
     const pages={
       timer:pgTimer,entries:pgEntries,
-      'd-my':pgDashMy,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,
+      'd-my':pgDashMy,'d-adm':pgDashAdm,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
       extras:pgExtras,'extras-hist':pgExtrasHist,
@@ -724,6 +728,87 @@ async function pgDashMy(el){
       <div class="tbl"><div class="tbl-h"><h3>Por Ação</h3></div><div class="tbl-r"><table><thead><tr><th>Ação</th><th class="rt">Horas</th><th class="rt">%</th></tr></thead>
       <tbody>${baSorted.map(([n,h])=>`<tr><td>${n}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(h)}</td><td class="rt">${totalH>0?(h/totalH*100).toFixed(0):0}%</td></tr>`).join('')}</tbody></table></div></div>
     </div>`;
+}
+
+async function pgDashAdm(el){
+  if(!isA()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  const all=S.entries.filter(e=>!e.is_running);
+  const running=S.entries.filter(e=>e.is_running);
+  const totalH=all.reduce((s,e)=>s+(e.hours||0),0);
+  const activeMembers=[...new Set(all.map(e=>e.member_id))].length;
+  const totalCap=S.members.filter(m=>m.is_active&&!['client'].includes(m.access_level)).reduce((s,m)=>s+(m.capacity_hours||140),0);
+  const ocupacao=totalCap>0?(totalH/totalCap*100):0;
+
+  // Running timers detail
+  const runningDetail=running.map(e=>{
+    const m=S.members.find(mm=>mm.id===e.member_id);
+    const c=S.clients.find(cl=>cl.id===e.client_id);
+    const elapsed=((Date.now()-new Date(e.started_at).getTime())/3600000);
+    const alert=elapsed>8;
+    return{name:m?m.name.split(' ')[0]:'?',client:c?c.name:'?',desc:e.description||'—',elapsed,alert,started:e.started_at,team:m?.team||'?'};
+  }).sort((a,b)=>b.elapsed-a.elapsed);
+
+  // Hours by member
+  const byMember={};
+  all.forEach(e=>{const m=S.members.find(mm=>mm.id===e.member_id);const n=m?m.name.split(' ').slice(0,2).join(' '):'?';if(!byMember[n])byMember[n]={hours:0,cap:m?.capacity_hours||140,team:m?.team||'?'};byMember[n].hours+=(e.hours||0)});
+  const bmSorted=Object.entries(byMember).sort((a,b)=>b[1].hours-a[1].hours);
+
+  // Hours by client
+  const byClient={};
+  all.forEach(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const n=c?c.name:'Outros';if(!byClient[n])byClient[n]={hours:0,target:c?Number(c.target_hours_month)||0:0};byClient[n].hours+=(e.hours||0)});
+  const bcSorted=Object.entries(byClient).sort((a,b)=>b[1].hours-a[1].hours);
+
+  // Members with no entries this period
+  const activeMemberIds=new Set(S.entries.map(e=>e.member_id));
+  const inactive=S.members.filter(m=>m.is_active&&!['client','admin'].includes(m.access_level)&&!activeMemberIds.has(m.id));
+
+  el.innerHTML=datePillsHTML()+`
+    <!-- RUNNING NOW -->
+    ${running.length?`
+    <div style="background:rgba(237,28,36,.06);border:2px solid rgba(237,28,36,.25);border-radius:var(--radius);padding:16px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulse 1.5s infinite"></div>
+        <div style="font-size:13px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:1px">${running.length} timer${running.length>1?'s':''} rodando agora</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+        ${runningDetail.map(r=>`<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:12px;${r.alert?'border-left:3px solid var(--red)':'border-left:3px solid var(--prod)'}">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:700;font-size:13px">${r.name}</span>
+            <span class="bg ${r.alert?'bg-red':'bg-green'}" style="font-size:10px">${r.elapsed.toFixed(1)}h</span>
+          </div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">${r.client} · ${r.desc}</div>
+          ${r.alert?'<div style="font-size:10px;color:var(--red);margin-top:4px;font-weight:600">⚠ Mais de 8h — verificar</div>':''}
+        </div>`).join('')}
+      </div>
+    </div>`:'<div style="background:var(--bg3);border-radius:var(--radius);padding:16px;margin-bottom:20px;text-align:center;color:var(--txt3);font-size:12px">Nenhum timer rodando agora</div>'}
+
+    <!-- KPI CARDS -->
+    <div class="cards" style="margin-bottom:20px">
+      <div class="card"><div class="cl">Horas no período</div><div class="cv">${fH(totalH)}</div></div>
+      <div class="card card-blue"><div class="cl">Membros ativos</div><div class="cv">${activeMembers}</div></div>
+      <div class="card" style="border-color:${ocupacao>90?'var(--red)':ocupacao>70?'var(--pack)':'var(--prod)'}"><div class="cl">Ocupação geral</div><div class="cv" style="color:${ocupacao>90?'var(--red)':ocupacao>70?'var(--pack)':'var(--prod)'}">${ocupacao.toFixed(0)}%</div></div>
+      <div class="card card-green"><div class="cl">Lançamentos</div><div class="cv">${all.length}</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <!-- BY MEMBER -->
+      <div class="tbl"><div class="tbl-h"><h3>Horas por Membro</h3></div>
+      <div class="tbl-r"><table><thead><tr><th>Membro</th><th>Time</th><th class="rt">Horas</th><th class="rt">Cap</th><th class="rt">%</th><th style="width:100px"></th></tr></thead>
+      <tbody>${bmSorted.map(([n,d])=>{const pct=d.cap>0?(d.hours/d.cap*100):0;const color=pct>100?'pbar-red':pct>70?'pbar-amber':'pbar-green';return`<tr><td style="font-weight:600">${n}</td><td><span class="bg ${TBC(d.team)}">${TB(d.team)}</span></td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(d.hours)}</td><td class="rt" style="color:var(--txt2)">${d.cap}h</td><td class="rt" style="font-weight:700;color:${pct>100?'var(--red)':pct>70?'var(--pack)':'var(--prod)'}">${pct.toFixed(0)}%</td><td><div class="pbar"><div class="pbar-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div></td></tr>`}).join('')}</tbody></table></div></div>
+
+      <!-- BY CLIENT -->
+      <div class="tbl"><div class="tbl-h"><h3>Horas por Cliente</h3></div>
+      <div class="tbl-r"><table><thead><tr><th>Cliente</th><th class="rt">Target</th><th class="rt">Consumido</th><th class="rt">%</th><th style="width:100px"></th></tr></thead>
+      <tbody>${bcSorted.map(([n,d])=>{const pct=d.target>0?(d.hours/d.target*100):0;const color=pct>100?'pbar-red':pct>70?'pbar-amber':'pbar-green';return`<tr><td style="font-weight:600">${n}</td><td class="rt" style="color:var(--txt2)">${d.target?fH(d.target):'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(d.hours)}</td><td class="rt" style="font-weight:700;color:${pct>100?'var(--red)':pct>70?'var(--pack)':'var(--prod)'}">${d.target?pct.toFixed(0)+'%':'—'}</td><td>${d.target?`<div class="pbar"><div class="pbar-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div>`:''}</td></tr>`}).join('')}</tbody></table></div></div>
+    </div>
+
+    <!-- INACTIVE MEMBERS -->
+    ${inactive.length?`
+    <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;color:var(--pack);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">⚠ Membros sem registro no período (${inactive.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${inactive.map(m=>`<span class="bg ${TBC(m.team)}" style="font-size:11px">${m.name.split(' ').slice(0,2).join(' ')}</span>`).join('')}</div>
+    </div>`:''}
+  `;
 }
 
 async function pgDashClient(el){
