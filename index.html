@@ -1781,8 +1781,8 @@ function showScoreModal(accountId,month){
   $('m-score-title').textContent=sc?'Editar Avaliação':'Nova Avaliação';
   $('m-score-body').innerHTML=`
     <div class="f-row">
-      <div class="f-field"><label class="f-label">Account *</label><select class="f-sel" id="sc-account">${accounts.map(a=>`<option value="${a.id}" ${a.id===accountId?'selected':''}>${a.name.split(' ').slice(0,2).join(' ')} (${TB(a.team)})</option>`).join('')}</select></div>
-      <div class="f-field"><label class="f-label">Mês *</label><input class="f-input" type="month" id="sc-month" value="${curMonth}"></div>
+      <div class="f-field"><label class="f-label">Account *</label><select class="f-sel" id="sc-account" onchange="reloadScoreModal()">${accounts.map(a=>`<option value="${a.id}" ${a.id===accountId?'selected':''}>${a.name.split(' ').slice(0,2).join(' ')} (${TB(a.team)})</option>`).join('')}</select></div>
+      <div class="f-field"><label class="f-label">Mês *</label><input class="f-input" type="month" id="sc-month" value="${curMonth}" onchange="reloadScoreModal()"></div>
     </div>
     <div id="sc-live-score" style="display:flex;align-items:center;justify-content:center;gap:24px;margin:20px 0;padding:20px;background:var(--bg4);border-radius:var(--radius);border:1px solid var(--border)">
       <div id="sc-ring" class="score-ring" style="width:96px;height:96px;font-size:32px;border:4px solid var(--border2);color:var(--txt3)">—</div>
@@ -1827,6 +1827,26 @@ function showScoreModal(accountId,month){
   calcScoreLive();
 }
 
+function reloadScoreModal(){
+  const accountId=$('sc-account')?.value;
+  const month=$('sc-month')?.value;
+  if(!accountId||!month)return;
+  const sc=S.scores.find(s=>s.account_id===accountId&&s.month===month);
+  // Fill inputs with existing data or clear
+  if($('sc-p1'))$('sc-p1').value=sc?sc.p1_score:'';
+  if($('sc-p2'))$('sc-p2').value=sc?sc.p2_score:'';
+  if($('sc-p3'))$('sc-p3').value=sc?sc.p3_score:'';
+  if($('sc-p4'))$('sc-p4').value=sc?sc.p4_score:'';
+  if($('sc-p1n'))$('sc-p1n').value=sc?sc.p1_notes||'':'';
+  if($('sc-p2n'))$('sc-p2n').value=sc?sc.p2_notes||'':'';
+  if($('sc-p3n'))$('sc-p3n').value=sc?sc.p3_notes||'':'';
+  if($('sc-p4n'))$('sc-p4n').value=sc?sc.p4_notes||'':'';
+  if($('sc-block'))$('sc-block').value=sc?sc.block_status||'none':'none';
+  if($('sc-bn'))$('sc-bn').value=sc?sc.block_notes||'':'';
+  $('m-score-title').textContent=sc?'Editar Avaliação':'Nova Avaliação';
+  calcScoreLive();
+}
+
 function getEligibility(score,blockStatus){
   if(blockStatus&&blockStatus!=='none')return{pct:0,label:'Suspenso',cls:'bg-red',color:'var(--red)'};
   if(score===null||score===undefined)return{pct:0,label:'—',cls:'',color:'var(--txt3)'};
@@ -1868,14 +1888,20 @@ async function saveScore(){
   const p1=parseFloat($('sc-p1')?.value),p2=parseFloat($('sc-p2')?.value),p3=parseFloat($('sc-p3')?.value),p4=parseFloat($('sc-p4')?.value);
   if(!account||!month||isNaN(p1)||isNaN(p2)||isNaN(p3)||isNaN(p4)){toast('Preencha todos os campos','error');return}
   const final_score=Math.round((p1*0.3+p2*0.25+p3*0.25+p4*0.2)*100)/100;
-  const data={account_id:account,month,p1_score:p1,p1_notes:$('sc-p1n')?.value||null,p2_score:p2,p2_notes:$('sc-p2n')?.value||null,p3_score:p3,p3_notes:$('sc-p3n')?.value||null,p4_score:p4,p4_notes:$('sc-p4n')?.value||null,final_score,block_status:$('sc-block')?.value||'none',block_notes:$('sc-bn')?.value||null,evaluated_by:S.user.id,updated_at:new Date().toISOString()};
+  const data={account_id:account,month,p1_score:p1,p2_score:p2,p3_score:p3,p4_score:p4,final_score,block_status:$('sc-block')?.value||'none',updated_at:new Date().toISOString()};
+  // Only add optional text fields if they have content
+  const p1n=$('sc-p1n')?.value?.trim();if(p1n)data.p1_notes=p1n;
+  const p2n=$('sc-p2n')?.value?.trim();if(p2n)data.p2_notes=p2n;
+  const p3n=$('sc-p3n')?.value?.trim();if(p3n)data.p3_notes=p3n;
+  const p4n=$('sc-p4n')?.value?.trim();if(p4n)data.p4_notes=p4n;
+  const bn=$('sc-bn')?.value?.trim();if(bn)data.block_notes=bn;
+  if(S.user?.id)data.evaluated_by=S.user.id;
   try{
-    // Upsert: try patch first, then post
     const existing=S.scores.find(s=>s.account_id===account&&s.month===month);
     if(existing)await sbPatch('score_adm',`id=eq.${existing.id}`,data);
     else await sbPost('score_adm',data);
     closeM('m-score');S.scores=await sbGet('score_adm','order=month.desc,account_id');toast('Avaliação salva');renderPage();
-  }catch(e){toast('Erro: '+e.message,'error')}
+  }catch(e){console.error('saveScore error:',e,data);toast('Erro: '+e.message,'error')}
 }
 
 // ═══════════════════════════════════════════════
