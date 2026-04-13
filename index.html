@@ -506,6 +506,13 @@ function buildNav(){
     h+=`<div class="sb-item" data-p="p-config" onclick="nav('p-config')">${ICONS.gear} Config Prod</div>`;
   }
   
+  // EXTRAS section — accounts + admin
+  if(isA()||isAcc()){
+    h+=`<div class="sb-section">Extras & Comissões</div>`;
+    h+=`<div class="sb-item" data-p="extras" onclick="nav('extras')">${ICONS.money} Lançar Extra</div>`;
+    h+=`<div class="sb-item" data-p="extras-hist" onclick="nav('extras-hist')">${ICONS.entries} Meus Extras</div>`;
+  }
+  
   // SCORE ADM — admin only
   if(isA()){
     h+=`<div class="sb-section">Gestão</div>`;
@@ -521,7 +528,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
 
 function nav(page){
   curPage=page;
@@ -540,6 +547,7 @@ async function renderPage(){
       'd-my':pgDashMy,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
+      extras:pgExtras,'extras-hist':pgExtrasHist,
       score:pgScore,members:pgMembers,clients:pgClients,profile:pgProfile
     };
     if(pages[curPage])await pages[curPage](el);
@@ -998,6 +1006,7 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         </div>
         
         <div style="border-top:2px solid var(--red);padding-top:12px;margin-top:16px">
+          <div id="bg-elig-info" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;margin-right:6px">Elegibilidade:</span></div>
           <div id="bg-no-ext" style="${bgt?.has_external_budget?'display:none':''}">
             <div class="f-field"><label class="f-label" style="color:var(--red)">Preço sugerido ao cliente (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-suggested-price" value="${bgt?Number(bgt.client_price):0}" style="font-size:18px;font-weight:800;text-align:center" oninput="calcBudget()"></div>
           </div>
@@ -1078,6 +1087,24 @@ function calcBudget(){
   const marginPct=price>0?(margin/price)*100:0;
   if(el('bg-margin-val')){el('bg-margin-val').textContent=fMoney(margin);el('bg-margin-val').style.color=margin>=0?'var(--prod)':'var(--red)'}
   if(el('bg-margin-pct')){el('bg-margin-pct').textContent=marginPct.toFixed(1)+'%';el('bg-margin-pct').style.color=margin>=0?'var(--prod)':'var(--red)'}
+  
+  // Show eligibility info if available
+  const eligEl=el('bg-elig-info');
+  if(eligEl&&S.scores.length){
+    const curMonth=new Date().toISOString().substring(0,7);
+    const accMembers=S.members.filter(m=>m.access_level==='account');
+    let eligHtml='';
+    accMembers.forEach(a=>{
+      const sc=S.scores.find(s=>s.account_id===a.id&&s.month===curMonth);
+      if(sc){
+        const score=Number(sc.final_score);
+        const pct=scorePctDirect(score,sc.block_status);
+        const elig=getEligibility(score,sc.block_status);
+        eligHtml+=`<span style="font-size:10px;margin-right:12px">${a.name.split(' ')[0]}: <b style="color:${elig.color}">${score.toFixed(1)}</b> → <span class="bg ${elig.cls}" style="font-size:9px">${(pct*100).toFixed(0)}%</span></span>`;
+      }
+    });
+    eligEl.innerHTML=eligHtml;
+  }
 }
 
 async function saveBudget(reqId,budgetId){
@@ -1296,40 +1323,39 @@ async function pgProdConfig(el){
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
         <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid var(--prod)">
           <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Excelência</div>
-          <div style="font-size:28px;font-weight:800;color:var(--prod);font-family:var(--mono);margin:4px 0">120%</div>
+          <div style="font-size:28px;font-weight:800;color:var(--prod);font-family:var(--mono);margin:4px 0">20%</div>
           <div style="font-size:13px;color:var(--txt)">Score ≥ 9.0</div>
-          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Bônus acelerado — premia quem vai além do esperado</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Máximo — premia excelência consistente</div>
         </div>
         <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid #22c55e">
           <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Destaque</div>
-          <div style="font-size:28px;font-weight:800;color:#22c55e;font-family:var(--mono);margin:4px 0">100%</div>
+          <div style="font-size:28px;font-weight:800;color:#22c55e;font-family:var(--mono);margin:4px 0">15%</div>
           <div style="font-size:13px;color:var(--txt)">Score 7.5 – 8.9</div>
-          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Referência — entrega consistente de qualidade</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Referência — entrega de qualidade</div>
         </div>
         <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid var(--pack)">
           <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Elegível</div>
-          <div style="font-size:28px;font-weight:800;color:var(--pack);font-family:var(--mono);margin:4px 0">70%</div>
+          <div style="font-size:28px;font-weight:800;color:var(--pack);font-family:var(--mono);margin:4px 0">10%</div>
           <div style="font-size:13px;color:var(--txt)">Score 6.0 – 7.4</div>
-          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Cumpre bem, mas tem espaço para evoluir</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Cumpre bem, espaço para evoluir</div>
         </div>
         <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid var(--red)">
           <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Não elegível</div>
           <div style="font-size:28px;font-weight:800;color:var(--red);font-family:var(--mono);margin:4px 0">0%</div>
           <div style="font-size:13px;color:var(--txt)">Score < 6.0 ou Bloqueio</div>
-          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Não recebe — precisa melhorar antes de premiar</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Não recebe comissão</div>
         </div>
       </div>
       <div style="font-size:12px;color:var(--txt2);background:var(--bg4);padding:12px 16px;border-radius:var(--radius-sm);border-left:3px solid var(--red)">
         <b style="color:var(--txt)">Regra absoluta:</b> Qualquer bloqueio ativo (performance, inadimplência, retrabalho, estouro) cancela automaticamente a elegibilidade, independente do score numérico.
       </div>
-      <table style="margin-top:16px;width:100%;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:8px;color:var(--txt2)">Tipo Produção</th><th class="rt" style="padding:8px;color:var(--txt2)">% Base Account</th><th class="rt" style="padding:8px;color:var(--prod)">×Excelência (120%)</th><th class="rt" style="padding:8px;color:#22c55e">×Destaque (100%)</th><th class="rt" style="padding:8px;color:var(--pack)">×Elegível (70%)</th></tr></thead>
-      <tbody>${S.commission_rules.map(r=>{const b=Number(r.account_pct);return`<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:8px;font-weight:600">${PROD_TYPES[r.prod_type]||r.prod_type}</td>
-        <td class="rt" style="padding:8px;font-family:var(--mono)">${b}%</td>
-        <td class="rt" style="padding:8px;font-family:var(--mono);color:var(--prod);font-weight:700">${(b*1.2).toFixed(1)}%</td>
-        <td class="rt" style="padding:8px;font-family:var(--mono);color:#22c55e;font-weight:700">${b.toFixed(1)}%</td>
-        <td class="rt" style="padding:8px;font-family:var(--mono);color:var(--pack);font-weight:700">${(b*0.7).toFixed(1)}%</td>
-      </tr>`}).join('')}</tbody></table>
+      <table style="margin-top:16px;width:100%;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:8px;color:var(--txt2)">Faixa</th><th class="rt" style="padding:8px;color:var(--txt2)">Score</th><th class="rt" style="padding:8px;color:var(--prod)">% Account</th><th class="rt" style="padding:8px;color:var(--t1)">% Líder PROD</th><th class="rt" style="padding:8px;color:var(--txt2)">Stakeholders</th></tr></thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;font-weight:600;color:var(--prod)">Excelência</td><td class="rt" style="padding:8px;font-family:var(--mono)">≥ 9.0</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--prod);font-weight:700">20%</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--t1);font-weight:700">10%</td><td class="rt" style="padding:8px;font-family:var(--mono)">Até 10%</td></tr>
+        <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;font-weight:600;color:#22c55e">Destaque</td><td class="rt" style="padding:8px;font-family:var(--mono)">7.5 – 8.9</td><td class="rt" style="padding:8px;font-family:var(--mono);color:#22c55e;font-weight:700">15%</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--t1);font-weight:700">10%</td><td class="rt" style="padding:8px;font-family:var(--mono)">Até 10%</td></tr>
+        <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px;font-weight:600;color:var(--pack)">Elegível</td><td class="rt" style="padding:8px;font-family:var(--mono)">6.0 – 7.4</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--pack);font-weight:700">10%</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--t1);font-weight:700">10%</td><td class="rt" style="padding:8px;font-family:var(--mono)">Até 10%</td></tr>
+        <tr><td style="padding:8px;font-weight:600;color:var(--red)">Não elegível</td><td class="rt" style="padding:8px;font-family:var(--mono)">< 6.0</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--red);font-weight:700">0%</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--red);font-weight:700">0%</td><td class="rt" style="padding:8px;font-family:var(--mono);color:var(--red)">0%</td></tr>
+      </tbody></table>
     </div></div>
 
     <div class="tbl" style="margin-top:24px"><div class="tbl-h"><h3>Custos Padrão</h3></div>
@@ -1372,6 +1398,186 @@ async function saveCostDef(id){
     S.cost_defaults=await sbGet('cost_defaults','order=cost_type');
     toast('Custo salvo');
   }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// ═══════════════════════════════════════════════
+// EXTRAS & COMISSÕES
+// ═══════════════════════════════════════════════
+const MAKE_EXTRAS_WEBHOOK='https://hook.us2.make.com/f8udalcn1tphq9ums02x2aoxgx79r0lm';
+const EXTRAS_TYPES=['Vídeo / Audiovisual','Horas adicionais','Projeto avulso','Bonificação gráfica','Bonificação plataforma','Campanha emergencial','Outro'];
+const EXTRAS_IMPACT=['Alto — venda direta / diretoria','Médio — sustenta presença','Baixo — ajuste / operacional'];
+
+function getMyEligibility(){
+  const curMonth=new Date().toISOString().substring(0,7);
+  const sc=S.scores.find(s=>s.account_id===S.user.id&&s.month===curMonth);
+  if(!sc)return{pct:0,label:'Sem avaliação',cls:'',color:'var(--txt3)',score:null,commRules:S.commission_rules};
+  const elig=getEligibility(Number(sc.final_score),sc.block_status);
+  elig.score=Number(sc.final_score);elig.commRules=S.commission_rules;
+  return elig;
+}
+
+function scorePctDirect(score,blockStatus){
+  if(blockStatus&&blockStatus!=='none')return 0;
+  if(score===null||score===undefined)return 0;
+  if(score>=9)return 0.20;
+  if(score>=7.5)return 0.15;
+  if(score>=6)return 0.10;
+  return 0;
+}
+
+function calcExtras(){
+  const b=parseFloat($('ex-budget')?.value)||0;
+  const ct=parseFloat($('ex-ctime')?.value)||0;
+  const cd=parseFloat($('ex-cdiv')?.value)||0;
+  const imp=b*0.18;
+  const base=Math.max(0,b-imp-ct-cd);
+  const elig=getMyEligibility();
+  const pct=scorePctDirect(elig.score,elig.blockStatus);
+  const acc=base*pct;
+  const ldr=base*(pct>0?0.10:0); // líder PROD gets 10% when account is eligible
+  const tgt=base-acc-ldr;
+  
+  if($('ex-pv-b'))$('ex-pv-b').textContent=fMoney(b);
+  if($('ex-pv-i'))$('ex-pv-i').textContent='('+fMoney(imp)+')';
+  if($('ex-pv-ct'))$('ex-pv-ct').textContent='('+fMoney(ct)+')';
+  if($('ex-pv-cd'))$('ex-pv-cd').textContent='('+fMoney(cd)+')';
+  if($('ex-pv-base'))$('ex-pv-base').textContent=fMoney(base);
+  if($('ex-pv-acc'))$('ex-pv-acc').textContent=fMoney(acc);
+  if($('ex-pv-acc-s'))$('ex-pv-acc-s').textContent=`${(pct*100).toFixed(0)}% — Score ${elig.score!==null?elig.score.toFixed(1):'—'}`;
+  if($('ex-pv-ldr'))$('ex-pv-ldr').textContent=fMoney(ldr);
+  if($('ex-pv-tgt'))$('ex-pv-tgt').textContent=fMoney(tgt);
+  if($('ex-pv-tgt-s'))$('ex-pv-tgt-s').textContent=b>0?Math.round(tgt/b*100)+'% do budget':'';
+  if($('ex-pv-score')){
+    const s=elig.score;
+    $('ex-pv-score').textContent=s!==null?s.toFixed(1):'—';
+    $('ex-pv-score').style.color=elig.color;
+  }
+  if($('ex-pv-elig'))$('ex-pv-elig').innerHTML=`<span class="bg ${elig.cls}" style="font-size:10px">${elig.label}</span> <span style="font-weight:700;color:${elig.color}">${(pct*100).toFixed(0)}%</span>`;
+  
+  let alert='';
+  if(pct===0&&b>0)alert=`<div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--red)">Score abaixo de 6.0 ou bloqueio ativo — comissão não será aplicada.</div>`;
+  else if(pct===0.10&&b>0)alert=`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--pack)">Score 6.0–7.4 → 10%. Melhore para 7.5+ e suba para 15%.</div>`;
+  if($('ex-alert'))$('ex-alert').innerHTML=alert;
+}
+
+async function pgExtras(el){
+  const elig=getMyEligibility();
+  const myClients=isA()?S.clients:S.clients.filter(c=>c.team===S.user.team);
+  el.innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+      <div class="card"><div class="cl">Seu Score</div><div class="cv" style="color:${elig.color}">${elig.score!==null?elig.score.toFixed(1):'—'}</div></div>
+      <div class="card"><div class="cl">Elegibilidade</div><div class="cv"><span class="bg ${elig.cls}">${elig.label}</span></div></div>
+      <div class="card"><div class="cl">% Comissão</div><div class="cv" style="color:${elig.color}">${elig.pct}%</div></div>
+    </div>
+    <div class="tbl"><div class="tbl-h"><h3>Novo projeto extra</h3></div><div style="padding:16px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="f-field" style="grid-column:1/-1"><label class="f-label">Nome do projeto *</label><input class="f-input" id="ex-nome" placeholder="Ex: Kerry — vídeo institucional Q2" oninput="calcExtras()"></div>
+      <div class="f-field"><label class="f-label">Cliente *</label><select class="f-sel" id="ex-cliente" onchange="calcExtras()">${myClients.map(c=>`<option value="${c.name}">${c.name}</option>`).join('')}</select></div>
+      <div class="f-field"><label class="f-label">Tipo *</label><select class="f-sel" id="ex-tipo" onchange="calcExtras()">${EXTRAS_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div class="f-field"><label class="f-label">Impacto *</label><select class="f-sel" id="ex-impacto" onchange="calcExtras()">${EXTRAS_IMPACT.map(i=>`<option>${i}</option>`).join('')}</select></div>
+      <div class="f-field"><label class="f-label">Budget do projeto (R$) *</label><input class="f-input" type="number" id="ex-budget" placeholder="0" oninput="calcExtras()"></div>
+      <div class="f-field"><label class="f-label">Custo do time (R$)</label><input class="f-input" type="number" id="ex-ctime" placeholder="Horas × taxa interna" oninput="calcExtras()"></div>
+      <div class="f-field"><label class="f-label">Custos diversos (R$)</label><input class="f-input" type="number" id="ex-cdiv" placeholder="Transp. + alim. + fornecedores" oninput="calcExtras()"></div>
+      <div class="f-field"><label class="f-label">Stakeholders (opcional)</label><input class="f-input" id="ex-stake" placeholder="Ex: Enzo 60%, Mariana 40%"></div>
+      <div class="f-field" style="grid-column:1/-1"><label class="f-label">Observações</label><input class="f-input" id="ex-obs" placeholder="Contexto adicional"></div>
+    </div>
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Prévia da distribuição</div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px">
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Budget</div><div style="font-size:15px;font-weight:800" id="ex-pv-b">R$ 0</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Impostos 18%</div><div style="font-size:15px;font-weight:800;color:var(--red)" id="ex-pv-i">R$ 0</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Custo time</div><div style="font-size:15px;font-weight:800;color:var(--pack)" id="ex-pv-ct">R$ 0</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Custos div.</div><div style="font-size:15px;font-weight:800;color:var(--pack)" id="ex-pv-cd">R$ 0</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Base comissão</div><div style="font-size:15px;font-weight:800;color:var(--prod)" id="ex-pv-base">R$ 0</div></div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Sua comissão</div><div style="font-size:18px;font-weight:800;color:var(--prod)" id="ex-pv-acc">R$ 0</div><div style="font-size:9px;color:var(--txt3)" id="ex-pv-acc-s">0%</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Líder PROD</div><div style="font-size:18px;font-weight:800;color:var(--t1)" id="ex-pv-ldr">R$ 0</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Margem TGT</div><div style="font-size:18px;font-weight:800;color:var(--prod)" id="ex-pv-tgt">R$ 0</div><div style="font-size:9px;color:var(--txt3)" id="ex-pv-tgt-s"></div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Seu score</div><div style="font-size:18px;font-weight:800" id="ex-pv-score">—</div></div>
+        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Elegibilidade</div><div id="ex-pv-elig" style="margin-top:4px">—</div></div>
+      </div>
+      <div id="ex-alert" style="margin-top:12px"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn btn-r" id="ex-submit" onclick="submitExtras()">Salvar no Monday</button>
+      <span style="font-size:11px;color:var(--txt2)">Cria item no board TGT — Extras & Comissionamento</span>
+    </div>
+    <div id="ex-toast" style="margin-top:12px"></div>
+    </div></div>`;
+  setTimeout(()=>{calcExtras();el.querySelectorAll('input,select').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})},50);
+}
+
+async function submitExtras(){
+  const nome=$('ex-nome')?.value?.trim();
+  const cliente=$('ex-cliente')?.value;
+  const tipo=$('ex-tipo')?.value;
+  const impacto=$('ex-impacto')?.value;
+  const b=parseFloat($('ex-budget')?.value)||0;
+  const ct=parseFloat($('ex-ctime')?.value)||0;
+  const cd=parseFloat($('ex-cdiv')?.value)||0;
+  const stake=$('ex-stake')?.value?.trim()||'';
+  const obs=$('ex-obs')?.value?.trim()||'';
+  if(!nome||!cliente||!tipo||b<=0){toast('Preencha nome, cliente, tipo e budget','error');return}
+  const imp=b*0.18;const base=Math.max(0,b-imp-ct-cd);
+  const elig=getMyEligibility();
+  const pct=scorePctDirect(elig.score,elig.blockStatus);
+  const acc=Math.round(base*pct);
+  const ldr=Math.round(base*(pct>0?0.10:0));
+  const tgt=Math.round(base-acc-ldr);
+  const btn=$('ex-submit');btn.disabled=true;
+  const toastEl=$('ex-toast');
+  toastEl.innerHTML='<div style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--t1)">Enviando para o Monday...</div>';
+  const itemName=`${S.user.name.split(' ')[0]} · ${cliente} · ${nome}`.replace(/"/g,"'");
+  try{
+    const payload={
+      account:S.user.name.split(' ')[0],
+      nome:itemName,
+      cliente,tipo,impacto:impacto.split(' — ')[0],
+      budget:b,custo_time:ct,custos_div:cd,
+      base_comissao:Math.round(base),
+      comissao_account:acc,comissao_leader:ldr,margem_tgt:tgt,
+      stakeholders:stake,obs,
+      score:elig.score,elegibilidade:elig.label,pct_efetivo:pct
+    };
+    const res=await fetch(MAKE_EXTRAS_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!res.ok)throw new Error('Webhook retornou '+res.status);
+    toastEl.innerHTML='<div style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--prod)">Lançado com sucesso no Monday!</div>';
+    setTimeout(()=>toastEl.innerHTML='',4000);
+    // Clear form
+    ['ex-nome','ex-budget','ex-ctime','ex-cdiv','ex-stake','ex-obs'].forEach(id=>{if($(id))$(id).value=''});
+    calcExtras();
+  }catch(e){
+    toastEl.innerHTML=`<div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--red)">Erro: ${e.message}</div>`;
+  }
+  btn.disabled=false;
+}
+
+async function pgExtrasHist(el){
+  // Fetch from Monday board
+  el.innerHTML='<div class="loading"><div class="spin"></div> Carregando histórico...</div>';
+  try{
+    const myName=S.user.name.split(' ')[0];
+    const items=await sbGet('extras_history',`account=eq.${myName}&order=created_at.desc`).catch(()=>[]);
+    // If no Supabase table, show manual message
+    if(!items.length){
+      el.innerHTML=`
+        <div style="text-align:center;padding:48px 20px;color:var(--txt2)">
+          <div style="font-size:40px;margin-bottom:12px">📋</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px">Histórico no Monday</div>
+          <div style="font-size:12px;color:var(--txt3);max-width:400px;margin:0 auto">
+            Os lançamentos de extras são enviados diretamente ao board <b>TGT — Extras & Comissionamento</b> no Monday.com.<br><br>
+            Acesse o board para ver todos os seus lançamentos com status, valores e comissões calculadas.
+          </div>
+          <a href="https://tgt-studio.monday.com/boards/18408140037" target="_blank" class="btn btn-r" style="display:inline-flex;margin-top:16px;text-decoration:none">Abrir no Monday</a>
+        </div>`;
+      return;
+    }
+    // Render items if they exist
+    el.innerHTML=items.map(e=>`<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${e.nome||'—'}</span><span style="font-size:11px;color:var(--txt2)">${e.created_at?new Date(e.created_at).toLocaleDateString('pt-BR'):''}</span></div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><span class="bg bg-t1">${e.cliente||''}</span><span class="bg">${e.tipo||''}</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px"><div style="text-align:center"><div class="cl">Budget</div><div style="font-weight:700">${fMoney(e.budget||0)}</div></div><div style="text-align:center"><div class="cl">Comissão</div><div style="font-weight:700;color:var(--prod)">${fMoney(e.comissao_account||0)}</div></div><div style="text-align:center"><div class="cl">Margem TGT</div><div style="font-weight:700;color:var(--prod)">${fMoney(e.margem_tgt||0)}</div></div></div></div>`).join('');
+  }catch(e){
+    el.innerHTML=`<div class="empty">Erro ao carregar: ${e.message}</div>`;
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -1474,9 +1680,9 @@ function showScoreModal(accountId,month){
 function getEligibility(score,blockStatus){
   if(blockStatus&&blockStatus!=='none')return{pct:0,label:'Suspenso',cls:'bg-red',color:'var(--red)'};
   if(score===null||score===undefined)return{pct:0,label:'—',cls:'',color:'var(--txt3)'};
-  if(score>=9)return{pct:120,label:'Excelência',cls:'bg-green',color:'var(--prod)'};
-  if(score>=7.5)return{pct:100,label:'Destaque',cls:'bg-green',color:'var(--prod)'};
-  if(score>=6)return{pct:70,label:'Elegível',cls:'bg-amber',color:'var(--pack)'};
+  if(score>=9)return{pct:20,label:'Excelência',cls:'bg-green',color:'var(--prod)'};
+  if(score>=7.5)return{pct:15,label:'Destaque',cls:'bg-green',color:'var(--prod)'};
+  if(score>=6)return{pct:10,label:'Elegível',cls:'bg-amber',color:'var(--pack)'};
   return{pct:0,label:'Não elegível',cls:'bg-red',color:'var(--red)'};
 }
 
@@ -1496,7 +1702,7 @@ function calcScoreLive(){
     ring.textContent=score.toFixed(1);
     ring.className='score-ring '+(score>=7?'good':score>=5?'ok':'bad');
     ring.style.width='96px';ring.style.height='96px';ring.style.fontSize='32px';
-    f.innerHTML=`${p1}×30% + ${p2}×25% + ${p3}×25% + ${p4}×20% = ${score.toFixed(2)} · <span class="bg ${elig.cls}" style="font-size:10px;vertical-align:middle">${elig.label}</span> <b style="color:${elig.color}">${elig.pct}%</b>`;
+    f.innerHTML=`${p1}×30% + ${p2}×25% + ${p3}×25% + ${p4}×20% = ${score.toFixed(2)} · <span class="bg ${elig.cls}" style="font-size:10px;vertical-align:middle">${elig.label}</span> <b style="color:${elig.color}">Comissão: ${elig.pct}%</b>`;
     f.style.color=score>=7?'var(--prod)':score>=5?'var(--pack)':'var(--red)';
   }else{
     ring.textContent='—';ring.className='score-ring';ring.style.borderColor='var(--border2)';ring.style.color='var(--txt3)';
