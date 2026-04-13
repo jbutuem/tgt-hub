@@ -1280,7 +1280,7 @@ async function saveEquip(){
 async function pgProdConfig(el){
   if(!isA()&&!isPL()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   el.innerHTML=`
-    <div class="tbl"><div class="tbl-h"><h3>Regras de Comissão</h3></div>
+    <div class="tbl"><div class="tbl-h"><h3>Regras de Comissão por Tipo de Produção</h3></div>
     <div class="tbl-r"><table><thead><tr><th>Tipo Produção</th><th class="rt">% Account</th><th class="rt">% Líder</th><th class="rt">% TGT</th><th>Notas</th><th></th></tr></thead>
     <tbody>${S.commission_rules.map(r=>`<tr>
       <td style="font-weight:600">${PROD_TYPES[r.prod_type]||r.prod_type}</td>
@@ -1290,7 +1290,49 @@ async function pgProdConfig(el){
       <td><input class="f-input" style="padding:4px 8px;font-size:12px" value="${r.notes||''}" id="cr-note-${r.id}"></td>
       <td><button class="btn btn-r btn-sm" onclick="saveCommRule('${r.id}')">Salvar</button></td>
     </tr>`).join('')}</tbody></table></div></div>
-    <div class="tbl"><div class="tbl-h"><h3>Custos Padrão</h3></div>
+
+    <div class="tbl" style="margin-top:24px"><div class="tbl-h"><h3>Faixas de Elegibilidade — Score × Comissão</h3></div>
+    <div style="padding:0 16px 16px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid var(--prod)">
+          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Excelência</div>
+          <div style="font-size:28px;font-weight:800;color:var(--prod);font-family:var(--mono);margin:4px 0">120%</div>
+          <div style="font-size:13px;color:var(--txt)">Score ≥ 9.0</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Bônus acelerado — premia quem vai além do esperado</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid #22c55e">
+          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Destaque</div>
+          <div style="font-size:28px;font-weight:800;color:#22c55e;font-family:var(--mono);margin:4px 0">100%</div>
+          <div style="font-size:13px;color:var(--txt)">Score 7.5 – 8.9</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Referência — entrega consistente de qualidade</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid var(--pack)">
+          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Elegível</div>
+          <div style="font-size:28px;font-weight:800;color:var(--pack);font-family:var(--mono);margin:4px 0">70%</div>
+          <div style="font-size:13px;color:var(--txt)">Score 6.0 – 7.4</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Cumpre bem, mas tem espaço para evoluir</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;border-left:4px solid var(--red)">
+          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px">Não elegível</div>
+          <div style="font-size:28px;font-weight:800;color:var(--red);font-family:var(--mono);margin:4px 0">0%</div>
+          <div style="font-size:13px;color:var(--txt)">Score < 6.0 ou Bloqueio</div>
+          <div style="font-size:11px;color:var(--txt2);margin-top:4px">Não recebe — precisa melhorar antes de premiar</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--txt2);background:var(--bg4);padding:12px 16px;border-radius:var(--radius-sm);border-left:3px solid var(--red)">
+        <b style="color:var(--txt)">Regra absoluta:</b> Qualquer bloqueio ativo (performance, inadimplência, retrabalho, estouro) cancela automaticamente a elegibilidade, independente do score numérico.
+      </div>
+      <table style="margin-top:16px;width:100%;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:8px;color:var(--txt2)">Tipo Produção</th><th class="rt" style="padding:8px;color:var(--txt2)">% Base Account</th><th class="rt" style="padding:8px;color:var(--prod)">×Excelência (120%)</th><th class="rt" style="padding:8px;color:#22c55e">×Destaque (100%)</th><th class="rt" style="padding:8px;color:var(--pack)">×Elegível (70%)</th></tr></thead>
+      <tbody>${S.commission_rules.map(r=>{const b=Number(r.account_pct);return`<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px;font-weight:600">${PROD_TYPES[r.prod_type]||r.prod_type}</td>
+        <td class="rt" style="padding:8px;font-family:var(--mono)">${b}%</td>
+        <td class="rt" style="padding:8px;font-family:var(--mono);color:var(--prod);font-weight:700">${(b*1.2).toFixed(1)}%</td>
+        <td class="rt" style="padding:8px;font-family:var(--mono);color:#22c55e;font-weight:700">${b.toFixed(1)}%</td>
+        <td class="rt" style="padding:8px;font-family:var(--mono);color:var(--pack);font-weight:700">${(b*0.7).toFixed(1)}%</td>
+      </tr>`}).join('')}</tbody></table>
+    </div></div>
+
+    <div class="tbl" style="margin-top:24px"><div class="tbl-h"><h3>Custos Padrão</h3></div>
     <div class="tbl-r"><table><thead><tr><th>Tipo</th><th>Label</th><th class="rt">Valor (R$)</th><th>Unidade</th><th>Notas</th><th></th></tr></thead>
     <tbody>${S.cost_defaults.map(c=>`<tr>
       <td style="font-size:12px;color:var(--txt2)">${c.cost_type}</td>
@@ -1351,10 +1393,11 @@ async function pgScore(el){
       const sc=S.scores.find(s=>s.account_id===a.id&&s.month===month);
       const final=sc?Number(sc.final_score):null;
       const cls=final===null?'':final>=7?'good':final>=5?'ok':'bad';
+      const elig=getEligibility(final,sc?.block_status);
       return`<div class="card" style="cursor:pointer" onclick="showScoreModal('${a.id}','${month}')">
         <div style="display:flex;align-items:center;gap:16px">
           <div class="score-ring ${cls}">${final!==null?final.toFixed(1):'—'}</div>
-          <div>
+          <div style="flex:1">
             <div style="font-weight:700;font-size:15px">${a.name.split(' ').slice(0,2).join(' ')}</div>
             <div style="font-size:12px;color:var(--txt2)">${a.job_title||'Account'} · <span class="bg ${TBC(a.team)}">${TB(a.team)}</span></div>
             ${sc?`<div style="margin-top:8px">
@@ -1362,7 +1405,11 @@ async function pgScore(el){
               <div class="score-bar"><label>P2 Eficiência</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p2_score*10}%;background:var(--t3)"></div></div><div class="sval">${sc.p2_score}</div></div>
               <div class="score-bar"><label>P3 Rentab.</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p3_score*10}%;background:var(--prod)"></div></div><div class="sval">${sc.p3_score}</div></div>
               <div class="score-bar"><label>P4 Relação</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p4_score*10}%;background:var(--pack)"></div></div><div class="sval">${sc.p4_score}</div></div>
-            </div>`:'<div style="margin-top:8px;font-size:12px;color:var(--txt3)">Sem avaliação neste mês</div>'}
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <span class="bg ${elig.cls}" style="font-size:11px">${elig.label}</span>
+              <span style="font-size:12px;font-weight:700;color:${elig.color};font-family:var(--mono)">${elig.pct>0?elig.pct+'% da comissão':'Sem comissão'}</span>
+              ${S.commission_rules.length?`<span style="font-size:10px;color:var(--txt3);margin-left:auto">${S.commission_rules.map(r=>`${r.prod_type==='single_project'?'Avulso':r.prod_type==='package'?'Pacote':'Extra'}: ${(Number(r.account_pct)*elig.pct/100).toFixed(1)}%`).join(' · ')}</span>`:''}`:'<div style="margin-top:8px;font-size:12px;color:var(--txt3)">Sem avaliação neste mês</div>'}
             ${sc&&sc.block_status!=='none'?`<div style="margin-top:6px"><span class="bg bg-red">${sc.block_status.replace('_',' ')}</span></div>`:''}
           </div>
         </div>
@@ -1381,43 +1428,91 @@ function showScoreModal(accountId,month){
       <div class="f-field"><label class="f-label">Account *</label><select class="f-sel" id="sc-account">${accounts.map(a=>`<option value="${a.id}" ${a.id===accountId?'selected':''}>${a.name.split(' ').slice(0,2).join(' ')} (${TB(a.team)})</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Mês *</label><input class="f-input" type="month" id="sc-month" value="${curMonth}"></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px">
+    <div id="sc-live-score" style="display:flex;align-items:center;justify-content:center;gap:24px;margin:20px 0;padding:20px;background:var(--bg4);border-radius:var(--radius);border:1px solid var(--border)">
+      <div id="sc-ring" class="score-ring" style="width:96px;height:96px;font-size:32px;border:4px solid var(--border2);color:var(--txt3)">—</div>
+      <div style="flex:1;max-width:340px">
+        <div class="score-bar"><label>P1 Estratégia</label><div class="sbar" style="height:8px"><div class="sbar-fill" id="sc-bar1" style="width:0%;background:var(--t1);transition:.3s"></div></div><div class="sval" id="sc-v1">—</div></div>
+        <div class="score-bar"><label>P2 Eficiência</label><div class="sbar" style="height:8px"><div class="sbar-fill" id="sc-bar2" style="width:0%;background:var(--t3);transition:.3s"></div></div><div class="sval" id="sc-v2">—</div></div>
+        <div class="score-bar"><label>P3 Rentab.</label><div class="sbar" style="height:8px"><div class="sbar-fill" id="sc-bar3" style="width:0%;background:var(--prod);transition:.3s"></div></div><div class="sval" id="sc-v3">—</div></div>
+        <div class="score-bar"><label>P4 Relação</label><div class="sbar" style="height:8px"><div class="sbar-fill" id="sc-bar4" style="width:0%;background:var(--pack);transition:.3s"></div></div><div class="sval" id="sc-v4">—</div></div>
+        <div style="text-align:right;margin-top:6px;font-size:11px;color:var(--txt3)" id="sc-formula">Preencha as notas para calcular</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="f-field" style="background:var(--bg3);padding:16px;border-radius:var(--radius)">
         <label class="f-label" style="color:var(--t1)">P1 — Qualidade Estratégica (30%)</label>
         <div style="font-size:11px;color:var(--txt3);margin-bottom:8px">Briefings, classificação de impacto, direcionamentos</div>
-        <input class="f-input" type="number" id="sc-p1" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p1_score:''}">
+        <input class="f-input" type="number" id="sc-p1" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p1_score:''}" oninput="calcScoreLive()">
         <textarea class="f-area" id="sc-p1n" placeholder="Observações..." style="margin-top:8px">${sc?sc.p1_notes||'':''}</textarea>
       </div>
       <div class="f-field" style="background:var(--bg3);padding:16px;border-radius:var(--radius)">
         <label class="f-label" style="color:var(--t3)">P2 — Eficiência Operacional (25%)</label>
         <div style="font-size:11px;color:var(--txt3);margin-bottom:8px">Aderência de horas, retrabalho, prazos, qualidade Monday</div>
-        <input class="f-input" type="number" id="sc-p2" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p2_score:''}">
+        <input class="f-input" type="number" id="sc-p2" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p2_score:''}" oninput="calcScoreLive()">
         <textarea class="f-area" id="sc-p2n" placeholder="Observações..." style="margin-top:8px">${sc?sc.p2_notes||'':''}</textarea>
       </div>
       <div class="f-field" style="background:var(--bg3);padding:16px;border-radius:var(--radius)">
         <label class="f-label" style="color:var(--prod)">P3 — Rentabilidade (25%)</label>
         <div style="font-size:11px;color:var(--txt3);margin-bottom:8px">Horas adicionais, captura de extras, upsell</div>
-        <input class="f-input" type="number" id="sc-p3" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p3_score:''}">
+        <input class="f-input" type="number" id="sc-p3" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p3_score:''}" oninput="calcScoreLive()">
         <textarea class="f-area" id="sc-p3n" placeholder="Observações..." style="margin-top:8px">${sc?sc.p3_notes||'':''}</textarea>
       </div>
       <div class="f-field" style="background:var(--bg3);padding:16px;border-radius:var(--radius)">
         <label class="f-label" style="color:var(--pack)">P4 — Relação com Cliente (20%)</label>
         <div style="font-size:11px;color:var(--txt3);margin-bottom:8px">NPS, tempo de resposta, evolução estratégica</div>
-        <input class="f-input" type="number" id="sc-p4" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p4_score:''}">
+        <input class="f-input" type="number" id="sc-p4" min="0" max="10" step="any" inputmode="decimal" placeholder="0-10" value="${sc?sc.p4_score:''}" oninput="calcScoreLive()">
         <textarea class="f-area" id="sc-p4n" placeholder="Observações..." style="margin-top:8px">${sc?sc.p4_notes||'':''}</textarea>
       </div>
     </div>
-    <div class="f-field" style="margin-top:16px"><label class="f-label">Bloqueio</label><select class="f-sel" id="sc-block"><option value="none" ${sc?.block_status==='none'?'selected':''}>Nenhum</option><option value="performance" ${sc?.block_status==='performance'?'selected':''}>Cancelamento por performance</option><option value="inadimplencia" ${sc?.block_status==='inadimplencia'?'selected':''}>Inadimplência do cliente</option><option value="retrabalho" ${sc?.block_status==='retrabalho'?'selected':''}>Retrabalho excessivo (&gt;20%)</option><option value="estouro_horas" ${sc?.block_status==='estouro_horas'?'selected':''}>Estouro de horas sem controle</option></select></div>
+    <div class="f-field" style="margin-top:16px"><label class="f-label">Bloqueio</label><select class="f-sel" id="sc-block" onchange="calcScoreLive()"><option value="none" ${sc?.block_status==='none'?'selected':''}>Nenhum</option><option value="performance" ${sc?.block_status==='performance'?'selected':''}>Cancelamento por performance</option><option value="inadimplencia" ${sc?.block_status==='inadimplencia'?'selected':''}>Inadimplência do cliente</option><option value="retrabalho" ${sc?.block_status==='retrabalho'?'selected':''}>Retrabalho excessivo (&gt;20%)</option><option value="estouro_horas" ${sc?.block_status==='estouro_horas'?'selected':''}>Estouro de horas sem controle</option></select></div>
     <div class="f-field"><label class="f-label">Notas do bloqueio</label><textarea class="f-area" id="sc-bn">${sc?sc.block_notes||'':''}</textarea></div>`;
   $('m-score-save').onclick=saveScore;
   openM('m-score');
+  calcScoreLive();
+}
+
+function getEligibility(score,blockStatus){
+  if(blockStatus&&blockStatus!=='none')return{pct:0,label:'Suspenso',cls:'bg-red',color:'var(--red)'};
+  if(score===null||score===undefined)return{pct:0,label:'—',cls:'',color:'var(--txt3)'};
+  if(score>=9)return{pct:120,label:'Excelência',cls:'bg-green',color:'var(--prod)'};
+  if(score>=7.5)return{pct:100,label:'Destaque',cls:'bg-green',color:'var(--prod)'};
+  if(score>=6)return{pct:70,label:'Elegível',cls:'bg-amber',color:'var(--pack)'};
+  return{pct:0,label:'Não elegível',cls:'bg-red',color:'var(--red)'};
+}
+
+function calcScoreLive(){
+  const p1=parseFloat($('sc-p1')?.value),p2=parseFloat($('sc-p2')?.value),p3=parseFloat($('sc-p3')?.value),p4=parseFloat($('sc-p4')?.value);
+  const has1=!isNaN(p1),has2=!isNaN(p2),has3=!isNaN(p3),has4=!isNaN(p4);
+  const ring=$('sc-ring'),f=$('sc-formula');
+  // Update bars
+  if(has1){$('sc-bar1').style.width=Math.min(p1*10,100)+'%';$('sc-v1').textContent=p1.toFixed(1)}else{$('sc-bar1').style.width='0%';$('sc-v1').textContent='—'}
+  if(has2){$('sc-bar2').style.width=Math.min(p2*10,100)+'%';$('sc-v2').textContent=p2.toFixed(1)}else{$('sc-bar2').style.width='0%';$('sc-v2').textContent='—'}
+  if(has3){$('sc-bar3').style.width=Math.min(p3*10,100)+'%';$('sc-v3').textContent=p3.toFixed(1)}else{$('sc-bar3').style.width='0%';$('sc-v3').textContent='—'}
+  if(has4){$('sc-bar4').style.width=Math.min(p4*10,100)+'%';$('sc-v4').textContent=p4.toFixed(1)}else{$('sc-bar4').style.width='0%';$('sc-v4').textContent='—'}
+  if(has1&&has2&&has3&&has4){
+    const score=p1*0.3+p2*0.25+p3*0.25+p4*0.2;
+    const blockVal=$('sc-block')?.value||'none';
+    const elig=getEligibility(score,blockVal);
+    ring.textContent=score.toFixed(1);
+    ring.className='score-ring '+(score>=7?'good':score>=5?'ok':'bad');
+    ring.style.width='96px';ring.style.height='96px';ring.style.fontSize='32px';
+    f.innerHTML=`${p1}×30% + ${p2}×25% + ${p3}×25% + ${p4}×20% = ${score.toFixed(2)} · <span class="bg ${elig.cls}" style="font-size:10px;vertical-align:middle">${elig.label}</span> <b style="color:${elig.color}">${elig.pct}%</b>`;
+    f.style.color=score>=7?'var(--prod)':score>=5?'var(--pack)':'var(--red)';
+  }else{
+    ring.textContent='—';ring.className='score-ring';ring.style.borderColor='var(--border2)';ring.style.color='var(--txt3)';
+    ring.style.width='96px';ring.style.height='96px';ring.style.fontSize='32px';
+    const filled=[has1,has2,has3,has4].filter(Boolean).length;
+    f.textContent=filled>0?`${filled}/4 pilares preenchidos`:'Preencha as notas para calcular';
+    f.style.color='var(--txt3)';
+  }
 }
 
 async function saveScore(){
   const account=$('sc-account')?.value,month=$('sc-month')?.value;
   const p1=parseFloat($('sc-p1')?.value),p2=parseFloat($('sc-p2')?.value),p3=parseFloat($('sc-p3')?.value),p4=parseFloat($('sc-p4')?.value);
   if(!account||!month||isNaN(p1)||isNaN(p2)||isNaN(p3)||isNaN(p4)){toast('Preencha todos os campos','error');return}
-  const data={account_id:account,month,p1_score:p1,p1_notes:$('sc-p1n')?.value||null,p2_score:p2,p2_notes:$('sc-p2n')?.value||null,p3_score:p3,p3_notes:$('sc-p3n')?.value||null,p4_score:p4,p4_notes:$('sc-p4n')?.value||null,block_status:$('sc-block')?.value||'none',block_notes:$('sc-bn')?.value||null,evaluated_by:S.user.id,updated_at:new Date().toISOString()};
+  const final_score=Math.round((p1*0.3+p2*0.25+p3*0.25+p4*0.2)*100)/100;
+  const data={account_id:account,month,p1_score:p1,p1_notes:$('sc-p1n')?.value||null,p2_score:p2,p2_notes:$('sc-p2n')?.value||null,p3_score:p3,p3_notes:$('sc-p3n')?.value||null,p4_score:p4,p4_notes:$('sc-p4n')?.value||null,final_score,block_status:$('sc-block')?.value||'none',block_notes:$('sc-bn')?.value||null,evaluated_by:S.user.id,updated_at:new Date().toISOString()};
   try{
     // Upsert: try patch first, then post
     const existing=S.scores.find(s=>s.account_id===account&&s.month===month);
