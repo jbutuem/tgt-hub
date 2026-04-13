@@ -295,6 +295,8 @@ const fMoney=v=>v?'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:
 const isA=()=>S.user&&S.user.access_level==='admin';
 const isPL=()=>S.user&&S.user.access_level==='prod_leader';
 const isAcc=()=>S.user&&S.user.access_level==='account';
+const isCli=()=>S.user&&S.user.access_level==='client';
+const isUser=()=>S.user&&S.user.access_level==='user';
 
 function getDateRange(){
   const now=new Date(),y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
@@ -374,11 +376,15 @@ async function initApp(){
   $('cur-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   buildNav();
   await loadData();
-  nav('timer');
-  startTick();
+  // Redirect based on role
+  if(isCli()) nav('d-client-view');
+  else nav('timer');
+  if(!isCli()) startTick();
   // Check running timer
-  const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
-  if(re){running=true;timerStart=new Date(re.started_at);activeEntryId=re.id}
+  if(!isCli()){
+    const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+    if(re){running=true;timerStart=new Date(re.started_at);activeEntryId=re.id}
+  }
 }
 
 async function loadData(){
@@ -405,15 +411,31 @@ async function loadData(){
 
 async function loadEntries(){
   const [from,to]=getDateRange();
-  const params=isA()?`started_at=gte.${from}T00:00:00&started_at=lte.${to}T23:59:59&order=started_at.desc`
-    :isAcc()?`started_at=gte.${from}T00:00:00&started_at=lte.${to}T23:59:59&order=started_at.desc`
-    :`member_id=eq.${S.user.id}&started_at=gte.${from}T00:00:00&started_at=lte.${to}T23:59:59&order=started_at.desc`;
+  let params=`started_at=gte.${from}T00:00:00&started_at=lte.${to}T23:59:59&order=started_at.desc`;
+  
+  if(isCli()){
+    // Client sees entries for their company only
+    if(S.user.client_id) params=`client_id=eq.${S.user.client_id}&${params}`;
+    else{S.entries=[];return}
+  }else if(isA()||isPL()){
+    // Admin and Prod Leader see all
+  }else if(isAcc()){
+    // Account sees own entries + entries from their team members
+    // For now load all, filter client-side after loading account associations
+  }else{
+    // User sees only own
+    params=`member_id=eq.${S.user.id}&${params}`;
+  }
+  
   S.entries=await sbGet('tt_time_entries',params);
-  // Also always load running entries
-  try{
-    const running=await sbGet('tt_time_entries','is_running=eq.true');
-    running.forEach(r=>{if(!S.entries.find(e=>e.id===r.id))S.entries.push(r)});
-  }catch(e){}
+  
+  // Also always load running entries (except for clients)
+  if(!isCli()){
+    try{
+      const runningEntries=await sbGet('tt_time_entries','is_running=eq.true');
+      runningEntries.forEach(r=>{if(!S.entries.find(e=>e.id===r.id))S.entries.push(r)});
+    }catch(e){}
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -437,35 +459,49 @@ const ICONS={
 function buildNav(){
   const n=$('sb-nav');
   let h='';
-  // Timer section
+  const role=S.user.access_level;
+  
+  // CLIENT: minimal nav
+  if(isCli()){
+    h+=`<div class="sb-section">Minha Conta</div>`;
+    h+=`<div class="sb-item" data-p="d-client-view" onclick="nav('d-client-view')">${ICONS.dash} Dashboard</div>`;
+    h+=`<div class="sb-item" data-p="p-my-prods" onclick="nav('p-my-prods')">${ICONS.prod} Minhas Produções</div>`;
+    n.innerHTML=h;return;
+  }
+  
+  // TIMER section — everyone except client
   h+=`<div class="sb-section">Tempo</div>`;
   h+=`<div class="sb-item" data-p="timer" onclick="nav('timer')">${ICONS.timer} Timer</div>`;
   h+=`<div class="sb-item" data-p="entries" onclick="nav('entries')">${ICONS.entries} Lançamentos</div>`;
-  // Dashboard
+  
+  // DASHBOARD section
   h+=`<div class="sb-section">Dashboard</div>`;
   h+=`<div class="sb-item" data-p="d-my" onclick="nav('d-my')">${ICONS.dash} Meu Painel</div>`;
-  h+=`<div class="sb-item" data-p="d-client" onclick="nav('d-client')">${ICONS.clients} Por Cliente</div>`;
-  if(isA()||isAcc()){
+  if(isA()||isAcc()||isPL()){
+    h+=`<div class="sb-item" data-p="d-client" onclick="nav('d-client')">${ICONS.clients} Por Cliente</div>`;
     h+=`<div class="sb-item" data-p="d-team" onclick="nav('d-team')">${ICONS.members} Por Time</div>`;
     h+=`<div class="sb-item" data-p="d-person" onclick="nav('d-person')">${ICONS.members} Por Pessoa</div>`;
   }
   if(isA()){
     h+=`<div class="sb-item" data-p="d-finance" onclick="nav('d-finance')">${ICONS.money} Financeiro</div>`;
   }
-  // Prod
+  
+  // PROD section
   h+=`<div class="sb-section">Produção AV</div>`;
   h+=`<div class="sb-item" data-p="p-requests" onclick="nav('p-requests')">${ICONS.prod} Solicitações</div>`;
-  h+=`<div class="sb-item" data-p="p-calendar" onclick="nav('p-calendar')">${ICONS.cal} Calendário</div>`;
   if(isA()||isPL()){
+    h+=`<div class="sb-item" data-p="p-calendar" onclick="nav('p-calendar')">${ICONS.cal} Calendário</div>`;
     h+=`<div class="sb-item" data-p="p-equip" onclick="nav('p-equip')">${ICONS.box} Equipamentos</div>`;
     h+=`<div class="sb-item" data-p="p-config" onclick="nav('p-config')">${ICONS.gear} Config Prod</div>`;
   }
-  // Score ADM
+  
+  // SCORE ADM — admin only
   if(isA()){
     h+=`<div class="sb-section">Gestão</div>`;
     h+=`<div class="sb-item" data-p="score" onclick="nav('score')">${ICONS.score} Score ADM</div>`;
   }
-  // Admin
+  
+  // CADASTROS — admin only
   if(isA()){
     h+=`<div class="sb-section">Cadastros</div>`;
     h+=`<div class="sb-item" data-p="members" onclick="nav('members')">${ICONS.members} Membros</div>`;
@@ -474,7 +510,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','p-requests':'Solicitações de Produção','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',score:'Score ADM',members:'Membros',clients:'Clientes'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',score:'Score ADM',members:'Membros',clients:'Clientes'};
 
 function nav(page){
   curPage=page;
@@ -491,6 +527,7 @@ async function renderPage(){
     const pages={
       timer:pgTimer,entries:pgEntries,
       'd-my':pgDashMy,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,
+      'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
       score:pgScore,members:pgMembers,clients:pgClients
     };
@@ -720,7 +757,16 @@ async function pgDashFinance(el){
 // PROD - REQUESTS
 // ═══════════════════════════════════════════════
 async function pgProdRequests(el){
-  const reqs=S.av_requests;
+  let reqs=S.av_requests;
+  // Filter by role
+  if(isUser()) reqs=reqs.filter(r=>r.requested_by===S.user.id);
+  else if(isAcc()){
+    // Account sees requests from their clients
+    const myClientIds=S.clients.filter(c=>c.team===S.user.team).map(c=>c.id);
+    reqs=reqs.filter(r=>myClientIds.includes(r.client_id)||r.requested_by===S.user.id);
+  }
+  // Admin and Prod Leader see all
+  
   const running=reqs.filter(r=>!['finalizado','cancelado'].includes(r.status));
   const done=reqs.filter(r=>['finalizado','cancelado'].includes(r.status));
   
@@ -762,7 +808,7 @@ async function saveRequest(){
   if(!title||!client||!type){toast('Preencha título, cliente e tipo','error');return}
   try{
     await sbPost('av_requests',{title,client_id:client,requested_by:S.user.id,prod_type:type,
-      objective:$('rq-obj')?.value||null,video_type:$('rq-vtype')?.value||null,
+      objective:$('rq-obj')?.value||'',expected_impact:'',video_type:$('rq-vtype')?.value||null,
       quantity_deliverables:parseInt($('rq-qty')?.value)||1,formats:$('rq-formats')?.value||null,
       desired_deadline:$('rq-deadline')?.value||null,reference_links:$('rq-refs')?.value||null,
       briefing_notes:$('rq-notes')?.value||null,status:'solicitado'});
@@ -964,13 +1010,13 @@ async function pgMembers(el){
   el.innerHTML=`
     <div class="tbl"><div class="tbl-h"><h3>Equipe (${S.members.length})</h3><button class="btn btn-r btn-sm" onclick="showMemberModal()">${ICONS.plus} Adicionar</button></div>
     <div class="tbl-r"><table><thead><tr><th>Nome</th><th>Time</th><th>Função</th><th>Nível</th><th class="rt">Cap</th><th class="rt">R$/h</th><th>Email</th><th></th></tr></thead>
-    <tbody>${S.members.map(m=>`<tr>
-      <td style="font-weight:600">${m.name}</td><td><span class="bg ${TBC(m.team)}">${TB(m.team)}</span></td><td>${m.job_title||'—'}</td>
-      <td><span class="bg ${m.access_level==='admin'?'bg-red':m.access_level==='account'?'bg-t1':m.access_level==='prod_leader'?'bg-prod':'bg-adm'}">${m.access_level}</span></td>
-      <td class="rt">${m.capacity_hours||'—'}h</td><td class="rt" style="font-family:var(--mono)">R$${Number(m.hourly_cost||0).toFixed(0)}</td>
+    <tbody>${S.members.map(m=>{const cli=m.client_id?S.clients.find(c=>c.id===m.client_id):null;return`<tr>
+      <td style="font-weight:600">${m.name}</td><td>${m.access_level==='client'?(cli?`<span style="font-size:11px;color:var(--txt2)">${cli.name}</span>`:'—'):`<span class="bg ${TBC(m.team)}">${TB(m.team)}</span>`}</td><td>${m.job_title||'—'}</td>
+      <td><span class="bg ${m.access_level==='admin'?'bg-red':m.access_level==='account'?'bg-t1':m.access_level==='prod_leader'?'bg-prod':m.access_level==='client'?'bg-amber':'bg-adm'}">${m.access_level}</span></td>
+      <td class="rt">${m.access_level==='client'?'—':((m.capacity_hours||'—')+'h')}</td><td class="rt" style="font-family:var(--mono)">${m.access_level==='client'?'—':'R$'+Number(m.hourly_cost||0).toFixed(0)}</td>
       <td style="font-size:12px;color:var(--txt2)">${m.email||'—'}</td>
       <td><button class="btn-icon" onclick="showMemberModal('${m.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>
-    </tr>`).join('')}</tbody></table></div></div>`;
+    </tr>`}).join('')}</tbody></table></div></div>`;
 }
 
 function showMemberModal(id){
@@ -981,8 +1027,13 @@ function showMemberModal(id){
     <div class="f-row"><div class="f-field"><label class="f-label">Nome completo *</label><input class="f-input" id="mb-name" value="${m?m.name:''}"></div><div class="f-field"><label class="f-label">Email *</label><input class="f-input" id="mb-email" value="${m?m.email:''}"></div></div>
     <div class="f-row3">
       <div class="f-field"><label class="f-label">Time</label><select class="f-sel" id="mb-team"><option value="">Sem time</option>${['T1','T3','T4','PACK','PROD','ADM'].map(t=>`<option value="${t}" ${m?.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div class="f-field"><label class="f-label">Nível</label><select class="f-sel" id="mb-role"><option value="user" ${m?.access_level==='user'?'selected':''}>User</option><option value="account" ${m?.access_level==='account'?'selected':''}>Account</option><option value="prod_leader" ${m?.access_level==='prod_leader'?'selected':''}>Líder Prod</option><option value="admin" ${m?.access_level==='admin'?'selected':''}>Admin</option></select></div>
+      <div class="f-field"><label class="f-label">Nível de acesso</label><select class="f-sel" id="mb-role" onchange="toggleClientField()"><option value="user" ${m?.access_level==='user'?'selected':''}>User (operador)</option><option value="account" ${m?.access_level==='account'?'selected':''}>Account</option><option value="prod_leader" ${m?.access_level==='prod_leader'?'selected':''}>Líder Prod</option><option value="admin" ${m?.access_level==='admin'?'selected':''}>Admin</option><option value="client" ${m?.access_level==='client'?'selected':''}>Cliente externo</option></select></div>
       <div class="f-field"><label class="f-label">Função</label><input class="f-input" id="mb-job" value="${m?m.job_title||'':''}"></div>
+    </div>
+    <div class="f-field" id="mb-client-field" style="display:${m?.access_level==='client'?'block':'none'}">
+      <label class="f-label">Empresa vinculada *</label>
+      <select class="f-sel" id="mb-client-id"><option value="">Selecione a empresa</option>${S.clients.map(c=>`<option value="${c.id}" ${m?.client_id===c.id?'selected':''}>${c.name}</option>`).join('')}</select>
+      <div style="font-size:11px;color:var(--txt3);margin-top:4px">O cliente verá apenas dados desta empresa</div>
     </div>
     <div class="f-row3">
       <div class="f-field"><label class="f-label">Capacidade (h/mês)</label><input class="f-input" type="number" id="mb-cap" value="${m?m.capacity_hours||140:140}"></div>
@@ -993,10 +1044,20 @@ function showMemberModal(id){
   openM('m-member');
 }
 
+function toggleClientField(){
+  const isClient=$('mb-role')?.value==='client';
+  const field=$('mb-client-field');
+  if(field)field.style.display=isClient?'block':'none';
+  // Auto-clear team for clients
+  if(isClient&&$('mb-team'))$('mb-team').value='';
+}
+
 async function saveMember(){
   const id=$('mb-id')?.value,name=$('mb-name')?.value,email=$('mb-email')?.value;
   if(!name||!email){toast('Preencha nome e email','error');return}
-  const data={name,email,team:$('mb-team')?.value||null,access_level:$('mb-role')?.value||'user',job_title:$('mb-job')?.value||null,capacity_hours:parseInt($('mb-cap')?.value)||140,hourly_cost:parseFloat($('mb-cost')?.value)||0,login_password:$('mb-pass')?.value||'TGTtime2026'};
+  const role=$('mb-role')?.value||'user';
+  if(role==='client'&&!$('mb-client-id')?.value){toast('Selecione a empresa vinculada','error');return}
+  const data={name,email,team:$('mb-team')?.value||null,access_level:role,job_title:$('mb-job')?.value||null,capacity_hours:parseInt($('mb-cap')?.value)||140,hourly_cost:parseFloat($('mb-cost')?.value)||0,login_password:$('mb-pass')?.value||'TGTtime2026',client_id:role==='client'?($('mb-client-id')?.value||null):null};
   try{
     if(id)await sbPatch('tt_members',`id=eq.${id}`,data);
     else{data.is_active=true;await sbPost('tt_members',data)}
@@ -1044,6 +1105,56 @@ async function saveClient(){
     else{data.is_active=true;await sbPost('tt_clients',data)}
     closeM('m-client');S.clients=await sbGet('tt_clients','is_active=eq.true&order=team,name');toast('Cliente salvo');renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// ═══════════════════════════════════════════════
+// CLIENT VIEW — Dashboard (external client users)
+// ═══════════════════════════════════════════════
+async function pgClientView(el){
+  if(!isCli()){el.innerHTML='<div class="empty">Acesso restrito a clientes</div>';return}
+  const clientCompany=S.clients.find(c=>c.id===S.user.client_id);
+  if(!clientCompany){el.innerHTML='<div class="empty">Nenhuma empresa vinculada ao seu perfil. Contate o administrador.</div>';return}
+  
+  const myEntries=S.entries.filter(e=>e.client_id===S.user.client_id&&!e.is_running);
+  const totalH=myEntries.reduce((s,e)=>s+(e.hours||0),0);
+  const target=Number(clientCompany.target_hours_month)||0;
+  const pct=target>0?totalH/target*100:0;
+  
+  // By action (no names — privacy)
+  const byAction={};myEntries.forEach(e=>{const a=e.action||'Geral';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  const baSorted=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
+  
+  // By function (job_title instead of name)
+  const byFunction={};myEntries.forEach(e=>{const m=S.members.find(mm=>mm.id===e.member_id);const fn=m?m.job_title||'Equipe':'Equipe';byFunction[fn]=(byFunction[fn]||0)+(e.hours||0)});
+  const bfSorted=Object.entries(byFunction).sort((a,b)=>b[1]-a[1]);
+  
+  el.innerHTML=datePillsHTML()+`
+    <div style="margin-bottom:20px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);display:flex;align-items:center;gap:12px">
+      <div style="width:40px;height:40px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px">${clientCompany.name.charAt(0)}</div>
+      <div><div style="font-weight:700;font-size:16px">${clientCompany.name}</div><div style="font-size:12px;color:var(--txt2)">Horas contratadas: ${target?fH(target)+'/mês':'Sob demanda'}</div></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="cl">Horas consumidas</div><div class="cv">${fH(totalH)}</div>${target?`<div class="pbar"><div class="pbar-fill ${pct>100?'pbar-red':pct>80?'pbar-amber':'pbar-green'}" style="width:${Math.min(pct,100)}%"></div></div><div class="cs">${pct.toFixed(0)}% do pacote</div>`:''}</div>
+      <div class="card card-blue"><div class="cl">Lançamentos</div><div class="cv">${myEntries.length}</div></div>
+      <div class="card card-green"><div class="cl">Atividades</div><div class="cv">${Object.keys(byAction).length}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="tbl"><div class="tbl-h"><h3>Por Atividade</h3></div><div class="tbl-r"><table><thead><tr><th>Ação</th><th class="rt">Horas</th><th class="rt">%</th></tr></thead>
+      <tbody>${baSorted.map(([n,h])=>`<tr><td>${n}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(h)}</td><td class="rt">${totalH>0?(h/totalH*100).toFixed(0):0}%</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="tbl"><div class="tbl-h"><h3>Por Função</h3></div><div class="tbl-r"><table><thead><tr><th>Área</th><th class="rt">Horas</th><th class="rt">%</th></tr></thead>
+      <tbody>${bfSorted.map(([n,h])=>`<tr><td>${n}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(h)}</td><td class="rt">${totalH>0?(h/totalH*100).toFixed(0):0}%</td></tr>`).join('')}</tbody></table></div></div>
+    </div>`;
+}
+
+// CLIENT VIEW — My Productions
+async function pgClientProds(el){
+  if(!isCli()){el.innerHTML='<div class="empty">Acesso restrito a clientes</div>';return}
+  const myReqs=S.av_requests.filter(r=>r.client_id===S.user.client_id);
+  
+  el.innerHTML=`
+    <div class="tbl"><div class="tbl-h"><h3>Produções (${myReqs.length})</h3></div>
+    <div class="tbl-r"><table><thead><tr><th>Título</th><th>Tipo</th><th>Status</th><th>Prazo</th></tr></thead>
+    <tbody>${myReqs.length?myReqs.map(r=>`<tr><td style="font-weight:600">${r.title}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">Nenhuma produção registrada</td></tr>'}</tbody></table></div></div>`;
 }
 
 // ═══════════════════════════════════════════════
