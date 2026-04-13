@@ -735,9 +735,11 @@ async function pgDashAdm(el){
   const all=S.entries.filter(e=>!e.is_running);
   const running=S.entries.filter(e=>e.is_running);
   const totalH=all.reduce((s,e)=>s+(e.hours||0),0);
-  const activeMembers=[...new Set(all.map(e=>e.member_id))].length;
+  const activeMemberIds=[...new Set(S.entries.map(e=>e.member_id))];
+  const activeMembers=activeMemberIds.length;
+  const activeCap=activeMemberIds.reduce((s,id)=>{const m=S.members.find(mm=>mm.id===id);return s+(m?.capacity_hours||140)},0);
   const totalCap=S.members.filter(m=>m.is_active&&!['client'].includes(m.access_level)).reduce((s,m)=>s+(m.capacity_hours||140),0);
-  const ocupacao=totalCap>0?(totalH/totalCap*100):0;
+  const ocupacao=activeCap>0?(totalH/activeCap*100):0;
 
   // Running timers detail
   const runningDetail=running.map(e=>{
