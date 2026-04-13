@@ -761,8 +761,8 @@ async function pgDashAdm(el){
   const bcSorted=Object.entries(byClient).sort((a,b)=>b[1].hours-a[1].hours);
 
   // Members with no entries this period
-  const activeMemberIds=new Set(S.entries.map(e=>e.member_id));
-  const inactive=S.members.filter(m=>m.is_active&&!['client','admin'].includes(m.access_level)&&!activeMemberIds.has(m.id));
+  const activeMemberIdSet=new Set(activeMemberIds);
+  const inactive=S.members.filter(m=>m.is_active&&!['client','admin'].includes(m.access_level)&&!activeMemberIdSet.has(m.id));
 
   el.innerHTML=datePillsHTML()+`
     <!-- RUNNING NOW -->
