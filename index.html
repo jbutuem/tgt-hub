@@ -889,47 +889,237 @@ function showRequestDetail(id){
   const c=S.clients.find(cl=>cl.id===r.client_id);
   const m=S.members.find(mm=>mm.id===r.requested_by);
   const nextStatuses=STATUS_FLOW[r.status]||[];
-  
-  // Who can change status?
   const canAct=isA()||isPL()||(isAcc()&&(r.status==='budget_sent'||r.requested_by===S.user.id));
+  const canBudget=isA()||isPL();
+  // Get existing budget
+  let bgt=null;
   
   $('m-req-title').textContent=r.title;
+  $('m-req-save').style.display='none';
+  
+  // Load budget then render
+  (async()=>{
+    try{const bgs=await sbGet('av_budgets',`request_id=eq.${r.id}&order=created_at.desc&limit=1`);bgt=bgs[0]||null}catch(e){}
+    renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget);
+    openM('m-req');
+  })();
+}
+
+function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
+  // Commission rules for this prod type
+  const rule=S.commission_rules.find(cr=>cr.prod_type===r.prod_type);
+  const isFee=r.prod_type==='fee_prod';
+  
   $('m-req-body').innerHTML=`
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:16px;background:var(--bg3);border-radius:var(--radius)">
-      <span class="st-pill st-${r.status}" style="font-size:13px;padding:5px 14px">${AV_STATUSES[r.status]||r.status}</span>
-      <div style="flex:1"></div>
-      <div style="font-size:12px;color:var(--txt2)">Criado em ${r.created_at?new Date(r.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</div>
+    <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+      <button class="pill active" id="tab-detail" onclick="switchReqTab('detail')">Detalhes</button>
+      ${!isFee?`<button class="pill" id="tab-budget" onclick="switchReqTab('budget')">Orçamento</button>`:''}
     </div>
     
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-      <div><div class="cl">Cliente</div><div style="font-weight:600;margin-top:4px">${c?c.name:'—'}</div></div>
-      <div><div class="cl">Tipo</div><div style="font-weight:600;margin-top:4px">${PROD_TYPES[r.prod_type]||r.prod_type}</div></div>
-      <div><div class="cl">Solicitante</div><div style="font-weight:600;margin-top:4px">${m?m.name:'—'}</div></div>
-      <div><div class="cl">Prazo desejado</div><div style="font-weight:600;margin-top:4px">${r.desired_deadline?fD(r.desired_deadline):'Não definido'}</div></div>
-      <div><div class="cl">Qtd entregas</div><div style="font-weight:600;margin-top:4px">${r.quantity_deliverables||1}</div></div>
-    </div>
-    
-    ${r.objective?`<div style="margin-bottom:16px"><div class="cl">Objetivo</div><div style="margin-top:4px;color:var(--txt);line-height:1.5">${r.objective}</div></div>`:''}
-    
-    ${r.video_type?`<div style="margin-bottom:16px"><div class="cl">Tipo de vídeo</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.video_type.split(',').map(v=>`<span class="bg bg-t1">${v.trim()}</span>`).join('')}</div></div>`:''}
-    
-    ${r.formats?`<div style="margin-bottom:16px"><div class="cl">Formatos</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.formats.split(',').map(f=>`<span class="bg bg-t3">${f.trim()}</span>`).join('')}</div></div>`:''}
-    
-    ${r.reference_links?`<div style="margin-bottom:16px"><div class="cl">Referências</div><div style="margin-top:4px;color:var(--txt2);font-size:13px;word-break:break-all">${r.reference_links}</div></div>`:''}
-    
-    ${r.briefing_notes?`<div style="margin-bottom:16px"><div class="cl">Briefing / Observações</div><div style="margin-top:4px;color:var(--txt);line-height:1.5">${r.briefing_notes}</div></div>`:''}
-    
-    ${canAct&&nextStatuses.length?`
-    <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
-      <div class="cl" style="margin-bottom:12px">Ações</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
-        ${nextStatuses.map(ns=>`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="changeRequestStatus('${r.id}','${ns}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`).join('')}
+    <!-- TAB: DETAILS -->
+    <div id="req-tab-detail">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:14px;background:var(--bg3);border-radius:var(--radius)">
+        <span class="st-pill st-${r.status}" style="font-size:13px;padding:5px 14px">${AV_STATUSES[r.status]||r.status}</span>
+        <div style="flex:1"></div>
+        <span style="font-size:12px;color:var(--txt2)">${r.created_at?new Date(r.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</span>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+        <div><div class="cl">Cliente</div><div style="font-weight:600;margin-top:4px">${c?c.name:'—'}</div></div>
+        <div><div class="cl">Tipo</div><div style="font-weight:600;margin-top:4px">${PROD_TYPES[r.prod_type]||r.prod_type}</div></div>
+        <div><div class="cl">Solicitante</div><div style="font-weight:600;margin-top:4px">${m?m.name:'—'}</div></div>
+        <div><div class="cl">Prazo</div><div style="font-weight:600;margin-top:4px">${r.desired_deadline?fD(r.desired_deadline):'Não definido'}</div></div>
+        <div><div class="cl">Qtd entregas</div><div style="font-weight:600;margin-top:4px">${r.quantity_deliverables||1}</div></div>
+      </div>
+      ${r.objective?`<div style="margin-bottom:14px"><div class="cl">Objetivo</div><div style="margin-top:4px;line-height:1.5">${r.objective}</div></div>`:''}
+      ${r.video_type?`<div style="margin-bottom:14px"><div class="cl">Tipo de vídeo</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.video_type.split(',').map(v=>`<span class="bg bg-t1">${v.trim()}</span>`).join('')}</div></div>`:''}
+      ${r.formats?`<div style="margin-bottom:14px"><div class="cl">Formatos</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.formats.split(',').map(f=>`<span class="bg bg-t3">${f.trim()}</span>`).join('')}</div></div>`:''}
+      ${r.reference_links?`<div style="margin-bottom:14px"><div class="cl">Referências</div><div style="margin-top:4px;color:var(--txt2);font-size:13px;word-break:break-all">${r.reference_links}</div></div>`:''}
+      ${r.briefing_notes?`<div style="margin-bottom:14px"><div class="cl">Briefing</div><div style="margin-top:4px;line-height:1.5">${r.briefing_notes}</div></div>`:''}
+      ${canAct&&nextStatuses.length?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px"><div class="cl" style="margin-bottom:10px">Ações</div><div style="display:flex;flex-wrap:wrap;gap:8px">${nextStatuses.map(ns=>`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="changeRequestStatus('${r.id}','${ns}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`).join('')}</div></div>`:''}
+    </div>
+    
+    <!-- TAB: BUDGET -->
+    ${!isFee?`<div id="req-tab-budget" style="display:none">
+      <div style="margin-bottom:16px;padding:12px 16px;background:var(--bg3);border-radius:var(--radius);display:flex;align-items:center;gap:12px">
+        <label class="chk-item ${bgt?.has_external_budget?'checked':''}" style="margin:0"><input type="checkbox" id="bg-external" ${bgt?.has_external_budget?'checked':''} onchange="this.parentElement.classList.toggle('checked',this.checked);toggleBudgetMode()"> Orçamento externo (cliente já tem valor)</label>
+      </div>
+      
+      <!-- WITH EXTERNAL BUDGET -->
+      <div id="bg-ext-section" style="display:${bgt?.has_external_budget?'block':'none'}">
+        <div class="f-field"><label class="f-label">Valor do cliente (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-client-price" value="${bgt?Number(bgt.client_price):0}" oninput="calcBudget()"></div>
+      </div>
+      
+      <!-- COSTS SECTION -->
+      <div style="margin-bottom:16px">
+        <div class="cl" style="margin-bottom:10px">Custos de Produção</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="f-field"><label class="f-label">Equipe / Diárias (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-crew" value="${bgt?Number(bgt.cost_crew_daily):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Deslocamento (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-travel" value="${bgt?Number(bgt.cost_travel):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Alimentação (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-food" value="${bgt?Number(bgt.cost_food):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Equipamento (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-equip" value="${bgt?Number(bgt.cost_equipment):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Talento / Elenco (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-talent" value="${bgt?Number(bgt.cost_talent):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Locação (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-location" value="${bgt?Number(bgt.cost_location):0}" oninput="calcBudget()"></div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom:16px">
+        <div class="cl" style="margin-bottom:10px">Custos de Pós-produção</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="f-field"><label class="f-label">Edição (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-edit" value="${bgt?Number(bgt.cost_edit):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Motion Design (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-motion" value="${bgt?Number(bgt.cost_motion):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Color Grading (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-color" value="${bgt?Number(bgt.cost_color_grade):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Áudio / Mixagem (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-audio" value="${bgt?Number(bgt.cost_audio):0}" oninput="calcBudget()"></div>
+        </div>
+      </div>
+      
+      <div class="f-row" style="margin-bottom:16px">
+        <div class="f-field"><label class="f-label">Outros custos (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-other" value="${bgt?Number(bgt.cost_other):0}" oninput="calcBudget()"></div>
+        <div class="f-field"><label class="f-label">Descrição outros</label><input class="f-input" id="bg-other-desc" value="${bgt?.cost_other_desc||''}"></div>
+      </div>
+      
+      <!-- TOTALS -->
+      <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--txt2)">Total Custos Internos</span><span style="font-weight:800;font-family:var(--mono);font-size:16px" id="bg-total-cost">R$ 0</span></div>
+        
+        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
+          <div class="cl" style="margin-bottom:10px">Impostos & Comissões</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="f-field"><label class="f-label">Taxa impostos (%)</label><input class="f-input" type="number" step="any" min="0" max="100" id="bg-tax" value="${bgt?Number(bgt.tax_rate)*100:18}" oninput="calcBudget()"></div>
+            <div style="display:flex;align-items:center"><span style="color:var(--txt2);font-size:12px">Valor: </span><span style="font-weight:700;font-family:var(--mono);margin-left:6px" id="bg-tax-val">R$ 0</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+            <div class="f-field"><label class="f-label">Comissão Account (%)</label><input class="f-input" type="number" step="any" min="0" max="100" id="bg-comm-acc" value="${bgt?Number(bgt.commission_account_pct):(rule?Number(rule.account_pct):0)}" oninput="calcBudget()"></div>
+            <div style="display:flex;align-items:center"><span style="color:var(--txt2);font-size:12px">Valor: </span><span style="font-weight:700;font-family:var(--mono);margin-left:6px" id="bg-comm-acc-val">R$ 0</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+            <div class="f-field"><label class="f-label">Comissão Líder (%)</label><input class="f-input" type="number" step="any" min="0" max="100" id="bg-comm-ldr" value="${bgt?Number(bgt.commission_leader_pct):(rule?Number(rule.leader_pct):0)}" oninput="calcBudget()"></div>
+            <div style="display:flex;align-items:center"><span style="color:var(--txt2);font-size:12px">Valor: </span><span style="font-weight:700;font-family:var(--mono);margin-left:6px" id="bg-comm-ldr-val">R$ 0</span></div>
+          </div>
+        </div>
+        
+        <div style="border-top:2px solid var(--red);padding-top:12px;margin-top:16px">
+          <div id="bg-no-ext" style="${bgt?.has_external_budget?'display:none':''}">
+            <div class="f-field"><label class="f-label" style="color:var(--red)">Preço sugerido ao cliente (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-suggested-price" value="${bgt?Number(bgt.client_price):0}" style="font-size:18px;font-weight:800;text-align:center" oninput="calcBudget()"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;text-align:center">
+            <div><div style="font-size:11px;color:var(--txt2)">LUCRO TGT</div><div style="font-size:20px;font-weight:800;font-family:var(--mono)" id="bg-margin-val">R$ 0</div><div style="font-size:12px;font-family:var(--mono)" id="bg-margin-pct">0%</div></div>
+            <div><div style="font-size:11px;color:var(--txt2)">COMISSÕES</div><div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--t1)" id="bg-total-comm">R$ 0</div></div>
+            <div><div style="font-size:11px;color:var(--txt2)">IMPOSTOS</div><div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--pack)" id="bg-total-tax">R$ 0</div></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- LEADER NOTES -->
+      <div class="f-field"><label class="f-label">Observações do líder</label><textarea class="f-area" id="bg-notes">${bgt?.leader_notes||''}</textarea></div>
+      <div class="f-row">
+        <div class="f-field"><label class="f-label">Data captação sugerida</label><input class="f-input" type="date" id="bg-cap-date" value="${bgt?.suggested_capture_date||''}"></div>
+        <div class="f-field"><label class="f-label">Data entrega sugerida</label><input class="f-input" type="date" id="bg-del-date" value="${bgt?.suggested_delivery_date||''}"></div>
+      </div>
+      <div class="f-row" style="margin-top:8px">
+        <div class="f-field"><label class="f-label">Horas captação</label><input class="f-input" type="number" step="any" id="bg-hrs-cap" value="${bgt?Number(bgt.refined_capture_hours):0}"></div>
+        <div class="f-field"><label class="f-label">Horas edição</label><input class="f-input" type="number" step="any" id="bg-hrs-edit" value="${bgt?Number(bgt.refined_edit_hours):0}"></div>
+        <div class="f-field"><label class="f-label">Horas pós</label><input class="f-input" type="number" step="any" id="bg-hrs-post" value="${bgt?Number(bgt.refined_post_hours):0}"></div>
+      </div>
+      
+      ${canBudget?`<div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+        <button class="btn btn-r" onclick="saveBudget('${r.id}','${bgt?.id||''}')">Salvar Orçamento</button>
+        ${r.status==='leader_reviewing'?`<button class="btn btn-r" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">Salvar & Enviar ao Account</button>`:''}
+      </div>`:''}
     </div>`:''}`;
   
-  // Hide the save button for detail view
-  $('m-req-save').style.display='none';
-  openM('m-req');
+  // Calculate on load
+  setTimeout(()=>{calcBudget();
+    // Fix input focus for modal
+    $('m-req-body').querySelectorAll('input,textarea,select').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})
+  },50);
+}
+
+function switchReqTab(tab){
+  const dEl=$('req-tab-detail'),bEl=$('req-tab-budget');
+  const dTab=$('tab-detail'),bTab=$('tab-budget');
+  if(tab==='detail'){if(dEl)dEl.style.display='';if(bEl)bEl.style.display='none';if(dTab)dTab.classList.add('active');if(bTab)bTab.classList.remove('active')}
+  else{if(dEl)dEl.style.display='none';if(bEl)bEl.style.display='';if(dTab)dTab.classList.remove('active');if(bTab)bTab.classList.add('active')}
+}
+
+function toggleBudgetMode(){
+  const ext=$('bg-external')?.checked;
+  const extSec=$('bg-ext-section');if(extSec)extSec.style.display=ext?'block':'none';
+  const noExt=$('bg-no-ext');if(noExt)noExt.style.display=ext?'none':'';
+  calcBudget();
+}
+
+function calcBudget(){
+  const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
+  // Costs
+  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
+  const el=id=>$(id);
+  if(el('bg-total-cost'))el('bg-total-cost').textContent=fMoney(costs);
+  
+  const ext=$('bg-external')?.checked;
+  const price=ext?v('bg-client-price'):v('bg-suggested-price');
+  
+  const taxPct=v('bg-tax')/100;
+  const taxAmt=price*taxPct;
+  if(el('bg-tax-val'))el('bg-tax-val').textContent=fMoney(taxAmt);
+  if(el('bg-total-tax'))el('bg-total-tax').textContent=fMoney(taxAmt);
+  
+  const commAccPct=v('bg-comm-acc')/100;
+  const commAccVal=price*commAccPct;
+  if(el('bg-comm-acc-val'))el('bg-comm-acc-val').textContent=fMoney(commAccVal);
+  
+  const commLdrPct=v('bg-comm-ldr')/100;
+  const commLdrVal=price*commLdrPct;
+  if(el('bg-comm-ldr-val'))el('bg-comm-ldr-val').textContent=fMoney(commLdrVal);
+  
+  const totalComm=commAccVal+commLdrVal;
+  if(el('bg-total-comm'))el('bg-total-comm').textContent=fMoney(totalComm);
+  
+  const margin=price-costs-taxAmt-totalComm;
+  const marginPct=price>0?(margin/price)*100:0;
+  if(el('bg-margin-val')){el('bg-margin-val').textContent=fMoney(margin);el('bg-margin-val').style.color=margin>=0?'var(--prod)':'var(--red)'}
+  if(el('bg-margin-pct')){el('bg-margin-pct').textContent=marginPct.toFixed(1)+'%';el('bg-margin-pct').style.color=margin>=0?'var(--prod)':'var(--red)'}
+}
+
+async function saveBudget(reqId,budgetId){
+  const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
+  const n=id=>{const el=$(id);return el?(el.value||'').trim()||null:null};
+  const ext=$('bg-external')?.checked;
+  const price=ext?v('bg-client-price'):v('bg-suggested-price');
+  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
+  const taxPct=v('bg-tax')/100;
+  
+  const data={
+    request_id:reqId,prepared_by:S.user.id,
+    has_external_budget:ext,client_price:price,
+    cost_crew_daily:v('bg-crew'),cost_travel:v('bg-travel'),cost_food:v('bg-food'),
+    cost_equipment:v('bg-equip'),cost_talent:v('bg-talent'),cost_location:v('bg-location'),
+    cost_other:v('bg-other'),cost_other_desc:n('bg-other-desc'),
+    cost_edit:v('bg-edit'),cost_motion:v('bg-motion'),cost_color_grade:v('bg-color'),cost_audio:v('bg-audio'),
+    total_internal_cost:costs,
+    tax_rate:taxPct,tax_amount:price*taxPct,
+    commission_account_pct:v('bg-comm-acc'),commission_account_value:price*(v('bg-comm-acc')/100),
+    commission_leader_pct:v('bg-comm-ldr'),commission_leader_value:price*(v('bg-comm-ldr')/100),
+    margin_tgt_value:price-costs-(price*taxPct)-(price*(v('bg-comm-acc')/100))-(price*(v('bg-comm-ldr')/100)),
+    margin_tgt_pct:price>0?((price-costs-(price*taxPct)-(price*(v('bg-comm-acc')/100))-(price*(v('bg-comm-ldr')/100)))/price)*100:0,
+    leader_notes:n('bg-notes'),
+    suggested_capture_date:n('bg-cap-date'),suggested_delivery_date:n('bg-del-date'),
+    refined_capture_hours:v('bg-hrs-cap'),refined_edit_hours:v('bg-hrs-edit'),refined_post_hours:v('bg-hrs-post'),
+    budget_status:'draft',updated_at:new Date().toISOString()
+  };
+  try{
+    if(budgetId)await sbPatch('av_budgets',`id=eq.${budgetId}`,data);
+    else await sbPost('av_budgets',data);
+    toast('Orçamento salvo');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function saveBudgetAndSend(reqId,budgetId){
+  await saveBudget(reqId,budgetId);
+  try{
+    await sbPatch('av_requests',`id=eq.${reqId}`,{status:'budget_sent',updated_at:new Date().toISOString()});
+    S.av_requests=await sbGet('av_requests','order=created_at.desc');
+    closeM('m-req');toast('Orçamento enviado ao Account');renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
 }
 
 async function changeRequestStatus(id,newStatus){
