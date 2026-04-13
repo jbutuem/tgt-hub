@@ -156,18 +156,29 @@ tr:hover td{background:var(--bg3)}
 
 /* STATUS PILLS */
 .st-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600}
-.st-solicitado{background:rgba(59,130,246,.15);color:var(--t1)}
-.st-briefing{background:rgba(168,85,247,.15);color:var(--t3)}
-.st-orcamento{background:rgba(245,158,11,.15);color:var(--pack)}
-.st-aprovado{background:rgba(34,197,94,.15);color:var(--prod)}
-.st-agendado{background:rgba(6,182,212,.15);color:var(--t4)}
-.st-producao{background:rgba(237,28,36,.15);color:var(--red)}
-.st-edicao{background:rgba(168,85,247,.15);color:var(--t3)}
-.st-finalizado{background:rgba(107,114,128,.15);color:var(--adm)}
-.st-cancelado{background:rgba(237,28,36,.08);color:var(--txt3);text-decoration:line-through}
+.st-draft{background:rgba(107,114,128,.15);color:var(--adm)}
+.st-pending_leader_review{background:rgba(59,130,246,.15);color:var(--t1)}
+.st-leader_reviewing{background:rgba(168,85,247,.15);color:var(--t3)}
+.st-budget_sent{background:rgba(245,158,11,.15);color:var(--pack)}
+.st-account_approved{background:rgba(34,197,94,.15);color:var(--prod)}
+.st-account_rejected{background:rgba(237,28,36,.15);color:var(--red)}
+.st-scheduling{background:rgba(6,182,212,.15);color:var(--t4)}
+.st-scheduled{background:rgba(6,182,212,.25);color:var(--t4)}
+.st-in_capture{background:rgba(237,28,36,.15);color:var(--red)}
+.st-in_edit{background:rgba(168,85,247,.15);color:var(--t3)}
+.st-in_review{background:rgba(245,158,11,.15);color:var(--pack)}
+.st-delivered{background:rgba(34,197,94,.15);color:var(--prod)}
+.st-cancelled{background:rgba(237,28,36,.08);color:var(--txt3);text-decoration:line-through}
 
 /* EMPTY */
 .empty{text-align:center;padding:48px 24px;color:var(--txt3)}
+
+/* CHECKBOX GRID */
+.chk-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chk-item{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;transition:.15s;user-select:none}
+.chk-item:hover{border-color:var(--txt3)}
+.chk-item.checked{background:var(--red-glow);border-color:var(--red);color:var(--white)}
+.chk-item input{display:none}
 .empty svg{margin-bottom:12px}
 .loading{text-align:center;padding:48px;color:var(--txt3)}
 .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:sp .6s linear infinite}
@@ -273,7 +284,7 @@ const HDR_R={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
 const ACTIONS=['Análise Estratégica','Reunião','Digital Comm','Design Gráfico','Webdesign','Apresentação','Embalagem','Branding','Campanha/Tráfego','Produção AV','Evento','Brand Review','ADM'];
 const PROD_TYPES={fee_prod:'Fee Prod',extra_prod:'Extra Prod',single_project:'Single Project',package:'Pacote'};
-const AV_STATUSES={solicitado:'Solicitado',briefing_review:'Briefing Review',orcamento:'Orçamento',aprovado:'Aprovado',agendado:'Agendado',em_producao:'Em Produção',em_edicao:'Em Edição',finalizado:'Finalizado',cancelado:'Cancelado'};
+const AV_STATUSES={draft:'Rascunho',pending_leader_review:'Aguardando Líder',leader_reviewing:'Em Análise',budget_sent:'Orçamento Enviado',account_approved:'Aprovado',account_rejected:'Rejeitado',scheduling:'Agendando',scheduled:'Agendado',in_capture:'Em Captação',in_edit:'Em Edição',in_review:'Em Revisão',delivered:'Entregue',cancelled:'Cancelado'};
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -767,8 +778,8 @@ async function pgProdRequests(el){
   }
   // Admin and Prod Leader see all
   
-  const running=reqs.filter(r=>!['finalizado','cancelado'].includes(r.status));
-  const done=reqs.filter(r=>['finalizado','cancelado'].includes(r.status));
+  const running=reqs.filter(r=>!['delivered','cancelled'].includes(r.status));
+  const done=reqs.filter(r=>['delivered','cancelled'].includes(r.status));
   
   el.innerHTML=`
     <div class="cards">
@@ -789,13 +800,21 @@ function showNewRequest(){
       <div class="f-field"><label class="f-label">Tipo *</label><select class="f-sel" id="rq-type"><option value="">Selecione</option>${Object.entries(PROD_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
     </div>
     <div class="f-field"><label class="f-label">Objetivo / Impacto esperado</label><textarea class="f-area" id="rq-obj" placeholder="Qual o objetivo estratégico desta produção?"></textarea></div>
-    <div class="f-row">
-      <div class="f-field"><label class="f-label">Tipo de vídeo</label><select class="f-sel" id="rq-vtype"><option value="">Selecione</option><option>Institucional</option><option>Produto</option><option>Tutorial</option><option>Depoimento</option><option>Evento</option><option>Reels/Shorts</option><option>Outro</option></select></div>
-      <div class="f-field"><label class="f-label">Qtd entregas</label><input class="f-input" type="number" id="rq-qty" min="1" value="1"></div>
+    <div class="f-field">
+      <label class="f-label">O que o vídeo vai ter (selecione todos que se aplicam)</label>
+      <div class="chk-grid" id="rq-vtypes">
+        ${[['institutional','Institucional'],['interview','Entrevista'],['testimonial','Depoimento'],['product','Produto'],['tutorial','Tutorial/How-to'],['event','Evento'],['campaign','Campanha'],['lifestyle','Lifestyle'],['making_of','Making Of'],['recipe','Receita'],['unboxing','Unboxing'],['reels','Reels/Shorts'],['drone','Drone'],['animation','Animação/Motion'],['other','Outro']].map(([v,l])=>`<label class="chk-item" onclick="this.classList.toggle('checked')"><input type="checkbox" value="${v}">${l}</label>`).join('')}
+      </div>
     </div>
     <div class="f-row">
-      <div class="f-field"><label class="f-label">Formatos</label><input class="f-input" id="rq-formats" placeholder="16:9, 9:16, 1:1..."></div>
+      <div class="f-field"><label class="f-label">Qtd entregas</label><input class="f-input" type="number" id="rq-qty" min="1" value="1"></div>
       <div class="f-field"><label class="f-label">Prazo desejado</label><input class="f-input" type="date" id="rq-deadline"></div>
+    </div>
+    <div class="f-field">
+      <label class="f-label">Formatos dos entregáveis</label>
+      <div class="chk-grid" id="rq-formats">
+        ${[['16:9 Horizontal (YouTube/Site)'],['9:16 Vertical (Reels/Stories/TikTok)'],['1:1 Quadrado (Feed)'],['4:5 Retrato (Feed Instagram)'],['21:9 Ultrawide (Banner)'],['GIF animado'],['Foto still (do set)'],['Áudio podcast/spot']].map(f=>`<label class="chk-item" onclick="this.classList.toggle('checked')"><input type="checkbox" value="${f[0]}">${f[0]}</label>`).join('')}
+      </div>
     </div>
     <div class="f-field"><label class="f-label">Referências / Links</label><textarea class="f-area" id="rq-refs" placeholder="Links de referência visual ou de conteúdo"></textarea></div>
     <div class="f-field"><label class="f-label">Briefing / Observações</label><textarea class="f-area" id="rq-notes" placeholder="Detalhes adicionais sobre a produção"></textarea></div>`;
@@ -806,12 +825,29 @@ function showNewRequest(){
 async function saveRequest(){
   const title=$('rq-title')?.value,client=$('rq-client')?.value,type=$('rq-type')?.value;
   if(!title||!client||!type){toast('Preencha título, cliente e tipo','error');return}
+  const n=v=>{const s=(v||'').trim();return s===''?null:s};
+  const ni=v=>{const x=parseInt(v);return isNaN(x)?null:x};
+  // Read checked video types
+  const vtypes=[...$('rq-vtypes').querySelectorAll('input:checked')].map(i=>i.value).join(', ');
+  // Read checked formats
+  const formats=[...$('rq-formats').querySelectorAll('input:checked')].map(i=>i.value).join(', ');
   try{
-    await sbPost('av_requests',{title,client_id:client,requested_by:S.user.id,prod_type:type,
-      objective:$('rq-obj')?.value||'',expected_impact:'',video_type:$('rq-vtype')?.value||null,
-      quantity_deliverables:parseInt($('rq-qty')?.value)||1,formats:$('rq-formats')?.value||null,
-      desired_deadline:$('rq-deadline')?.value||null,reference_links:$('rq-refs')?.value||null,
-      briefing_notes:$('rq-notes')?.value||null,status:'solicitado'});
+    const body={
+      title:title.trim(),
+      client_id:client,
+      requested_by:S.user.id,
+      prod_type:type,
+      objective:n($('rq-obj')?.value),
+      expected_impact:null,
+      video_type:n(vtypes),
+      quantity_deliverables:ni($('rq-qty')?.value)||1,
+      formats:n(formats),
+      desired_deadline:n($('rq-deadline')?.value),
+      reference_links:n($('rq-refs')?.value),
+      briefing_notes:n($('rq-notes')?.value),
+      status:'pending_leader_review'
+    };
+    await sbPost('av_requests',body);
     closeM('m-req');S.av_requests=await sbGet('av_requests','order=created_at.desc');toast('Solicitação criada');renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
