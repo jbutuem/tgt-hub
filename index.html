@@ -628,13 +628,36 @@ async function startTimer(){
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
+// Board → Timer column mapping for Monday sync
+const MONDAY_TIMER_BOARDS=[
+  {board_id:'18401417952', timer_col:'color_mm2b5g4d', name:'NONO'},
+  // Future boards will be added here as timer integrations are created
+];
+const MAKE_STOP_TIMER_WEBHOOK='https://hook.us2.make.com/b21erx2hrtfcjllsdt6qjeaotia82kug';
+
 async function stopTimer(){
   if(!activeEntryId)return;
   try{
     const ended=new Date().toISOString();
+    // Get the entry before closing to find the description for Monday matching
+    const entry=S.entries.find(e=>e.id===activeEntryId);
     await sbPatch('tt_time_entries',`id=eq.${activeEntryId}`,{is_running:false,ended_at:ended});
     running=false;timerStart=null;activeEntryId=null;timerSec=0;
-    await loadEntries();toast('Timer parado');nav('timer');
+    
+    // Sync with Monday — stop timer on all boards for this user
+    const mondayUserId=S.user.monday_user_id;
+    if(mondayUserId){
+      MONDAY_TIMER_BOARDS.forEach(b=>{
+        fetch(MAKE_STOP_TIMER_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          monday_user_id:mondayUserId,
+          board_id:b.board_id,
+          timer_column_id:b.timer_col,
+          description:entry?.description||''
+        })}).catch(()=>{});
+      });
+    }
+    
+    await loadEntries();toast('Timer parado');buildNav();nav('timer');
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
