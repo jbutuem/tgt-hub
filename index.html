@@ -788,11 +788,13 @@ async function pgProdRequests(el){
     </div>
     <div class="tbl"><div class="tbl-h"><h3>Solicitações</h3><button class="btn btn-r btn-sm" onclick="showNewRequest()">${ICONS.plus} Nova Solicitação</button></div>
     <div class="tbl-r"><table><thead><tr><th>Título</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Prazo</th><th>Solicitante</th></tr></thead>
-    <tbody>${reqs.length?reqs.map(r=>{const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);return`<tr><td style="font-weight:600">${r.title}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nenhuma solicitação ainda</td></tr>'}</tbody></table></div></div>`;
+    <tbody>${reqs.length?reqs.map(r=>{const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);return`<tr style="cursor:pointer" onclick="showRequestDetail('${r.id}')"><td style="font-weight:600">${r.title}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nenhuma solicitação ainda</td></tr>'}</tbody></table></div></div>`;
 }
 
 function showNewRequest(){
   $('m-req-title').textContent='Nova Solicitação de Produção';
+  $('m-req-save').style.display='';
+  $('m-req-save').onclick=saveRequest;
   $('m-req-body').innerHTML=`
     <div class="f-field"><label class="f-label">Título da produção *</label><input class="f-input" id="rq-title" placeholder="Ex: Vídeo institucional Kerry 2026"></div>
     <div class="f-row">
@@ -818,7 +820,6 @@ function showNewRequest(){
     </div>
     <div class="f-field"><label class="f-label">Referências / Links</label><textarea class="f-area" id="rq-refs" placeholder="Links de referência visual ou de conteúdo"></textarea></div>
     <div class="f-field"><label class="f-label">Briefing / Observações</label><textarea class="f-area" id="rq-notes" placeholder="Detalhes adicionais sobre a produção"></textarea></div>`;
-  $('m-req-save').onclick=saveRequest;
   openM('m-req');
 }
 
@@ -849,6 +850,96 @@ async function saveRequest(){
     };
     await sbPost('av_requests',body);
     closeM('m-req');S.av_requests=await sbGet('av_requests','order=created_at.desc');toast('Solicitação criada');renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// ═══════════════════════════════════════════════
+// REQUEST DETAIL + APPROVAL FLOW
+// ═══════════════════════════════════════════════
+const STATUS_FLOW={
+  pending_leader_review:['leader_reviewing','cancelled'],
+  leader_reviewing:['budget_sent','cancelled'],
+  budget_sent:['account_approved','account_rejected'],
+  account_approved:['scheduling','cancelled'],
+  account_rejected:['pending_leader_review','cancelled'],
+  scheduling:['scheduled','cancelled'],
+  scheduled:['in_capture','cancelled'],
+  in_capture:['in_edit'],
+  in_edit:['in_review'],
+  in_review:['delivered','in_edit'],
+  delivered:[],
+  cancelled:['pending_leader_review']
+};
+const STATUS_ACTION_LABELS={
+  leader_reviewing:'Iniciar Análise',budget_sent:'Enviar Orçamento',
+  account_approved:'Aprovar',account_rejected:'Rejeitar',
+  scheduling:'Agendar',scheduled:'Confirmar Agenda',
+  in_capture:'Iniciar Captação',in_edit:'Enviar pra Edição',
+  in_review:'Enviar pra Revisão',delivered:'Marcar Entregue',
+  cancelled:'Cancelar',pending_leader_review:'Reabrir'
+};
+const STATUS_ACTION_COLORS={
+  account_approved:'btn-r',delivered:'btn-r',cancelled:'btn-o',
+  account_rejected:'btn-o'
+};
+
+function showRequestDetail(id){
+  const r=S.av_requests.find(rq=>rq.id===id);
+  if(!r)return;
+  const c=S.clients.find(cl=>cl.id===r.client_id);
+  const m=S.members.find(mm=>mm.id===r.requested_by);
+  const nextStatuses=STATUS_FLOW[r.status]||[];
+  
+  // Who can change status?
+  const canAct=isA()||isPL()||(isAcc()&&(r.status==='budget_sent'||r.requested_by===S.user.id));
+  
+  $('m-req-title').textContent=r.title;
+  $('m-req-body').innerHTML=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:16px;background:var(--bg3);border-radius:var(--radius)">
+      <span class="st-pill st-${r.status}" style="font-size:13px;padding:5px 14px">${AV_STATUSES[r.status]||r.status}</span>
+      <div style="flex:1"></div>
+      <div style="font-size:12px;color:var(--txt2)">Criado em ${r.created_at?new Date(r.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'}</div>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div><div class="cl">Cliente</div><div style="font-weight:600;margin-top:4px">${c?c.name:'—'}</div></div>
+      <div><div class="cl">Tipo</div><div style="font-weight:600;margin-top:4px">${PROD_TYPES[r.prod_type]||r.prod_type}</div></div>
+      <div><div class="cl">Solicitante</div><div style="font-weight:600;margin-top:4px">${m?m.name:'—'}</div></div>
+      <div><div class="cl">Prazo desejado</div><div style="font-weight:600;margin-top:4px">${r.desired_deadline?fD(r.desired_deadline):'Não definido'}</div></div>
+      <div><div class="cl">Qtd entregas</div><div style="font-weight:600;margin-top:4px">${r.quantity_deliverables||1}</div></div>
+    </div>
+    
+    ${r.objective?`<div style="margin-bottom:16px"><div class="cl">Objetivo</div><div style="margin-top:4px;color:var(--txt);line-height:1.5">${r.objective}</div></div>`:''}
+    
+    ${r.video_type?`<div style="margin-bottom:16px"><div class="cl">Tipo de vídeo</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.video_type.split(',').map(v=>`<span class="bg bg-t1">${v.trim()}</span>`).join('')}</div></div>`:''}
+    
+    ${r.formats?`<div style="margin-bottom:16px"><div class="cl">Formatos</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.formats.split(',').map(f=>`<span class="bg bg-t3">${f.trim()}</span>`).join('')}</div></div>`:''}
+    
+    ${r.reference_links?`<div style="margin-bottom:16px"><div class="cl">Referências</div><div style="margin-top:4px;color:var(--txt2);font-size:13px;word-break:break-all">${r.reference_links}</div></div>`:''}
+    
+    ${r.briefing_notes?`<div style="margin-bottom:16px"><div class="cl">Briefing / Observações</div><div style="margin-top:4px;color:var(--txt);line-height:1.5">${r.briefing_notes}</div></div>`:''}
+    
+    ${canAct&&nextStatuses.length?`
+    <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
+      <div class="cl" style="margin-bottom:12px">Ações</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${nextStatuses.map(ns=>`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="changeRequestStatus('${r.id}','${ns}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`).join('')}
+      </div>
+    </div>`:''}`;
+  
+  // Hide the save button for detail view
+  $('m-req-save').style.display='none';
+  openM('m-req');
+}
+
+async function changeRequestStatus(id,newStatus){
+  if(newStatus==='cancelled'&&!confirm('Cancelar esta solicitação?'))return;
+  try{
+    await sbPatch('av_requests',`id=eq.${id}`,{status:newStatus,updated_at:new Date().toISOString()});
+    S.av_requests=await sbGet('av_requests','order=created_at.desc');
+    closeM('m-req');
+    toast(`Status atualizado: ${AV_STATUSES[newStatus]||newStatus}`);
+    renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
