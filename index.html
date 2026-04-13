@@ -1008,6 +1008,17 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         <div style="border-top:2px solid var(--red);padding-top:12px;margin-top:16px">
           <div id="bg-elig-info" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;margin-right:6px">Elegibilidade:</span></div>
           <div id="bg-no-ext" style="${bgt?.has_external_budget?'display:none':''}">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div class="f-field"><label class="f-label" style="color:var(--prod)">Receita desejada TGT (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-receita" value="0" style="font-size:15px;font-weight:700;text-align:center;border-color:var(--prod)" oninput="calcBudgetFromReceita()"></div>
+              <div class="f-field"><label class="f-label">Ou margem desejada</label>
+                <div style="display:flex;gap:4px">
+                  <button class="pill" onclick="setBudgetMargin(30)" style="flex:1;font-size:10px">30%</button>
+                  <button class="pill" onclick="setBudgetMargin(40)" style="flex:1;font-size:10px">40%</button>
+                  <button class="pill" onclick="setBudgetMargin(50)" style="flex:1;font-size:10px">50%</button>
+                  <input class="f-input" type="number" id="bg-margin-input" placeholder="%" style="width:60px;text-align:center;padding:6px" oninput="calcBudgetFromMarginInput()">
+                </div>
+              </div>
+            </div>
             <div class="f-field"><label class="f-label" style="color:var(--red)">Preço sugerido ao cliente (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-suggested-price" value="${bgt?Number(bgt.client_price):0}" style="font-size:18px;font-weight:800;text-align:center" oninput="calcBudget()"></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;text-align:center">
@@ -1107,6 +1118,40 @@ function calcBudget(){
   }
 }
 
+function calcBudgetFromReceita(){
+  const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
+  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
+  const receita=v('bg-receita');
+  const taxPct=v('bg-tax')/100;
+  const commAccPct=v('bg-comm-acc')/100;
+  const commLdrPct=v('bg-comm-ldr')/100;
+  const divisor=1-taxPct-commAccPct-commLdrPct;
+  const price=divisor>0?Math.round((costs+receita)/divisor):0;
+  if($('bg-suggested-price'))$('bg-suggested-price').value=price;
+  if($('bg-margin-input')&&price>0)$('bg-margin-input').value=Math.round(receita/price*100);
+  calcBudget();
+}
+
+function setBudgetMargin(pct){
+  if($('bg-margin-input'))$('bg-margin-input').value=pct;
+  calcBudgetFromMarginInput();
+}
+
+function calcBudgetFromMarginInput(){
+  const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
+  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
+  const marginPct=v('bg-margin-input')/100;
+  const taxPct=v('bg-tax')/100;
+  const commAccPct=v('bg-comm-acc')/100;
+  const commLdrPct=v('bg-comm-ldr')/100;
+  const divisor=1-taxPct-commAccPct-commLdrPct-marginPct;
+  const price=divisor>0?Math.round(costs/divisor):0;
+  const receita=Math.round(price*marginPct);
+  if($('bg-suggested-price'))$('bg-suggested-price').value=price;
+  if($('bg-receita'))$('bg-receita').value=receita;
+  calcBudget();
+}
+
 async function saveBudget(reqId,budgetId){
   const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
   const n=id=>{const el=$(id);return el?(el.value||'').trim()||null:null};
@@ -1129,10 +1174,12 @@ async function saveBudget(reqId,budgetId){
     margin_tgt_value:price-costs-(price*taxPct)-(price*(v('bg-comm-acc')/100))-(price*(v('bg-comm-ldr')/100)),
     margin_tgt_pct:price>0?((price-costs-(price*taxPct)-(price*(v('bg-comm-acc')/100))-(price*(v('bg-comm-ldr')/100)))/price)*100:0,
     leader_notes:n('bg-notes'),
-    suggested_capture_date:n('bg-cap-date'),suggested_delivery_date:n('bg-del-date'),
     refined_capture_hours:v('bg-hrs-cap'),refined_edit_hours:v('bg-hrs-edit'),refined_post_hours:v('bg-hrs-post'),
     budget_status:'draft',updated_at:new Date().toISOString()
   };
+  // Only include date fields if they have valid values (avoid 400 from empty string → date cast)
+  const capDate=n('bg-cap-date');if(capDate)data.suggested_capture_date=capDate;
+  const delDate=n('bg-del-date');if(delDate)data.suggested_delivery_date=delDate;
   try{
     if(budgetId)await sbPatch('av_budgets',`id=eq.${budgetId}`,data);
     else await sbPost('av_budgets',data);
@@ -1416,6 +1463,71 @@ function getMyEligibility(){
   return elig;
 }
 
+let extrasMode='budget'; // 'budget' or 'calc'
+
+function setExtrasMode(mode){
+  extrasMode=mode;
+  const bEl=$('ex-sec-budget'),cEl=$('ex-sec-calc');
+  const bBtn=$('ex-mode-budget'),cBtn=$('ex-mode-calc');
+  if(mode==='budget'){
+    if(bEl)bEl.style.display='';if(cEl)cEl.style.display='none';
+    if(bBtn)bBtn.classList.add('active');if(cBtn)cBtn.classList.remove('active');
+    calcExtras();
+  }else{
+    if(bEl)bEl.style.display='none';if(cEl)cEl.style.display='';
+    if(bBtn)bBtn.classList.remove('active');if(cBtn)cBtn.classList.add('active');
+    calcExtrasFromReceita();
+  }
+}
+
+function setMargin(pct){
+  if($('ex-margin-pct'))$('ex-margin-pct').value=pct;
+  document.querySelectorAll('#ex-sec-calc .pill').forEach(p=>p.classList.remove('active'));
+  calcExtrasFromMargin();
+}
+
+function calcExtrasFromReceita(){
+  // Receita desejada → calcula preço
+  const ct=parseFloat($('ex-ctime')?.value)||0;
+  const cd=parseFloat($('ex-cdiv')?.value)||0;
+  const receita=parseFloat($('ex-receita')?.value)||0;
+  const elig=getMyEligibility();
+  const pct=scorePctDirect(elig.score,elig.blockStatus);
+  const ldrPct=pct>0?0.10:0;
+  // Price = (costs + receita) / (1 - taxRate - accPct - ldrPct)
+  const taxRate=0.18;
+  const divisor=1-taxRate-pct-ldrPct;
+  const price=divisor>0?Math.round((ct+cd+receita)/divisor):0;
+  if($('ex-budget'))$('ex-budget').value=price;
+  if($('ex-calc-price'))$('ex-calc-price').textContent=fMoney(price);
+  const imp=price*taxRate;const base=Math.max(0,price-imp-ct-cd);
+  if($('ex-calc-breakdown'))$('ex-calc-breakdown').textContent=`${fMoney(ct+cd)} custos + ${fMoney(Math.round(imp))} impostos + ${fMoney(Math.round(base*pct))} account + ${fMoney(Math.round(base*ldrPct))} líder + ${fMoney(receita)} receita`;
+  // Update margin field
+  if($('ex-margin-pct')&&price>0)$('ex-margin-pct').value=Math.round(receita/price*100);
+  calcExtras();
+}
+
+function calcExtrasFromMargin(){
+  // Margem % → calcula receita → calcula preço
+  const ct=parseFloat($('ex-ctime')?.value)||0;
+  const cd=parseFloat($('ex-cdiv')?.value)||0;
+  const marginPct=parseFloat($('ex-margin-pct')?.value)||0;
+  const elig=getMyEligibility();
+  const pct=scorePctDirect(elig.score,elig.blockStatus);
+  const ldrPct=pct>0?0.10:0;
+  const taxRate=0.18;
+  // Price = costs / (1 - tax - acc - ldr - marginPct/100)
+  const divisor=1-taxRate-pct-ldrPct-(marginPct/100);
+  const price=divisor>0?Math.round((ct+cd)/divisor):0;
+  const receita=Math.round(price*(marginPct/100));
+  if($('ex-receita'))$('ex-receita').value=receita;
+  if($('ex-budget'))$('ex-budget').value=price;
+  if($('ex-calc-price'))$('ex-calc-price').textContent=fMoney(price);
+  const imp=price*taxRate;const base=Math.max(0,price-imp-ct-cd);
+  if($('ex-calc-breakdown'))$('ex-calc-breakdown').textContent=`${fMoney(ct+cd)} custos + ${fMoney(Math.round(imp))} impostos + ${fMoney(Math.round(base*pct))} account + ${fMoney(Math.round(base*ldrPct))} líder + ${fMoney(receita)} receita`;
+  calcExtras();
+}
+
 function scorePctDirect(score,blockStatus){
   if(blockStatus&&blockStatus!=='none')return 0;
   if(score===null||score===undefined)return 0;
@@ -1475,12 +1587,50 @@ async function pgExtras(el){
       <div class="f-field"><label class="f-label">Cliente *</label><select class="f-sel" id="ex-cliente" onchange="calcExtras()">${myClients.map(c=>`<option value="${c.name}">${c.name}</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Tipo *</label><select class="f-sel" id="ex-tipo" onchange="calcExtras()">${EXTRAS_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Impacto *</label><select class="f-sel" id="ex-impacto" onchange="calcExtras()">${EXTRAS_IMPACT.map(i=>`<option>${i}</option>`).join('')}</select></div>
-      <div class="f-field"><label class="f-label">Budget do projeto (R$) *</label><input class="f-input" type="number" id="ex-budget" placeholder="0" oninput="calcExtras()"></div>
       <div class="f-field"><label class="f-label">Custo do time (R$)</label><input class="f-input" type="number" id="ex-ctime" placeholder="Horas × taxa interna" oninput="calcExtras()"></div>
       <div class="f-field"><label class="f-label">Custos diversos (R$)</label><input class="f-input" type="number" id="ex-cdiv" placeholder="Transp. + alim. + fornecedores" oninput="calcExtras()"></div>
-      <div class="f-field"><label class="f-label">Stakeholders (opcional)</label><input class="f-input" id="ex-stake" placeholder="Ex: Enzo 60%, Mariana 40%"></div>
-      <div class="f-field" style="grid-column:1/-1"><label class="f-label">Observações</label><input class="f-input" id="ex-obs" placeholder="Contexto adicional"></div>
     </div>
+
+    <!-- BUDGET MODE TOGGLE -->
+    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:10px">Como definir o valor?</div>
+      <div style="display:flex;gap:8px">
+        <button class="pill active" id="ex-mode-budget" onclick="setExtrasMode('budget')" style="flex:1;text-align:center;padding:10px">Tenho budget definido</button>
+        <button class="pill" id="ex-mode-calc" onclick="setExtrasMode('calc')" style="flex:1;text-align:center;padding:10px">Preciso calcular o preço</button>
+      </div>
+    </div>
+
+    <!-- MODE A: Budget definido -->
+    <div id="ex-sec-budget" style="margin-bottom:14px">
+      <div class="f-field"><label class="f-label" style="color:var(--prod);font-size:12px">Budget do cliente (R$) *</label><input class="f-input" type="number" id="ex-budget" placeholder="Valor já definido pelo cliente" style="font-size:16px;font-weight:700;text-align:center" oninput="calcExtras()"></div>
+    </div>
+
+    <!-- MODE B: Calcular preço -->
+    <div id="ex-sec-calc" style="display:none;margin-bottom:14px;background:var(--bg3);border-radius:var(--radius);padding:16px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Calculadora de preço</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="f-field"><label class="f-label">Receita líquida desejada (R$)</label><input class="f-input" type="number" id="ex-receita" placeholder="Quanto a TGT quer lucrar" style="font-size:15px;font-weight:700;text-align:center;border-color:var(--prod)" oninput="calcExtrasFromReceita()"></div>
+        <div class="f-field"><label class="f-label">Ou margem desejada (%)</label>
+          <div style="display:flex;gap:6px">
+            <button class="pill" onclick="setMargin(30)" style="flex:1">30%</button>
+            <button class="pill" onclick="setMargin(40)" style="flex:1">40%</button>
+            <button class="pill" onclick="setMargin(50)" style="flex:1">50%</button>
+            <input class="f-input" type="number" id="ex-margin-pct" placeholder="%" style="width:70px;text-align:center" oninput="calcExtrasFromMargin()">
+          </div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px;text-align:center">
+        <div style="font-size:10px;color:var(--txt3);margin-bottom:4px">PREÇO CALCULADO PARA O CLIENTE</div>
+        <div style="font-size:32px;font-weight:900;color:var(--prod);font-family:var(--mono)" id="ex-calc-price">R$ 0</div>
+        <div style="font-size:11px;color:var(--txt2);margin-top:4px" id="ex-calc-breakdown">Custos + Impostos + Comissões + Receita = Preço</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="f-field"><label class="f-label">Stakeholders (opcional)</label><input class="f-input" id="ex-stake" placeholder="Ex: Enzo 60%, Mariana 40%"></div>
+      <div class="f-field"><label class="f-label">Observações</label><input class="f-input" id="ex-obs" placeholder="Contexto adicional"></div>
+    </div>
+
     <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;margin-bottom:16px">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Prévia da distribuição</div>
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px">
