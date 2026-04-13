@@ -586,9 +586,14 @@ async function reloadPage(){await loadEntries();renderPage()}
 // TIMER
 // ═══════════════════════════════════════════════
 function startTick(){clearInterval(timerInt);timerInt=setInterval(()=>{if(timerStart){timerSec=(Date.now()-timerStart.getTime())/1000;updClock()}},1000)}
-function updClock(){const el=$('tclock');if(!el)return;const h=Math.floor(timerSec/3600),m=Math.floor((timerSec%3600)/60),s=Math.floor(timerSec%60);el.textContent=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;el.className='timer-display'+(running?' running':'')}
+function updClock(){const el=$('tclock');if(!el)return;if(!running||!timerStart){el.textContent='00:00:00';el.className='timer-display';return}timerSec=(Date.now()-timerStart.getTime())/1000;const h=Math.floor(timerSec/3600),m=Math.floor((timerSec%3600)/60),s=Math.floor(timerSec%60);el.textContent=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;el.className='timer-display running'}
 
 async function pgTimer(el){
+  // Re-check running state from loaded entries
+  const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+  if(re&&!running){running=true;timerStart=new Date(re.started_at);activeEntryId=re.id}
+  else if(!re&&running){running=false;timerStart=null;activeEntryId=null;timerSec=0}
+  
   const myEntries=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running);
   const todayH=myEntries.filter(e=>e.started_at&&e.started_at.substring(0,10)===new Date().toISOString().substring(0,10)).reduce((s,e)=>s+(e.hours||0),0);
   
@@ -599,9 +604,9 @@ async function pgTimer(el){
     </div>
     <div id="tclock" class="timer-display ${running?'running':''}">00:00:00</div>
     <div style="max-width:500px;margin:0 auto">
-      <div class="f-field"><label class="f-label">Descrição</label><input class="f-input" id="t-desc" placeholder="O que você está fazendo?" value="${running?'':''}"></div>
+      <div class="f-field"><label class="f-label">Descrição</label><input class="f-input" id="t-desc" placeholder="O que você está fazendo?" value="${running&&re?re.description||'':''}"></div>
       <div class="f-row">
-        <div class="f-field"><label class="f-label">Cliente</label><select class="f-sel" id="t-client"><option value="">Selecione</option>${S.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+        <div class="f-field"><label class="f-label">Cliente</label><select class="f-sel" id="t-client"><option value="">Selecione</option>${S.clients.map(c=>`<option value="${c.id}" ${running&&re&&re.client_id===c.id?'selected':''}>${c.name}</option>`).join('')}</select></div>
         <div class="f-field"><label class="f-label">Ação</label><select class="f-sel" id="t-action"><option value="">Selecione</option>${ACTIONS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
       </div>
       <div class="timer-controls">
