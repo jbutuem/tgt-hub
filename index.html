@@ -503,7 +503,9 @@ function buildNav(){
   
   // PROD section
   h+=`<div class="sb-section">Produção AV</div>`;
-  h+=`<div class="sb-item" data-p="p-requests" onclick="nav('p-requests')">${ICONS.prod} Solicitações</div>`;
+  const pendingApproval=S.av_requests.filter(r=>r.status==='budget_sent'&&(isAcc()?S.clients.filter(c=>c.team===S.user.team).map(c=>c.id).includes(r.client_id)||r.requested_by===S.user.id:true));
+  const badgeHtml=pendingApproval.length?`<span class="sb-badge">${pendingApproval.length}</span>`:'';
+  h+=`<div class="sb-item" data-p="p-requests" onclick="nav('p-requests')">${ICONS.prod} Solicitações ${badgeHtml}</div>`;
   if(isA()||isPL()){
     h+=`<div class="sb-item" data-p="p-calendar" onclick="nav('p-calendar')">${ICONS.cal} Calendário</div>`;
     h+=`<div class="sb-item" data-p="p-equip" onclick="nav('p-equip')">${ICONS.box} Equipamentos</div>`;
@@ -690,7 +692,26 @@ async function pgDashMy(el){
   const byAction={};my.forEach(e=>{const a=e.action||'Sem categoria';byAction[a]=(byAction[a]||0)+(e.hours||0)});
   const baSorted=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
   
-  el.innerHTML=datePillsHTML()+`
+  // Pending approvals for this account
+  let pendingHtml='';
+  if(isAcc()||isA()){
+    const myClientIds=isA()?S.clients.map(c=>c.id):S.clients.filter(c=>c.team===S.user.team).map(c=>c.id);
+    const pending=S.av_requests.filter(r=>r.status==='budget_sent'&&(myClientIds.includes(r.client_id)||r.requested_by===S.user.id));
+    if(pending.length){
+      pendingHtml=`<div style="background:rgba(237,28,36,.08);border:2px solid rgba(237,28,36,.3);border-radius:var(--radius);padding:16px;margin-bottom:20px;cursor:pointer" onclick="nav('p-requests')">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:white;flex-shrink:0">${pending.length}</div>
+          <div>
+            <div style="font-size:15px;font-weight:800;color:var(--red)">Orçamento${pending.length>1?'s':''} aguardando sua aprovação</div>
+            <div style="font-size:12px;color:var(--txt2);margin-top:4px">${pending.map(r=>{const c=S.clients.find(cl=>cl.id===r.client_id);return`<b>${r.title}</b> (${c?c.name:'—'})`}).join(' · ')}</div>
+            <div style="font-size:11px;color:var(--red);margin-top:6px;font-weight:600">Clique aqui para revisar e aprovar →</div>
+          </div>
+        </div>
+      </div>`;
+    }
+  }
+  
+  el.innerHTML=datePillsHTML()+pendingHtml+`
     <div class="cards">
       <div class="card"><div class="cl">Horas no período</div><div class="cv">${fH(totalH)}</div><div class="pbar"><div class="pbar-fill pbar-red" style="width:${pct}%"></div></div><div class="cs">${pct.toFixed(0)}% da capacidade (${cap}h)</div></div>
       <div class="card card-blue"><div class="cl">Lançamentos</div><div class="cv">${my.length}</div></div>
@@ -793,14 +814,21 @@ async function pgProdRequests(el){
   const running=reqs.filter(r=>!['delivered','cancelled'].includes(r.status));
   const done=reqs.filter(r=>['delivered','cancelled'].includes(r.status));
   
+  const pendingCount=reqs.filter(r=>r.status==='budget_sent').length;
+  
   el.innerHTML=`
+    ${pendingCount&&(isAcc()||isA())?`<div style="background:rgba(237,28,36,.08);border:2px solid rgba(237,28,36,.3);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <div style="font-size:24px">📋</div>
+      <div><div style="font-size:14px;font-weight:800;color:var(--red)">${pendingCount} orçamento${pendingCount>1?'s':''} aguardando aprovação</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Clique no item para revisar o orçamento e aprovar ou rejeitar</div></div>
+    </div>`:''}
     <div class="cards">
       <div class="card"><div class="cl">Em andamento</div><div class="cv">${running.length}</div></div>
       <div class="card card-green"><div class="cl">Finalizadas</div><div class="cv">${done.length}</div></div>
+      ${pendingCount?`<div class="card" style="border-color:var(--red)"><div class="cl" style="color:var(--red)">Aguardando aprovação</div><div class="cv" style="color:var(--red)">${pendingCount}</div></div>`:''}
     </div>
     <div class="tbl"><div class="tbl-h"><h3>Solicitações</h3><button class="btn btn-r btn-sm" onclick="showNewRequest()">${ICONS.plus} Nova Solicitação</button></div>
     <div class="tbl-r"><table><thead><tr><th>Título</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Prazo</th><th>Solicitante</th></tr></thead>
-    <tbody>${reqs.length?reqs.map(r=>{const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);return`<tr style="cursor:pointer" onclick="showRequestDetail('${r.id}')"><td style="font-weight:600">${r.title}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nenhuma solicitação ainda</td></tr>'}</tbody></table></div></div>`;
+    <tbody>${reqs.length?reqs.map(r=>{const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);const hl=r.status==='budget_sent'?'background:rgba(237,28,36,.06);border-left:3px solid var(--red);':'';return`<tr style="cursor:pointer;${hl}" onclick="showRequestDetail('${r.id}')"><td style="font-weight:600">${r.title}${r.status==='budget_sent'?' ⚠️':''}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nenhuma solicitação ainda</td></tr>'}</tbody></table></div></div>`;
 }
 
 function showNewRequest(){
@@ -1195,7 +1223,29 @@ async function saveBudgetAndSend(reqId,budgetId){
   try{
     await sbPatch('av_requests',`id=eq.${reqId}`,{status:'budget_sent',updated_at:new Date().toISOString()});
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
-    closeM('m-req');toast('Orçamento enviado ao Account');renderPage();
+    
+    // Notify account via Monday (if monday_item_id exists)
+    const req=S.av_requests.find(r=>r.id===reqId);
+    if(req?.monday_item_id){
+      try{
+        const accountMember=S.members.find(m=>m.id===req.requested_by);
+        const mondayUserId=accountMember?.monday_user_id;
+        if(mondayUserId){
+          // Use Make webhook to send notification
+          await fetch(MAKE_EXTRAS_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+            type:'budget_notification',
+            monday_item_id:req.monday_item_id,
+            monday_user_id:mondayUserId,
+            title:req.title,
+            message:`Orçamento pronto para "${req.title}" — acesse o TGT Hub para aprovar.`
+          })}).catch(()=>{});
+        }
+      }catch(e){console.log('Monday notify error (non-blocking):',e)}
+    }
+    
+    closeM('m-req');toast('Orçamento enviado ao Account');
+    buildSidebar(); // refresh badge
+    renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
@@ -1206,6 +1256,7 @@ async function changeRequestStatus(id,newStatus){
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
     closeM('m-req');
     toast(`Status atualizado: ${AV_STATUSES[newStatus]||newStatus}`);
+    buildSidebar(); // refresh badge count
     renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
