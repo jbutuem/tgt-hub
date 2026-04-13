@@ -178,7 +178,7 @@ tr:hover td{background:var(--bg3)}
 .chk-item{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;transition:.15s;user-select:none}
 .chk-item:hover{border-color:var(--txt3)}
 .chk-item.checked{background:var(--red-glow);border-color:var(--red);color:var(--white)}
-.chk-item input{display:none}
+.chk-item input[type=checkbox]{width:14px;height:14px;accent-color:var(--red);cursor:pointer}
 .empty svg{margin-bottom:12px}
 .loading{text-align:center;padding:48px;color:var(--txt3)}
 .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:sp .6s linear infinite}
@@ -803,7 +803,7 @@ function showNewRequest(){
     <div class="f-field">
       <label class="f-label">O que o vídeo vai ter (selecione todos que se aplicam)</label>
       <div class="chk-grid" id="rq-vtypes">
-        ${[['institutional','Institucional'],['interview','Entrevista'],['testimonial','Depoimento'],['product','Produto'],['tutorial','Tutorial/How-to'],['event','Evento'],['campaign','Campanha'],['lifestyle','Lifestyle'],['making_of','Making Of'],['recipe','Receita'],['unboxing','Unboxing'],['reels','Reels/Shorts'],['drone','Drone'],['animation','Animação/Motion'],['other','Outro']].map(([v,l])=>`<label class="chk-item" onclick="this.classList.toggle('checked')"><input type="checkbox" value="${v}">${l}</label>`).join('')}
+        ${[['institutional','Institucional'],['interview','Entrevista'],['testimonial','Depoimento'],['product','Produto'],['tutorial','Tutorial/How-to'],['event','Evento'],['campaign','Campanha'],['lifestyle','Lifestyle'],['making_of','Making Of'],['recipe','Receita'],['unboxing','Unboxing'],['reels','Reels/Shorts'],['drone','Drone'],['animation','Animação/Motion'],['other','Outro']].map(([v,l])=>`<label class="chk-item"><input type="checkbox" value="${v}" onchange="this.parentElement.classList.toggle('checked',this.checked)">${l}</label>`).join('')}
       </div>
     </div>
     <div class="f-row">
@@ -813,7 +813,7 @@ function showNewRequest(){
     <div class="f-field">
       <label class="f-label">Formatos dos entregáveis</label>
       <div class="chk-grid" id="rq-formats">
-        ${[['16:9 Horizontal (YouTube/Site)'],['9:16 Vertical (Reels/Stories/TikTok)'],['1:1 Quadrado (Feed)'],['4:5 Retrato (Feed Instagram)'],['21:9 Ultrawide (Banner)'],['GIF animado'],['Foto still (do set)'],['Áudio podcast/spot']].map(f=>`<label class="chk-item" onclick="this.classList.toggle('checked')"><input type="checkbox" value="${f[0]}">${f[0]}</label>`).join('')}
+        ${[['16:9 Horizontal (YouTube/Site)'],['9:16 Vertical (Reels/Stories/TikTok)'],['1:1 Quadrado (Feed)'],['4:5 Retrato (Feed Instagram)'],['21:9 Ultrawide (Banner)'],['GIF animado'],['Foto still (do set)'],['Áudio podcast/spot']].map(f=>`<label class="chk-item"><input type="checkbox" value="${f[0]}" onchange="this.parentElement.classList.toggle('checked',this.checked)">${f[0]}</label>`).join('')}
       </div>
     </div>
     <div class="f-field"><label class="f-label">Referências / Links</label><textarea class="f-area" id="rq-refs" placeholder="Links de referência visual ou de conteúdo"></textarea></div>
