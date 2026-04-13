@@ -637,6 +637,24 @@ async function startTimer(){
 const MONDAY_TIMER_BOARDS=[
   {board_id:'18401417952', timer_col:'color_mm2b5g4d', name:'NONO'},
 ];
+const MONDAY_API_TOKEN='eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzODU1NzY3OCwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwiaWFkIjoiMjAyNi0wMy0yN1QwOTo1Mzo0Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY4NjczMjAsInJnbiI6InVzZTEifQ.Rcm5SgNkiGizjRY_z1ECf7jCEGC2j_UGqtX2h_NkTAw';
+
+async function mondayStopTimers(boardId,timerCol){
+  try{
+    // 1. Find items with Timer = Rodando
+    const searchQ=`{boards(ids:[${boardId}]){items_page(limit:50,query_params:{rules:[{column_id:"${timerCol}",compare_value:["1"],operator:any_of}]}){items{id name}}}}`;
+    const searchR=await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:searchQ})});
+    const searchD=await searchR.json();
+    const items=searchD?.data?.boards?.[0]?.items_page?.items||[];
+    if(!items.length)return;
+    // 2. Change each to Parado
+    for(const item of items){
+      const mutQ=`mutation{change_simple_column_value(board_id:${boardId},item_id:${item.id},column_id:"${timerCol}",value:"Parado"){id}}`;
+      await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
+    }
+    console.log('Monday timers stopped:',items.length);
+  }catch(e){console.log('Monday sync error (non-blocking):',e)}
+}
 
 async function stopTimer(){
   if(!activeEntryId)return;
@@ -646,19 +664,8 @@ async function stopTimer(){
     await sbPatch('tt_time_entries',`id=eq.${activeEntryId}`,{is_running:false,ended_at:ended});
     running=false;timerStart=null;activeEntryId=null;timerSec=0;
     
-    // Sync with Monday — send stop request via Make webhook
-    const mondayUserId=S.user.monday_user_id;
-    if(mondayUserId){
-      MONDAY_TIMER_BOARDS.forEach(b=>{
-        fetch(MAKE_EXTRAS_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-          type:'stop_timer',
-          monday_user_id:mondayUserId,
-          board_id:b.board_id,
-          timer_column_id:b.timer_col,
-          description:entry?.description||''
-        })}).catch(()=>{});
-      });
-    }
+    // Sync with Monday — stop timers directly via API
+    MONDAY_TIMER_BOARDS.forEach(b=>mondayStopTimers(b.board_id,b.timer_col));
     
     await loadEntries();toast('Timer parado');buildNav();nav('timer');
   }catch(e){toast('Erro: '+e.message,'error')}
