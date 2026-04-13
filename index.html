@@ -342,6 +342,10 @@ async function sbDel(table,params){
   const r=await fetch(`${SB_URL}/${table}?${params}`,{method:'DELETE',headers:{...HDR_R,'Prefer':'return=representation'}});
   if(!r.ok)throw new Error(`DEL ${table}: ${r.status}`);return r.json();
 }
+async function sbUpsert(table,data,conflictCols){
+  const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:{...HDR,'Prefer':'return=representation,resolution=merge-duplicates'},body:JSON.stringify(data)});
+  if(!r.ok){const t=await r.text();throw new Error(`UPSERT ${table}: ${r.status} ${t}`)}return r.json();
+}
 
 function openM(id){$(id).classList.add('open');
   // Prevent event bubbling on modal inputs (fixes artifact viewer issue)
@@ -1889,7 +1893,6 @@ async function saveScore(){
   if(!account||!month||isNaN(p1)||isNaN(p2)||isNaN(p3)||isNaN(p4)){toast('Preencha todos os campos','error');return}
   const final_score=Math.round((p1*0.3+p2*0.25+p3*0.25+p4*0.2)*100)/100;
   const data={account_id:account,month,p1_score:p1,p2_score:p2,p3_score:p3,p4_score:p4,final_score,block_status:$('sc-block')?.value||'none',updated_at:new Date().toISOString()};
-  // Only add optional text fields if they have content
   const p1n=$('sc-p1n')?.value?.trim();if(p1n)data.p1_notes=p1n;
   const p2n=$('sc-p2n')?.value?.trim();if(p2n)data.p2_notes=p2n;
   const p3n=$('sc-p3n')?.value?.trim();if(p3n)data.p3_notes=p3n;
@@ -1897,9 +1900,8 @@ async function saveScore(){
   const bn=$('sc-bn')?.value?.trim();if(bn)data.block_notes=bn;
   if(S.user?.id)data.evaluated_by=S.user.id;
   try{
-    const existing=S.scores.find(s=>s.account_id===account&&s.month===month);
-    if(existing)await sbPatch('score_adm',`id=eq.${existing.id}`,data);
-    else await sbPost('score_adm',data);
+    // Use upsert — handles both insert and update via UNIQUE(account_id, month)
+    await sbUpsert('score_adm',data);
     closeM('m-score');S.scores=await sbGet('score_adm','order=month.desc,account_id');toast('Avaliação salva');renderPage();
   }catch(e){console.error('saveScore error:',e,data);toast('Erro: '+e.message,'error')}
 }
