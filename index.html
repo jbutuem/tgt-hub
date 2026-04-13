@@ -226,10 +226,10 @@ tr:hover td{background:var(--bg3)}
 <span class="hub-badge">HUB</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
-<div class="sb-user">
+<div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
 <div class="sb-avatar" id="u-av">?</div>
 <div style="flex:1;min-width:0"><div class="sb-uname" id="u-name">—</div><div class="sb-urole" id="u-role">—</div></div>
-<button class="sb-logout" onclick="doLogout()" title="Sair"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+<button class="sb-logout" onclick="event.stopPropagation();doLogout()" title="Sair"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
 </div>
 </aside>
 
@@ -510,7 +510,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',score:'Score ADM',members:'Membros',clients:'Clientes'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
 
 function nav(page){
   curPage=page;
@@ -529,7 +529,7 @@ async function renderPage(){
       'd-my':pgDashMy,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
-      score:pgScore,members:pgMembers,clients:pgClients
+      score:pgScore,members:pgMembers,clients:pgClients,profile:pgProfile
     };
     if(pages[curPage])await pages[curPage](el);
     else el.innerHTML='<div class="empty">Página não encontrada</div>';
@@ -819,32 +819,96 @@ async function saveRequest(){
 // ═══════════════════════════════════════════════
 // PROD - CALENDAR
 // ═══════════════════════════════════════════════
+let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calView='month';
+
 async function pgProdCalendar(el){
-  // Simple month calendar with scheduled productions
-  const now=new Date(),y=now.getFullYear(),m=now.getMonth();
+  const y=calYear,m=calMonth;
   const first=new Date(y,m,1),last=new Date(y,m+1,0);
-  const startDay=first.getDay()||7;// Monday=1
-  const days=[];
-  for(let i=1-startDay+1;i<=last.getDate();i++){
-    const d=new Date(y,m,i);
-    days.push({date:d,day:i,inMonth:i>=1&&i<=last.getDate()});
-  }
-  // Pad to 42
-  while(days.length<42)days.push({date:new Date(y,m,days.length+1-startDay+2),day:days.length+1,inMonth:false});
+  const monthName=first.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  const today=new Date();
+  const todayStr=today.toISOString().substring(0,10);
   
-  const monthName=now.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  // Get scheduled productions from av_schedule
+  let schedules=[];
+  try{schedules=await sbGet('av_schedule','select=*,request:av_requests(title,client_id,status)')}catch(e){}
+  
+  if(calView==='week'){
+    // Week view: current week or week containing today in calMonth
+    const ref=new Date(y,m,today.getMonth()===m&&today.getFullYear()===y?today.getDate():1);
+    const dow=ref.getDay()||7;
+    const weekStart=new Date(ref);weekStart.setDate(ref.getDate()-(dow-1));
+    
+    const weekDays=[];
+    for(let i=0;i<7;i++){const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);weekDays.push(d)}
+    
+    el.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="btn btn-o btn-sm" onclick="calWeekNav(-1)">◀</button>
+          <h3 style="text-transform:capitalize;min-width:200px;text-align:center">${weekDays[0].toLocaleDateString('pt-BR',{day:'numeric',month:'short'})} — ${weekDays[6].toLocaleDateString('pt-BR',{day:'numeric',month:'short',year:'numeric'})}</h3>
+          <button class="btn btn-o btn-sm" onclick="calWeekNav(1)">▶</button>
+        </div>
+        <div class="pills" style="margin-bottom:0">
+          <div class="pill ${calView==='month'?'active':''}" onclick="calView='month';renderPage()">Mês</div>
+          <div class="pill ${calView==='week'?'active':''}" onclick="calView='week';renderPage()">Semana</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--border);border-radius:var(--radius);overflow:hidden">
+        ${weekDays.map(d=>{
+          const ds=d.toISOString().substring(0,10);
+          const isToday=ds===todayStr;
+          const dayProds=schedules.filter(s=>s.capture_date===ds);
+          return`<div style="background:var(--bg2);min-height:200px;padding:10px;${isToday?'border:2px solid var(--red);border-radius:4px;':''}">
+            <div style="font-size:11px;color:var(--txt2);margin-bottom:4px">${d.toLocaleDateString('pt-BR',{weekday:'short'})}</div>
+            <div style="font-size:18px;font-weight:700;${isToday?'color:var(--red)':''};margin-bottom:8px">${d.getDate()}</div>
+            ${dayProds.map(p=>{const req=p.request;return`<div style="padding:4px 8px;background:var(--red-glow);border-left:3px solid var(--red);border-radius:3px;margin-bottom:4px;font-size:11px">${req?.title||'Produção'}</div>`}).join('')}
+          </div>`}).join('')}
+      </div>`;
+    return;
+  }
+  
+  // Month view
+  const startDay=(first.getDay()||7);
+  const days=[];
+  for(let i=2-startDay;i<=last.getDate();i++){
+    days.push({num:i,inMonth:i>=1&&i<=last.getDate()});
+  }
+  while(days.length%7!==0)days.push({num:days.length+2-startDay,inMonth:false});
   
   el.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <h3 style="text-transform:capitalize">${monthName}</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn btn-o btn-sm" onclick="calNav(-1)">◀</button>
+        <h3 style="text-transform:capitalize;min-width:220px;text-align:center">${monthName}</h3>
+        <button class="btn btn-o btn-sm" onclick="calNav(1)">▶</button>
+        <button class="btn btn-o btn-sm" onclick="calYear=${today.getFullYear()};calMonth=${today.getMonth()};renderPage()">Hoje</button>
+      </div>
+      <div class="pills" style="margin-bottom:0">
+        <div class="pill ${calView==='month'?'active':''}" onclick="calView='month';renderPage()">Mês</div>
+        <div class="pill ${calView==='week'?'active':''}" onclick="calView='week';renderPage()">Semana</div>
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--border);border-radius:var(--radius);overflow:hidden">
       ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<div style="padding:10px;text-align:center;font-size:11px;font-weight:600;color:var(--txt2);background:var(--bg2)">${d}</div>`).join('')}
       ${days.map(d=>{
-        const isToday=d.inMonth&&d.date.toDateString()===now.toDateString();
-        return`<div style="padding:8px;min-height:80px;background:${d.inMonth?'var(--bg2)':'var(--bg)'};${isToday?'border:1px solid var(--red);':''}"><div style="font-size:12px;${d.inMonth?'':'color:var(--txt3)'}${isToday?';color:var(--red);font-weight:700':''};">${d.inMonth?d.day:''}</div></div>`}).join('')}
-    </div>
-    <div style="margin-top:16px;color:var(--txt2);font-size:12px">As produções agendadas aparecerão aqui conforme forem criadas nas solicitações.</div>`;
+        const dt=d.inMonth?new Date(y,m,d.num):null;
+        const ds=dt?dt.toISOString().substring(0,10):'';
+        const isToday=ds===todayStr;
+        const dayProds=d.inMonth?schedules.filter(s=>s.capture_date===ds):[];
+        return`<div style="padding:8px;min-height:80px;background:${d.inMonth?'var(--bg2)':'var(--bg)'};${isToday?'border:2px solid var(--red);border-radius:4px;':''}">
+          <div style="font-size:12px;${d.inMonth?'':'color:var(--txt3)'}${isToday?';color:var(--red);font-weight:700':''};">${d.inMonth?d.num:''}</div>
+          ${dayProds.map(p=>{const req=p.request;return`<div style="padding:2px 6px;background:var(--red-glow);border-left:2px solid var(--red);border-radius:2px;margin-top:4px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${req?.title||'Prod'}</div>`}).join('')}
+        </div>`}).join('')}
+    </div>`;
+}
+
+function calNav(dir){calMonth+=dir;if(calMonth>11){calMonth=0;calYear++}if(calMonth<0){calMonth=11;calYear--}renderPage()}
+function calWeekNav(dir){
+  // Shift current reference date by 7 days
+  const ref=new Date(calYear,calMonth,new Date().getDate());
+  ref.setDate(ref.getDate()+dir*7);
+  calYear=ref.getFullYear();calMonth=ref.getMonth();
+  renderPage();
 }
 
 // ═══════════════════════════════════════════════
@@ -900,11 +964,55 @@ async function pgProdConfig(el){
   if(!isA()&&!isPL()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   el.innerHTML=`
     <div class="tbl"><div class="tbl-h"><h3>Regras de Comissão</h3></div>
-    <div class="tbl-r"><table><thead><tr><th>Tipo Produção</th><th class="rt">% Account</th><th class="rt">% Líder</th><th class="rt">% TGT</th><th>Notas</th></tr></thead>
-    <tbody>${S.commission_rules.map(r=>`<tr><td style="font-weight:600">${PROD_TYPES[r.prod_type]||r.prod_type}</td><td class="rt" style="font-family:var(--mono)">${r.account_pct}%</td><td class="rt" style="font-family:var(--mono)">${r.leader_pct}%</td><td class="rt" style="font-family:var(--mono)">${r.tgt_margin_pct}%</td><td style="font-size:12px;color:var(--txt2)">${r.notes||'—'}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="tbl-r"><table><thead><tr><th>Tipo Produção</th><th class="rt">% Account</th><th class="rt">% Líder</th><th class="rt">% TGT</th><th>Notas</th><th></th></tr></thead>
+    <tbody>${S.commission_rules.map(r=>`<tr>
+      <td style="font-weight:600">${PROD_TYPES[r.prod_type]||r.prod_type}</td>
+      <td class="rt"><input class="f-input" style="width:70px;text-align:right;padding:4px 8px" type="number" step="any" min="0" max="100" value="${r.account_pct}" id="cr-acc-${r.id}"></td>
+      <td class="rt"><input class="f-input" style="width:70px;text-align:right;padding:4px 8px" type="number" step="any" min="0" max="100" value="${r.leader_pct}" id="cr-ldr-${r.id}"></td>
+      <td class="rt"><input class="f-input" style="width:70px;text-align:right;padding:4px 8px" type="number" step="any" min="0" max="100" value="${r.tgt_margin_pct}" id="cr-tgt-${r.id}"></td>
+      <td><input class="f-input" style="padding:4px 8px;font-size:12px" value="${r.notes||''}" id="cr-note-${r.id}"></td>
+      <td><button class="btn btn-r btn-sm" onclick="saveCommRule('${r.id}')">Salvar</button></td>
+    </tr>`).join('')}</tbody></table></div></div>
     <div class="tbl"><div class="tbl-h"><h3>Custos Padrão</h3></div>
-    <div class="tbl-r"><table><thead><tr><th>Tipo</th><th>Label</th><th class="rt">Valor</th><th>Unidade</th><th>Notas</th></tr></thead>
-    <tbody>${S.cost_defaults.map(c=>`<tr><td>${c.cost_type}</td><td style="font-weight:600">${c.label}</td><td class="rt" style="font-family:var(--mono)">${fMoney(c.default_value)}</td><td>${c.unit||'—'}</td><td style="font-size:12px;color:var(--txt2)">${c.notes||'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+    <div class="tbl-r"><table><thead><tr><th>Tipo</th><th>Label</th><th class="rt">Valor (R$)</th><th>Unidade</th><th>Notas</th><th></th></tr></thead>
+    <tbody>${S.cost_defaults.map(c=>`<tr>
+      <td style="font-size:12px;color:var(--txt2)">${c.cost_type}</td>
+      <td><input class="f-input" style="padding:4px 8px;font-weight:600" value="${c.label}" id="cd-lbl-${c.id}"></td>
+      <td class="rt"><input class="f-input" style="width:90px;text-align:right;padding:4px 8px;font-family:var(--mono)" type="number" step="any" min="0" value="${Number(c.default_value)}" id="cd-val-${c.id}"></td>
+      <td><select class="f-sel" style="padding:4px 8px;font-size:12px;width:90px" id="cd-unit-${c.id}"><option value="BRL" ${c.unit==='BRL'?'selected':''}>BRL</option><option value="percent" ${c.unit==='percent'?'selected':''}>%</option><option value="per_km" ${c.unit==='per_km'?'selected':''}>p/km</option></select></td>
+      <td><input class="f-input" style="padding:4px 8px;font-size:12px" value="${c.notes||''}" id="cd-note-${c.id}"></td>
+      <td><button class="btn btn-r btn-sm" onclick="saveCostDef('${c.id}')">Salvar</button></td>
+    </tr>`).join('')}</tbody></table></div></div>`;
+  // stopPropagation on all inline inputs
+  setTimeout(()=>{el.querySelectorAll('input,select').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})},50);
+}
+
+async function saveCommRule(id){
+  try{
+    await sbPatch('commission_rules',`id=eq.${id}`,{
+      account_pct:parseFloat($(`cr-acc-${id}`)?.value)||0,
+      leader_pct:parseFloat($(`cr-ldr-${id}`)?.value)||0,
+      tgt_margin_pct:parseFloat($(`cr-tgt-${id}`)?.value)||0,
+      notes:$(`cr-note-${id}`)?.value||null,
+      updated_at:new Date().toISOString()
+    });
+    S.commission_rules=await sbGet('commission_rules','order=prod_type');
+    toast('Regra salva');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function saveCostDef(id){
+  try{
+    await sbPatch('cost_defaults',`id=eq.${id}`,{
+      label:$(`cd-lbl-${id}`)?.value||'',
+      default_value:parseFloat($(`cd-val-${id}`)?.value)||0,
+      unit:$(`cd-unit-${id}`)?.value||'BRL',
+      notes:$(`cd-note-${id}`)?.value||null,
+      updated_at:new Date().toISOString()
+    });
+    S.cost_defaults=await sbGet('cost_defaults','order=cost_type');
+    toast('Custo salvo');
+  }catch(e){toast('Erro: '+e.message,'error')}
 }
 
 // ═══════════════════════════════════════════════
@@ -1104,6 +1212,84 @@ async function saveClient(){
     if(id)await sbPatch('tt_clients',`id=eq.${id}`,data);
     else{data.is_active=true;await sbPost('tt_clients',data)}
     closeM('m-client');S.clients=await sbGet('tt_clients','is_active=eq.true&order=team,name');toast('Cliente salvo');renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// ═══════════════════════════════════════════════
+// PROFILE — editable by the user themselves
+// ═══════════════════════════════════════════════
+async function pgProfile(el){
+  const u=S.user;
+  const roleLabels={admin:'Administrador',account:'Account',user:'Operador',prod_leader:'Líder de Produção',client:'Cliente'};
+  
+  el.innerHTML=`
+    <div style="max-width:600px;margin:0 auto">
+      <div class="card" style="margin-bottom:24px;text-align:center;padding:32px">
+        <div style="width:64px;height:64px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;margin:0 auto 12px">${u.name.charAt(0)}</div>
+        <div style="font-size:18px;font-weight:700">${u.name}</div>
+        <div style="font-size:13px;color:var(--txt2);margin-top:4px">${u.job_title||'—'} · <span class="bg ${TBC(u.team)}">${u.team?TB(u.team):'—'}</span></div>
+        <div style="margin-top:8px"><span class="bg ${u.access_level==='admin'?'bg-red':u.access_level==='account'?'bg-t1':u.access_level==='client'?'bg-amber':'bg-adm'}">${roleLabels[u.access_level]||u.access_level}</span></div>
+      </div>
+      
+      <div class="tbl" style="margin-bottom:24px">
+        <div class="tbl-h"><h3>Informações Pessoais</h3></div>
+        <div style="padding:20px">
+          <div class="f-field"><label class="f-label">Nome completo</label><input class="f-input" id="pf-name" value="${u.name}"></div>
+          <div class="f-field"><label class="f-label">Email</label><input class="f-input" id="pf-email" value="${u.email||''}" ${isA()?'':'readonly style="opacity:.6;cursor:not-allowed"'}></div>
+          <div class="f-field"><label class="f-label">Função</label><input class="f-input" value="${u.job_title||'—'}" readonly style="opacity:.6;cursor:not-allowed"></div>
+          <button class="btn btn-r" onclick="saveProfile()">Salvar nome</button>
+        </div>
+      </div>
+      
+      <div class="tbl">
+        <div class="tbl-h"><h3>Alterar Senha</h3></div>
+        <div style="padding:20px">
+          <div class="f-field"><label class="f-label">Senha atual</label><input class="f-input" type="password" id="pf-oldpass" placeholder="Digite sua senha atual"></div>
+          <div class="f-field"><label class="f-label">Nova senha</label><input class="f-input" type="password" id="pf-newpass" placeholder="Mínimo 6 caracteres"></div>
+          <div class="f-field"><label class="f-label">Confirmar nova senha</label><input class="f-input" type="password" id="pf-newpass2" placeholder="Repita a nova senha"></div>
+          <button class="btn btn-r" onclick="changePassword()">Alterar senha</button>
+        </div>
+      </div>
+      
+      ${!isCli()?`<div class="tbl" style="margin-top:24px">
+        <div class="tbl-h"><h3>Dados Operacionais</h3></div>
+        <div style="padding:20px">
+          <div class="f-row">
+            <div class="f-field"><label class="f-label">Time</label><input class="f-input" value="${u.team?TB(u.team):'—'}" readonly style="opacity:.6;cursor:not-allowed"></div>
+            <div class="f-field"><label class="f-label">Capacidade mensal</label><input class="f-input" value="${u.capacity_hours||140}h" readonly style="opacity:.6;cursor:not-allowed"></div>
+          </div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:8px">Time, capacidade e nível de acesso são configurados pelo administrador.</div>
+        </div>
+      </div>`:''}
+    </div>`;
+  // Fix input focus
+  setTimeout(()=>{el.querySelectorAll('input').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})},50);
+}
+
+async function saveProfile(){
+  const name=$('pf-name')?.value?.trim();
+  if(!name){toast('Nome não pode ficar vazio','error');return}
+  try{
+    await sbPatch('tt_members',`id=eq.${S.user.id}`,{name});
+    S.user.name=name;
+    localStorage.setItem('tgt_hub_user',JSON.stringify(S.user));
+    $('u-name').textContent=name.split(' ')[0];
+    toast('Nome atualizado');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function changePassword(){
+  const oldPass=$('pf-oldpass')?.value,newPass=$('pf-newpass')?.value,newPass2=$('pf-newpass2')?.value;
+  if(!oldPass||!newPass){toast('Preencha todos os campos','error');return}
+  if(oldPass!==S.user.login_password){toast('Senha atual incorreta','error');return}
+  if(newPass.length<6){toast('Nova senha deve ter pelo menos 6 caracteres','error');return}
+  if(newPass!==newPass2){toast('As senhas não conferem','error');return}
+  try{
+    await sbPatch('tt_members',`id=eq.${S.user.id}`,{login_password:newPass});
+    S.user.login_password=newPass;
+    localStorage.setItem('tgt_hub_user',JSON.stringify(S.user));
+    $('pf-oldpass').value='';$('pf-newpass').value='';$('pf-newpass2').value='';
+    toast('Senha alterada com sucesso');
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
