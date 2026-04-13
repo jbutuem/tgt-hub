@@ -641,27 +641,19 @@ const MONDAY_API_TOKEN='eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzODU1NzY3OCwiYWFpIjoxMSw
 
 async function mondayStopTimers(boardId,timerCol){
   try{
-    console.log('Monday sync: searching board',boardId,'col',timerCol);
     const searchQ=`{items_page_by_column_values(board_id:${boardId},limit:50,columns:[{column_id:"${timerCol}",column_values:["Rodando"]}]){items{id name}}}`;
     const searchR=await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:searchQ})});
     const searchD=await searchR.json();
-    console.log('Monday search result:',JSON.stringify(searchD));
     const items=searchD?.data?.items_page_by_column_values?.items||[];
-    if(!items.length){console.log('No running timers found');return}
     for(const item of items){
-      console.log('Stopping Monday item:',item.id,item.name);
       const mutQ=`mutation{change_simple_column_value(board_id:${boardId},item_id:${item.id},column_id:"${timerCol}",value:"Parado"){id}}`;
-      const mutR=await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
-      const mutD=await mutR.json();
-      console.log('Monday stop result:',JSON.stringify(mutD));
+      await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
     }
-    console.log('Monday timers stopped:',items.length);
-  }catch(e){console.error('Monday sync error:',e)}
+  }catch(e){}
 }
 
 async function stopTimer(){
-  if(!activeEntryId){console.log('stopTimer: no activeEntryId');return}
-  console.log('stopTimer: stopping entry',activeEntryId);
+  if(!activeEntryId)return;
   try{
     const ended=new Date().toISOString();
     const entry=S.entries.find(e=>e.id===activeEntryId);
