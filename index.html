@@ -1245,7 +1245,7 @@ async function saveBudgetAndSend(reqId,budgetId){
     }
     
     closeM('m-req');toast('Orçamento enviado ao Account');
-    buildSidebar(); // refresh badge
+    buildNav(); // refresh badge
     renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
@@ -1257,7 +1257,7 @@ async function changeRequestStatus(id,newStatus){
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
     closeM('m-req');
     toast(`Status atualizado: ${AV_STATUSES[newStatus]||newStatus}`);
-    buildSidebar(); // refresh badge count
+    buildNav(); // refresh badge count
     renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
@@ -1967,7 +1967,7 @@ async function saveScore(){
       await sbPost('score_adm',data);
     }
     closeM('m-score');S.scores=await sbGet('score_adm','order=month.desc,account_id');toast('Avaliação salva');
-    buildSidebar();renderPage();
+    buildNav();renderPage();
   }catch(e){console.error('saveScore error:',e,data);toast('Erro: '+e.message,'error')}
 }
 
