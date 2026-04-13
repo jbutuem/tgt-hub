@@ -1804,23 +1804,29 @@ async function pgScore(el){
       const final=sc?Number(sc.final_score):null;
       const cls=final===null?'':final>=7?'good':final>=5?'ok':'bad';
       const elig=getEligibility(final,sc?.block_status);
+      let cardBody='';
+      if(sc){
+        cardBody=`<div style="margin-top:8px">
+          <div class="score-bar"><label>P1 Estratégia</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p1_score*10}%;background:var(--t1)"></div></div><div class="sval">${sc.p1_score}</div></div>
+          <div class="score-bar"><label>P2 Eficiência</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p2_score*10}%;background:var(--t3)"></div></div><div class="sval">${sc.p2_score}</div></div>
+          <div class="score-bar"><label>P3 Rentab.</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p3_score*10}%;background:var(--prod)"></div></div><div class="sval">${sc.p3_score}</div></div>
+          <div class="score-bar"><label>P4 Relação</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p4_score*10}%;background:var(--pack)"></div></div><div class="sval">${sc.p4_score}</div></div>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="bg ${elig.cls}" style="font-size:11px">${elig.label}</span>
+          <span style="font-size:12px;font-weight:700;color:${elig.color};font-family:var(--mono)">${elig.pct>0?elig.pct+'% da comissão':'Sem comissão'}</span>
+        </div>
+        ${sc.block_status&&sc.block_status!=='none'?`<div style="margin-top:6px"><span class="bg bg-red">${sc.block_status.replace('_',' ')}</span></div>`:''}`;
+      }else{
+        cardBody='<div style="margin-top:8px;font-size:12px;color:var(--txt3)">Sem avaliação neste mês</div>';
+      }
       return`<div class="card" style="cursor:pointer" onclick="showScoreModal('${a.id}','${month}')">
         <div style="display:flex;align-items:center;gap:16px">
           <div class="score-ring ${cls}">${final!==null?final.toFixed(1):'—'}</div>
           <div style="flex:1">
             <div style="font-weight:700;font-size:15px">${a.name.split(' ').slice(0,2).join(' ')}</div>
             <div style="font-size:12px;color:var(--txt2)">${a.job_title||'Account'} · <span class="bg ${TBC(a.team)}">${TB(a.team)}</span></div>
-            ${sc?`<div style="margin-top:8px">
-              <div class="score-bar"><label>P1 Estratégia</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p1_score*10}%;background:var(--t1)"></div></div><div class="sval">${sc.p1_score}</div></div>
-              <div class="score-bar"><label>P2 Eficiência</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p2_score*10}%;background:var(--t3)"></div></div><div class="sval">${sc.p2_score}</div></div>
-              <div class="score-bar"><label>P3 Rentab.</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p3_score*10}%;background:var(--prod)"></div></div><div class="sval">${sc.p3_score}</div></div>
-              <div class="score-bar"><label>P4 Relação</label><div class="sbar"><div class="sbar-fill" style="width:${sc.p4_score*10}%;background:var(--pack)"></div></div><div class="sval">${sc.p4_score}</div></div>
-            </div>
-            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
-              <span class="bg ${elig.cls}" style="font-size:11px">${elig.label}</span>
-              <span style="font-size:12px;font-weight:700;color:${elig.color};font-family:var(--mono)">${elig.pct>0?elig.pct+'% da comissão':'Sem comissão'}</span>
-              ${S.commission_rules.length?`<span style="font-size:10px;color:var(--txt3);margin-left:auto">${S.commission_rules.map(r=>`${r.prod_type==='single_project'?'Avulso':r.prod_type==='package'?'Pacote':'Extra'}: ${(Number(r.account_pct)*elig.pct/100).toFixed(1)}%`).join(' · ')}</span>`:''}`:'<div style="margin-top:8px;font-size:12px;color:var(--txt3)">Sem avaliação neste mês</div>'}
-            ${sc&&sc.block_status!=='none'?`<div style="margin-top:6px"><span class="bg bg-red">${sc.block_status.replace('_',' ')}</span></div>`:''}
+            ${cardBody}
           </div>
         </div>
       </div>`}).join('')}
