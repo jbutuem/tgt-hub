@@ -1891,8 +1891,7 @@ async function saveScore(){
   const account=$('sc-account')?.value,month=$('sc-month')?.value;
   const p1=parseFloat($('sc-p1')?.value),p2=parseFloat($('sc-p2')?.value),p3=parseFloat($('sc-p3')?.value),p4=parseFloat($('sc-p4')?.value);
   if(!account||!month||isNaN(p1)||isNaN(p2)||isNaN(p3)||isNaN(p4)){toast('Preencha todos os campos','error');return}
-  const final_score=Math.round((p1*0.3+p2*0.25+p3*0.25+p4*0.2)*100)/100;
-  const data={account_id:account,month,p1_score:p1,p2_score:p2,p3_score:p3,p4_score:p4,final_score,block_status:$('sc-block')?.value||'none',updated_at:new Date().toISOString()};
+  const data={account_id:account,month,p1_score:p1,p2_score:p2,p3_score:p3,p4_score:p4,block_status:$('sc-block')?.value||'none',updated_at:new Date().toISOString()};
   const p1n=$('sc-p1n')?.value?.trim();if(p1n)data.p1_notes=p1n;
   const p2n=$('sc-p2n')?.value?.trim();if(p2n)data.p2_notes=p2n;
   const p3n=$('sc-p3n')?.value?.trim();if(p3n)data.p3_notes=p3n;
