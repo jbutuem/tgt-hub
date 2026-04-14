@@ -1365,16 +1365,6 @@ function calcBudget(){
     else alertEl.innerHTML='';
   }
   
-  const eligEl=el('bg-elig-info');
-  if(eligEl&&S.scores.length){
-    const curMonth=new Date().toISOString().substring(0,7);
-    let eligHtml='';
-    S.members.filter(m=>m.access_level==='account').forEach(a=>{
-      const sc=S.scores.find(s=>s.account_id===a.id&&s.month===curMonth);
-      if(sc){const score=Number(sc.final_score);const pct=scorePctDirect(score,sc.block_status);const elig=getEligibility(score,sc.block_status);eligHtml+=`<span style="font-size:10px;margin-right:8px">${a.name.split(' ')[0]}: <b style="color:${elig.color}">${score.toFixed(1)}</b> → <span class="bg ${elig.cls}" style="font-size:9px">${(pct*100).toFixed(0)}%</span></span>`}
-    });
-    eligEl.innerHTML=eligHtml;
-  }
 }
 
 
@@ -1471,8 +1461,18 @@ async function saveBudget(reqId,budgetId){
   const capDate=n('bg-cap-date');if(capDate)data.suggested_capture_date=capDate;
   const delDate=n('bg-del-date');if(delDate)data.suggested_delivery_date=delDate;
   try{
-    if(budgetId)await sbPatch('av_budgets',`id=eq.${budgetId}`,data);
-    else await sbPost('av_budgets',data);
+    if(budgetId){
+      await sbPatch('av_budgets',`id=eq.${budgetId}`,data);
+    }else{
+      try{await sbPost('av_budgets',data)}catch(e2){
+        if(e2.message.includes('409')){
+          // Budget already exists for this request — find and patch instead
+          const existing=await sbGet('av_budgets',`request_id=eq.${reqId}`);
+          if(existing.length)await sbPatch('av_budgets',`id=eq.${existing[0].id}`,data);
+          else throw e2;
+        }else throw e2;
+      }
+    }
     toast('Orçamento salvo');
   }catch(e){toast('Erro: '+e.message,'error')}
 }
