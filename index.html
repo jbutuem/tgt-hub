@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.12.1</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.12.2</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.12.1</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.12.2</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -1256,21 +1256,19 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
       </div>`:r.client_budget?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px"><div style="font-size:11px;color:var(--txt2)">Verba disponível: <span style="font-weight:700;color:var(--prod)">${fMoney(r.client_budget)}</span></div></div>`:''}
       ${['scheduled','in_capture','in_edit','in_review','delivered'].includes(r.status)?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
         <div class="cl" style="margin-bottom:10px">🎬 Time da Produção</div>
-        <div id="prod-team-${r.id}" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-          ${(r.team_member_ids||[]).map(mid=>{const mm=S.members.find(x=>x.id===mid);return mm?`<span class="bg bg-t1" style="display:inline-flex;align-items:center;gap:4px">${mm.name.split(' ').slice(0,2).join(' ')} <span style="cursor:pointer;font-size:10px" onclick="removeProdTeamMember('${r.id}','${mid}')">✕</span></span>`:''}).join('')}
-          ${!(r.team_member_ids||[]).length?'<span style="font-size:12px;color:var(--txt3)">Nenhum membro escalado</span>':''}
-        </div>
-        ${canBudget?`<div style="display:flex;gap:6px;margin-bottom:14px">
-          <select class="f-sel" id="prod-add-member-${r.id}" style="flex:1"><option value="">+ Adicionar membro</option>${S.members.filter(mm=>mm.team==='PROD'||mm.access_level==='admin').map(mm=>`<option value="${mm.id}" ${(r.team_member_ids||[]).includes(mm.id)?'disabled':''}>${mm.name} (${mm.job_title||mm.team})</option>`).join('')}</select>
-          <button class="btn btn-sm btn-r" onclick="addProdTeamMember('${r.id}')">Adicionar</button>
-        </div>`:''}
+        ${canBudget?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;margin-bottom:14px">
+          ${S.members.filter(mm=>['PROD','ADM'].includes(mm.team)||mm.access_level==='admin'||mm.access_level==='prod').map(mm=>{
+            const sel=(r.team_member_ids||[]).includes(mm.id);
+            return`<div style="padding:8px 10px;border-radius:var(--radius);cursor:pointer;border:2px solid ${sel?'var(--red)':'var(--border)'};background:${sel?'rgba(237,28,36,.08)':'var(--bg3)'};display:flex;align-items:center;gap:8px" onclick="toggleProdTeamMember('${r.id}','${mm.id}')">
+              <div style="width:26px;height:26px;border-radius:50%;background:${sel?'var(--red)':'var(--bg2)'};color:${sel?'white':'var(--txt3)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${sel?'✓':mm.name.charAt(0)}</div>
+              <div style="min-width:0"><div style="font-size:11px;font-weight:${sel?'700':'400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mm.name.split(' ').slice(0,2).join(' ')}</div><div style="font-size:9px;color:var(--txt3)">${mm.job_title||mm.team}</div></div>
+            </div>`}).join('')}
+        </div>`:`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+          ${(r.team_member_ids||[]).map(mid=>{const mm=S.members.find(x=>x.id===mid);return mm?`<span class="bg bg-t1">${mm.name.split(' ').slice(0,2).join(' ')}</span>`:''}).join('')||'<span style="font-size:12px;color:var(--txt3)">Nenhum membro escalado</span>'}
+        </div>`}
         
-        <div class="cl" style="margin-bottom:10px">📦 Equipamentos Reservados</div>
+        <div class="cl" style="margin-bottom:10px">📦 Equipamentos</div>
         <div id="prod-equip-${r.id}" style="margin-bottom:10px"></div>
-        ${canBudget?`<div style="display:flex;gap:6px">
-          <select class="f-sel" id="prod-add-equip-${r.id}" style="flex:1"><option value="">+ Reservar equipamento</option></select>
-          <button class="btn btn-sm btn-r" onclick="addProdEquipment('${r.id}')">Reservar</button>
-        </div>`:''}
       </div>`:''}
       ${canAct&&nextStatuses.length?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
         <div class="cl" style="margin-bottom:10px">Ações</div>
