@@ -982,6 +982,70 @@ function showNewRequest(){
   openM('m-req');
 }
 
+// ═══════════════════════════════════════════════
+// MONDAY PROD AV SYNC
+// ═══════════════════════════════════════════════
+const MONDAY_PROD_BOARD='18408377895';
+const MONDAY_PROD_STATUS_MAP={
+  pending_leader_review:'Aguardando Líder',leader_reviewing:'Aguardando Líder',
+  budget_sent:'Orçamento Enviado',account_approved:'Aprovado Account',account_rejected:'Cancelado',
+  scheduling:'Agendado',scheduled:'Agendado',in_capture:'Em Captação',
+  in_edit:'Em Edição',in_review:'Em Revisão',delivered:'Entregue',cancelled:'Cancelado'
+};
+const MONDAY_PROD_GROUP_MAP={
+  pending_leader_review:'group_mm2c3x7w',leader_reviewing:'group_mm2c3x7w',
+  budget_sent:'group_mm2c78sr',account_approved:'group_mm2c78sr',
+  scheduling:'group_mm2c8fq6',scheduled:'group_mm2c8fq6',
+  in_capture:'group_mm2cvbk2',in_edit:'group_mm2cgpex',in_review:'group_mm2cgpex',
+  delivered:'group_mm2c3pjp',cancelled:'group_mm2c3pjp'
+};
+
+async function mondayCreateProdItem(req){
+  try{
+    const cl=S.clients.find(c=>c.id===req.client_id);
+    const acc=S.members.find(m=>m.id===req.requested_by);
+    const cols={
+      color_mm2ccsjs:{label:MONDAY_PROD_STATUS_MAP[req.status]||'Rascunho'},
+      text_mm2cstpc:cl?.name||'',
+      text_mm2czjm4:req.id,
+      dropdown_mm2cayca:{labels:[req.prod_type==='fee_prod'?'Fee Prod':req.prod_type==='extra_prod'?'Extra Prod':req.prod_type==='single_project'?'Single Project':'Pacote']}
+    };
+    if(req.objective)cols.long_text_mm2cjmef={text:req.objective};
+    if(req.desired_deadline)cols.date_mm2crf2={date:req.desired_deadline};
+    if(req.quantity_deliverables)cols.numeric_mm2cqa1f=String(req.quantity_deliverables);
+    if(req.formats)cols.text_mm2crdeb=req.formats;
+    if(req.video_type)cols.dropdown_mm2c4f2z={labels:req.video_type.split(',').map(v=>v.trim())};
+    if(req.briefing_notes)cols.long_text_mm2cwex8={text:req.briefing_notes};
+    if(acc?.monday_user_id)cols.multiple_person_mm2ch9ed={personsAndTeams:[{id:Number(acc.monday_user_id),kind:'person'}]};
+    const groupId=MONDAY_PROD_GROUP_MAP[req.status]||'group_mm2c3x7w';
+    const mutQ=`mutation{create_item(board_id:${MONDAY_PROD_BOARD},group_id:"${groupId}",item_name:"${req.title.replace(/"/g,"'")}",column_values:"${JSON.stringify(cols).replace(/"/g,'\\"')}"){id}}`;
+    const r=await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
+    const d=await r.json();
+    const mondayId=d?.data?.create_item?.id;
+    if(mondayId){
+      // Save monday item ID back to Supabase
+      await sbPatch('av_requests',`id=eq.${req.id}`,{monday_item_id:String(mondayId)});
+    }
+    return mondayId;
+  }catch(e){console.error('Monday create prod error:',e);return null}
+}
+
+async function mondayUpdateProdStatus(req,newStatus){
+  try{
+    if(!req.monday_item_id)return;
+    const label=MONDAY_PROD_STATUS_MAP[newStatus];
+    if(!label)return;
+    const mutQ=`mutation{change_simple_column_value(board_id:${MONDAY_PROD_BOARD},item_id:${req.monday_item_id},column_id:"color_mm2ccsjs",value:"${label}"){id}}`;
+    await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
+    // Move to correct group
+    const groupId=MONDAY_PROD_GROUP_MAP[newStatus];
+    if(groupId){
+      const moveQ=`mutation{move_item_to_group(item_id:${req.monday_item_id},group_id:"${groupId}"){id}}`;
+      await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:moveQ})});
+    }
+  }catch(e){console.error('Monday update prod error:',e)}
+}
+
 async function saveRequest(){
   const title=$('rq-title')?.value,client=$('rq-client')?.value,type=$('rq-type')?.value;
   if(!title||!client||!type){toast('Preencha título, cliente e tipo','error');return}
@@ -1007,8 +1071,11 @@ async function saveRequest(){
       briefing_notes:n($('rq-notes')?.value),
       status:'pending_leader_review'
     };
-    await sbPost('av_requests',body);
-    closeM('m-req');S.av_requests=await sbGet('av_requests','order=created_at.desc');toast('Solicitação criada');renderPage();
+    const result=await sbPost('av_requests',body);
+    // Create item on Monday board
+    const newReq=Array.isArray(result)?result[0]:result;
+    if(newReq?.id)mondayCreateProdItem({...body,id:newReq.id});
+    closeM('m-req');S.av_requests=await sbGet('av_requests','order=created_at.desc');toast('Solicitação criada');buildNav();renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
@@ -1342,28 +1409,11 @@ async function saveBudgetAndSend(reqId,budgetId){
   try{
     await sbPatch('av_requests',`id=eq.${reqId}`,{status:'budget_sent',updated_at:new Date().toISOString()});
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
-    
-    // Notify account via Monday (if monday_item_id exists)
+    // Sync status to Monday
     const req=S.av_requests.find(r=>r.id===reqId);
-    if(req?.monday_item_id){
-      try{
-        const accountMember=S.members.find(m=>m.id===req.requested_by);
-        const mondayUserId=accountMember?.monday_user_id;
-        if(mondayUserId){
-          // Use Make webhook to send notification
-          await fetch(MAKE_EXTRAS_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-            type:'budget_notification',
-            monday_item_id:req.monday_item_id,
-            monday_user_id:mondayUserId,
-            title:req.title,
-            message:`Orçamento pronto para "${req.title}" — acesse o TGT Hub para aprovar.`
-          })}).catch(()=>{});
-        }
-      }catch(e){console.log('Monday notify error (non-blocking):',e)}
-    }
-    
+    if(req)mondayUpdateProdStatus(req,'budget_sent');
     closeM('m-req');toast('Orçamento enviado ao Account');
-    buildNav(); // refresh badge
+    buildNav();
     renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
@@ -1373,9 +1423,12 @@ async function changeRequestStatus(id,newStatus){
   try{
     await sbPatch('av_requests',`id=eq.${id}`,{status:newStatus,updated_at:new Date().toISOString()});
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
+    // Sync status to Monday
+    const req=S.av_requests.find(r=>r.id===id);
+    if(req)mondayUpdateProdStatus(req,newStatus);
     closeM('m-req');
     toast(`Status atualizado: ${AV_STATUSES[newStatus]||newStatus}`);
-    buildNav(); // refresh badge count
+    buildNav();
     renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
