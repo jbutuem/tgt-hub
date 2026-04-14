@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.10.0</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.11.0</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.10.0</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.11.0</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -1214,6 +1214,24 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         })()}
         <div style="margin-top:10px"><button class="btn btn-sm" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Baixar proposta PDF</button></div>
       </div>`:r.client_budget?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px"><div style="font-size:11px;color:var(--txt2)">Verba disponível: <span style="font-weight:700;color:var(--prod)">${fMoney(r.client_budget)}</span></div></div>`:''}
+      ${['scheduled','in_capture','in_edit','in_review','delivered'].includes(r.status)?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
+        <div class="cl" style="margin-bottom:10px">🎬 Time da Produção</div>
+        <div id="prod-team-${r.id}" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+          ${(r.team_member_ids||[]).map(mid=>{const mm=S.members.find(x=>x.id===mid);return mm?`<span class="bg bg-t1" style="display:inline-flex;align-items:center;gap:4px">${mm.name.split(' ').slice(0,2).join(' ')} <span style="cursor:pointer;font-size:10px" onclick="removeProdTeamMember('${r.id}','${mid}')">✕</span></span>`:''}).join('')}
+          ${!(r.team_member_ids||[]).length?'<span style="font-size:12px;color:var(--txt3)">Nenhum membro escalado</span>':''}
+        </div>
+        ${canBudget?`<div style="display:flex;gap:6px;margin-bottom:14px">
+          <select class="f-sel" id="prod-add-member-${r.id}" style="flex:1"><option value="">+ Adicionar membro</option>${S.members.filter(mm=>mm.team==='PROD'||mm.access_level==='admin').map(mm=>`<option value="${mm.id}" ${(r.team_member_ids||[]).includes(mm.id)?'disabled':''}>${mm.name} (${mm.job_title||mm.team})</option>`).join('')}</select>
+          <button class="btn btn-sm btn-r" onclick="addProdTeamMember('${r.id}')">Adicionar</button>
+        </div>`:''}
+        
+        <div class="cl" style="margin-bottom:10px">📦 Equipamentos Reservados</div>
+        <div id="prod-equip-${r.id}" style="margin-bottom:10px"></div>
+        ${canBudget?`<div style="display:flex;gap:6px">
+          <select class="f-sel" id="prod-add-equip-${r.id}" style="flex:1"><option value="">+ Reservar equipamento</option></select>
+          <button class="btn btn-sm btn-r" onclick="addProdEquipment('${r.id}')">Reservar</button>
+        </div>`:''}
+      </div>`:''}
       ${canAct&&nextStatuses.length?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
         <div class="cl" style="margin-bottom:10px">Ações</div>
         ${r.status==='budget_sent'?`<div style="margin-bottom:10px;font-size:12px;color:var(--txt2)">Revise o orçamento acima e aprove ou rejeite a produção.</div>
@@ -1353,6 +1371,8 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
   
   // Calculate on load
   setTimeout(()=>{calcBudget();
+    // Load equipment list for scheduled+ productions
+    if(['scheduled','in_capture','in_edit','in_review','delivered'].includes(r.status))loadProdEquipment(r.id);
     // Fix input focus for modal
     $('m-req-body').querySelectorAll('input,textarea,select').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})
   },50);
@@ -1654,6 +1674,103 @@ async function saveBudgetAndSend(reqId,budgetId){
     closeM('m-req');toast('Orçamento enviado ao Account');
     buildNav();
     renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function addProdTeamMember(reqId){
+  const sel=$(`prod-add-member-${reqId}`);if(!sel||!sel.value)return;
+  const memberId=sel.value;
+  const req=S.av_requests.find(r=>r.id===reqId);if(!req)return;
+  const ids=[...(req.team_member_ids||[]),memberId];
+  try{
+    await sbPatch('av_requests',`id=eq.${reqId}`,{team_member_ids:ids});
+    S.av_requests=await sbGet('av_requests','order=created_at.desc');
+    closeM('m-req');showRequestDetail(reqId);toast('Membro adicionado');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function removeProdTeamMember(reqId,memberId){
+  const req=S.av_requests.find(r=>r.id===reqId);if(!req)return;
+  const ids=(req.team_member_ids||[]).filter(id=>id!==memberId);
+  try{
+    await sbPatch('av_requests',`id=eq.${reqId}`,{team_member_ids:ids});
+    S.av_requests=await sbGet('av_requests','order=created_at.desc');
+    closeM('m-req');showRequestDetail(reqId);toast('Membro removido');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function loadProdEquipment(reqId){
+  // Load reserved equipment for this production and populate picker
+  try{
+    const reserved=await sbGet('production_items',`av_request_id=eq.${reqId}&order=created_at.desc`);
+    const listEl=$(`prod-equip-${reqId}`);
+    if(listEl){
+      if(reserved.length){
+        listEl.innerHTML=reserved.map(pi=>{
+          const eq=S.equipment.find(e=>e.id===pi.equipment_id);
+          const statusColor=pi.status==='reserved'?'var(--pack)':pi.status==='checked_out'?'var(--red)':'var(--prod)';
+          const statusLabel=pi.status==='reserved'?'Reservado':pi.status==='checked_out'?'Em uso':'Devolvido';
+          return`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg3);border-radius:var(--radius);margin-bottom:4px;border-left:3px solid ${statusColor}">
+            <div><span style="font-weight:600;font-size:12px">${eq?.name||'Equipamento'}</span> <span style="font-size:10px;color:var(--txt3)">${eq?.internal_code||''}</span></div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</span>
+              ${pi.status==='reserved'?`<button class="pill" style="font-size:9px" onclick="checkoutEquipment('${pi.id}','${reqId}')">Check-out</button>`:''}
+              ${pi.status==='checked_out'?`<button class="pill" style="font-size:9px" onclick="checkinEquipment('${pi.id}','${pi.equipment_id}','${reqId}')">Devolver</button>`:''}
+              ${pi.status==='reserved'?`<button style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:12px" onclick="releaseProdEquipment('${pi.id}','${pi.equipment_id}','${reqId}')">✕</button>`:''}
+            </div>
+          </div>`;
+        }).join('');
+      }else{
+        listEl.innerHTML='<span style="font-size:12px;color:var(--txt3)">Nenhum equipamento reservado</span>';
+      }
+    }
+    // Populate available equipment picker
+    const reservedIds=reserved.filter(pi=>pi.status!=='checked_in').map(pi=>pi.equipment_id);
+    const allReserved=await sbGet('production_items',`status=in.(reserved,checked_out)&select=equipment_id`);
+    const busyIds=allReserved.map(pi=>pi.equipment_id);
+    const selEl=$(`prod-add-equip-${reqId}`);
+    if(selEl){
+      const available=S.equipment.filter(e=>!busyIds.includes(e.id));
+      selEl.innerHTML=`<option value="">+ Reservar equipamento (${available.length} disponíveis)</option>`+
+        available.map(e=>{const cat=S.categories.find(c=>c.id===e.category_id);return`<option value="${e.id}">${e.name} (${cat?.name||'—'}) — ${e.internal_code||''}</option>`}).join('');
+    }
+  }catch(e){console.error('loadProdEquipment error:',e)}
+}
+
+async function addProdEquipment(reqId){
+  const sel=$(`prod-add-equip-${reqId}`);if(!sel||!sel.value)return;
+  const equipId=sel.value;
+  try{
+    await sbPost('production_items',{av_request_id:reqId,equipment_id:equipId,status:'reserved',reserved_from:new Date().toISOString()});
+    await sbPatch('equipment',`id=eq.${equipId}`,{status:'reserved'});
+    S.equipment=await sbGet('equipment','order=name');
+    await loadProdEquipment(reqId);toast('Equipamento reservado');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function checkoutEquipment(piId,reqId){
+  try{
+    await sbPatch('production_items',`id=eq.${piId}`,{status:'checked_out',checkout_at:new Date().toISOString()});
+    await loadProdEquipment(reqId);toast('Check-out realizado');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function checkinEquipment(piId,equipId,reqId){
+  try{
+    await sbPatch('production_items',`id=eq.${piId}`,{status:'checked_in',checkin_at:new Date().toISOString()});
+    await sbPatch('equipment',`id=eq.${equipId}`,{status:'available'});
+    S.equipment=await sbGet('equipment','order=name');
+    await loadProdEquipment(reqId);toast('Equipamento devolvido');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function releaseProdEquipment(piId,equipId,reqId){
+  if(!confirm('Liberar este equipamento da produção?'))return;
+  try{
+    await sbPatch('production_items',`id=eq.${piId}`,{status:'checked_in'});
+    await sbPatch('equipment',`id=eq.${equipId}`,{status:'available'});
+    S.equipment=await sbGet('equipment','order=name');
+    await loadProdEquipment(reqId);toast('Equipamento liberado');
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
