@@ -1183,10 +1183,14 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
       <!-- COSTS (operational inputs → auto-calculated) -->
       <div style="margin-bottom:16px">
         <div class="cl" style="margin-bottom:10px">Captação</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
           <div class="f-field"><label class="f-label">Equipe (pessoas)</label><input class="f-input" type="number" min="0" id="bg-crew-qty" value="${bgt?.cost_crew_daily?Math.round(Number(bgt.cost_crew_daily)/getCostRate('crew_daily_rate')):0}" oninput="calcBudget()"></div>
-          <div class="f-field"><label class="f-label">Dias de captação</label><input class="f-input" type="number" min="0" id="bg-crew-days" value="1" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Período</label><select class="f-sel" id="bg-crew-period" onchange="calcBudget()"><option value="1">Diária inteira</option><option value="0.5">Meia diária</option></select></div>
+          <div class="f-field"><label class="f-label">Qtd dias</label><input class="f-input" type="number" min="0" id="bg-crew-days" value="1" oninput="calcBudget()"></div>
           <div class="f-field"><label class="f-label" style="color:var(--txt3)">= <span id="bg-crew-total" style="font-weight:700">R$ 0</span></label><div style="font-size:10px;color:var(--txt3)">R$ ${getCostRate('crew_daily_rate')}/pessoa/dia</div></div>
+        </div>
+        <div style="margin-top:8px">
+          <label class="chk-item" style="margin:0"><input type="checkbox" id="bg-crew-extra" onchange="this.parentElement.classList.toggle('checked',this.checked);calcBudget()"> Horas especiais (+35% equipe)</label>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px">
           <div class="f-field"><label class="f-label">Deslocamento (km)</label><input class="f-input" type="number" min="0" id="bg-travel-km" value="0" oninput="calcBudget()"></div>
@@ -1251,27 +1255,30 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         <!-- RESULTADO -->
         <div style="border-top:2px solid var(--border);padding-top:14px;margin-top:16px">
           <div id="bg-profit-alert"></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-top:10px;text-align:center">
-            <div><div style="font-size:10px;color:var(--txt3)">PREÇO CLIENTE</div><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="bg-price-display">R$ 0</div></div>
-            <div><div style="font-size:10px;color:var(--txt3)">LUCRO</div><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="bg-margin-val">R$ 0</div><div style="font-size:11px;font-family:var(--mono)" id="bg-margin-pct">0%</div></div>
-            <div><div style="font-size:10px;color:var(--txt3)">ACCOUNT</div><div style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--t1)" id="bg-comm-acc-val">R$ 0</div><div style="font-size:10px;color:var(--txt3)" id="bg-comm-acc-info">—</div></div>
-            <div><div style="font-size:10px;color:var(--txt3)">LÍDER PROD</div><div style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--pack)" id="bg-comm-ldr-val">R$ 0</div><div style="font-size:10px;color:var(--txt3)">10% do lucro</div></div>
+          <div style="background:rgba(74,222,128,.06);border:2px solid rgba(74,222,128,.15);border-radius:var(--radius);padding:14px;margin:10px 0;text-align:center">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--prod);font-weight:700">Receita TGT</div>
+            <div style="font-size:28px;font-weight:900;font-family:var(--mono);color:var(--prod)" id="bg-receita-tgt">R$ 0</div>
+            <div style="font-size:11px;font-family:var(--mono);color:var(--txt2)" id="bg-receita-tgt-pct">0% do preço</div>
           </div>
-          <div id="bg-elig-info" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;text-align:center">
+            <div><div style="font-size:9px;color:var(--txt3)">PREÇO CLIENTE</div><div style="font-size:15px;font-weight:800;font-family:var(--mono)" id="bg-price-display">R$ 0</div></div>
+            <div><div style="font-size:9px;color:var(--txt3)">IMPOSTOS</div><div style="font-size:15px;font-weight:800;font-family:var(--mono);color:var(--pack)" id="bg-tax-display">R$ 0</div></div>
+            <div><div style="font-size:9px;color:var(--txt3)">COMISSÃO ACC</div><div style="font-size:15px;font-weight:800;font-family:var(--mono);color:var(--t1)" id="bg-comm-acc-val">R$ 0</div><div style="font-size:9px;color:var(--txt3)" id="bg-comm-acc-info">—</div></div>
+            <div><div style="font-size:9px;color:var(--txt3)">COMISSÃO LÍDER</div><div style="font-size:15px;font-weight:800;font-family:var(--mono);color:var(--pack)" id="bg-comm-ldr-val">R$ 0</div><div style="font-size:9px;color:var(--txt3)">10% lucro</div></div>
+          </div>
         </div>
       </div>
       
-      <!-- LEADER NOTES + DATES -->
+      <!-- PROGRAMAÇÃO -->
+      <div style="margin-bottom:16px">
+        <div class="cl" style="margin-bottom:10px">Programação</div>
+        ${r.desired_deadline?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between"><div><span style="font-size:11px;color:var(--txt2)">Prazo solicitado pelo Account:</span> <span style="font-weight:700">${fD(r.desired_deadline)}</span></div><button class="pill" onclick="var d=document.getElementById('bg-cap-date');if(d)d.value='${r.desired_deadline}'">Usar esta data</button></div>`:''}
+        <div class="f-row">
+          <div class="f-field"><label class="f-label">Data captação</label><input class="f-input" type="date" id="bg-cap-date" value="${bgt?.suggested_capture_date||''}"></div>
+          <div class="f-field"><label class="f-label">Data entrega</label><input class="f-input" type="date" id="bg-del-date" value="${bgt?.suggested_delivery_date||''}"></div>
+        </div>
+      </div>
       <div class="f-field"><label class="f-label">Observações do líder</label><textarea class="f-area" id="bg-notes">${bgt?.leader_notes||''}</textarea></div>
-      <div class="f-row">
-        <div class="f-field"><label class="f-label">Data captação sugerida</label><input class="f-input" type="date" id="bg-cap-date" value="${bgt?.suggested_capture_date||''}"></div>
-        <div class="f-field"><label class="f-label">Data entrega sugerida</label><input class="f-input" type="date" id="bg-del-date" value="${bgt?.suggested_delivery_date||''}"></div>
-      </div>
-      <div class="f-row" style="margin-top:8px">
-        <div class="f-field"><label class="f-label">Horas captação</label><input class="f-input" type="number" step="any" id="bg-hrs-cap" value="${bgt?Number(bgt.refined_capture_hours):0}"></div>
-        <div class="f-field"><label class="f-label">Horas edição</label><input class="f-input" type="number" step="any" id="bg-hrs-edit" value="${bgt?Number(bgt.refined_edit_hours):0}"></div>
-        <div class="f-field"><label class="f-label">Horas pós</label><input class="f-input" type="number" step="any" id="bg-hrs-post" value="${bgt?Number(bgt.refined_post_hours):0}"></div>
-      </div>
       
       ${canBudget?`<div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
         <button class="btn btn-r" onclick="saveBudget('${r.id}','${bgt?.id||''}')">Salvar Orçamento</button>
@@ -1298,9 +1305,11 @@ function calcBudget(){
   const el=id=>$(id);
   // Auto-calculated costs from operational inputs
   const crewQty=v('bg-crew-qty'),crewDays=v('bg-crew-days');
-  const crewCost=crewQty*crewDays*getCostRate('crew_daily_rate');
+  const crewPeriod=$('bg-crew-period')?parseFloat($('bg-crew-period').value)||1:1;
+  const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
+  const crewCost=crewQty*crewDays*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=crewQty*crewDays*getCostRate('food_per_person');
+  const foodCost=crewQty*crewDays*crewPeriod*getCostRate('food_per_person');
   const editCost=v('bg-edit-hrs')*getCostRate('edit_hour_rate');
   const motionCost=v('bg-motion-hrs')*getCostRate('motion_hour_rate');
   const colorCost=v('bg-color-qty')*getCostRate('color_grade_flat');
@@ -1339,8 +1348,12 @@ function calcBudget(){
     accPctLabel=`${(bestPct*100).toFixed(0)}% do lucro`;
   }
   
-  if(el('bg-margin-val')){el('bg-margin-val').textContent=fMoney(profit);el('bg-margin-val').style.color=profit>=0?'var(--prod)':'var(--red)'}
-  if(el('bg-margin-pct')){el('bg-margin-pct').textContent=profitPct.toFixed(1)+'%';el('bg-margin-pct').style.color=profit>=0?'var(--prod)':'var(--red)'}
+  // Receita TGT = Lucro - Comissões
+  const receitaTGT=profit-commAcc-commLdr;
+  const receitaTGTPct=price>0?(receitaTGT/price)*100:0;
+  if(el('bg-receita-tgt')){el('bg-receita-tgt').textContent=fMoney(receitaTGT);el('bg-receita-tgt').style.color=receitaTGT>=0?'var(--prod)':'var(--red)'}
+  if(el('bg-receita-tgt-pct')){el('bg-receita-tgt-pct').textContent=receitaTGTPct.toFixed(1)+'% do preço';el('bg-receita-tgt-pct').style.color=receitaTGT>=0?'var(--txt2)':'var(--red)'}
+  if(el('bg-tax-display'))el('bg-tax-display').textContent=fMoney(taxAmt);
   if(el('bg-comm-acc-val')){el('bg-comm-acc-val').textContent=fMoney(commAcc);el('bg-comm-acc-val').style.color=commAcc>0?'var(--t1)':'var(--red)'}
   if(el('bg-comm-acc-info'))el('bg-comm-acc-info').textContent=accPctLabel;
   if(el('bg-comm-ldr-val')){el('bg-comm-ldr-val').textContent=fMoney(commLdr);el('bg-comm-ldr-val').style.color=commLdr>0?'var(--pack)':'var(--red)'}
@@ -1367,9 +1380,11 @@ function calcBudget(){
 
 function calcBudgetFromReceita(){
   const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
-  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('crew_daily_rate');
+  const crewPeriod=$('bg-crew-period')?parseFloat($('bg-crew-period').value)||1:1;
+  const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
+  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('food_per_person');
+  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
   const costs=crewCost+travelCost+foodCost+v('bg-edit-hrs')*getCostRate('edit_hour_rate')+v('bg-motion-hrs')*getCostRate('motion_hour_rate')+v('bg-color-qty')*getCostRate('color_grade_flat')+v('bg-audio-qty')*getCostRate('audio_mix_flat')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const receita=v('bg-receita');
   const taxPct=v('bg-tax')/100;
@@ -1388,9 +1403,11 @@ function setBudgetMargin(pct){
 
 function calcBudgetFromMarginInput(){
   const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
-  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('crew_daily_rate');
+  const crewPeriod=$('bg-crew-period')?parseFloat($('bg-crew-period').value)||1:1;
+  const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
+  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('food_per_person');
+  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
   const costs=crewCost+travelCost+foodCost+v('bg-edit-hrs')*getCostRate('edit_hour_rate')+v('bg-motion-hrs')*getCostRate('motion_hour_rate')+v('bg-color-qty')*getCostRate('color_grade_flat')+v('bg-audio-qty')*getCostRate('audio_mix_flat')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const marginPct=v('bg-margin-input')/100;
   const taxPct=v('bg-tax')/100;
@@ -1408,9 +1425,11 @@ async function saveBudget(reqId,budgetId){
   const n=id=>{const el=$(id);return el?(el.value||'').trim()||null:null};
   const price=v('bg-suggested-price');
   // Compute costs from operational inputs
-  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('crew_daily_rate');
+  const crewPeriod=$('bg-crew-period')?parseFloat($('bg-crew-period').value)||1:1;
+  const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
+  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('food_per_person');
+  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
   const editCost=v('bg-edit-hrs')*getCostRate('edit_hour_rate');
   const motionCost=v('bg-motion-hrs')*getCostRate('motion_hour_rate');
   const colorCost=v('bg-color-qty')*getCostRate('color_grade_flat');
@@ -1446,7 +1465,7 @@ async function saveBudget(reqId,budgetId){
     margin_tgt_value:profit-commAccVal-commLdrVal,
     margin_tgt_pct:price>0?((profit-commAccVal-commLdrVal)/price)*100:0,
     leader_notes:n('bg-notes'),
-    refined_capture_hours:v('bg-hrs-cap'),refined_edit_hours:v('bg-hrs-edit'),refined_post_hours:v('bg-hrs-post'),
+    refined_capture_hours:v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*8,refined_edit_hours:v('bg-edit-hrs'),refined_post_hours:v('bg-motion-hrs'),
     budget_status:'draft',updated_at:new Date().toISOString()
   };
   const capDate=n('bg-cap-date');if(capDate)data.suggested_capture_date=capDate;
