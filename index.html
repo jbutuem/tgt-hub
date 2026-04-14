@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.12.2</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.12.3</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.12.2</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.12.3</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -1201,7 +1201,7 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
   $('m-req-body').innerHTML=`
     <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
       <button class="pill active" id="tab-detail" onclick="switchReqTab('detail')">Detalhes</button>
-      ${!isFee?`<button class="pill" id="tab-budget" onclick="switchReqTab('budget')">Orçamento</button>`:''}
+      <button class="pill" id="tab-budget" onclick="switchReqTab('budget')">${isFee?'Custos':'Orçamento'}</button>
     </div>
     
     <!-- TAB: DETAILS -->
@@ -1283,8 +1283,9 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
     </div>
     
     <!-- TAB: BUDGET -->
-    ${!isFee?`<div id="req-tab-budget" style="display:none">
-      ${r.client_budget?`<div style="background:rgba(74,222,128,.06);border:2px solid rgba(74,222,128,.2);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+    ${`<div id="req-tab-budget" style="display:none">
+      ${isFee?`<div style="background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.15);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--t1)">Produção Fee — sem cobrança extra. Calculadora para controle de custo interno.</div>`:
+      r.client_budget?`<div style="background:rgba(74,222,128,.06);border:2px solid rgba(74,222,128,.2);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
         <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--prod);font-weight:700">Verba definida pelo Account</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Otimize a produção dentro deste valor</div></div>
         <div style="font-size:28px;font-weight:900;color:var(--prod);font-family:var(--mono)">${fMoney(r.client_budget)}</div>
       </div>`:`<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--pack)">Sem verba definida — monte o orçamento e defina a receita desejada para calcular o preço ao cliente.</div>`}
@@ -1343,7 +1344,14 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--txt2)">Impostos (18%)</span><span style="font-weight:700;font-family:var(--mono);color:var(--pack)" id="bg-tax-val">R$ 0</span></div>
         <input type="hidden" id="bg-tax" value="18">
         
-        ${!r.client_budget?`<!-- SEM VERBA: Líder define receita/preço -->
+        ${isFee?`<!-- FEE: apenas custos, sem preço -->
+        <input type="hidden" id="bg-suggested-price" value="0">
+        <div style="border-top:2px solid var(--border);padding-top:14px;margin-top:16px;text-align:center">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t1);font-weight:700">Custo Total da Produção</div>
+          <div style="font-size:32px;font-weight:900;font-family:var(--mono);color:var(--t1)" id="bg-fee-cost-display">R$ 0</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:4px">Este custo será absorvido pelo fee mensal do cliente</div>
+        </div>`:
+        !r.client_budget?`<!-- SEM VERBA: Líder define receita/preço -->
         <div style="border-top:2px solid var(--red);padding-top:14px;margin-top:14px">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--red);font-weight:700;margin-bottom:10px">Definir preço ao cliente</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -1361,7 +1369,7 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         </div>`:`<!-- COM VERBA: Preço = verba do account -->
         <input type="hidden" id="bg-suggested-price" value="${r.client_budget}">`}
         
-        <!-- RESULTADO -->
+        ${!isFee?`<!-- RESULTADO (Extra only) -->
         <div style="border-top:2px solid var(--border);padding-top:14px;margin-top:16px">
           <div id="bg-profit-alert"></div>
           <div style="background:rgba(74,222,128,.06);border:2px solid rgba(74,222,128,.15);border-radius:var(--radius);padding:14px;margin:10px 0;text-align:center">
@@ -1375,7 +1383,7 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
             <div><div style="font-size:9px;color:var(--txt3)">COMISSÃO ACC</div><div style="font-size:15px;font-weight:800;font-family:var(--mono);color:var(--t1)" id="bg-comm-acc-val">R$ 0</div><div style="font-size:9px;color:var(--txt3)" id="bg-comm-acc-info">—</div></div>
             <div><div style="font-size:9px;color:var(--txt3)">COMISSÃO LÍDER</div><div style="font-size:15px;font-weight:800;font-family:var(--mono);color:var(--pack)" id="bg-comm-ldr-val">R$ 0</div><div style="font-size:9px;color:var(--txt3)">10% lucro</div></div>
           </div>
-        </div>
+        </div>`:''}
       </div>
       
       <!-- PROGRAMAÇÃO -->
@@ -1401,11 +1409,11 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
       <div class="f-field"><label class="f-label">Observações do líder</label><textarea class="f-area" id="bg-notes">${bgt?.leader_notes||''}</textarea></div>
       
       ${canBudget?`<div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-        <button class="btn btn-r" onclick="saveBudget('${r.id}','${bgt?.id||''}')">Salvar Orçamento</button>
-        ${r.status==='leader_reviewing'||r.status==='pending_leader_review'?`<button class="btn btn-r" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">Salvar & Enviar ao Account</button>`:''}
-        ${bgt?`<button class="btn" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Gerar PDF</button>`:''}
+        <button class="btn btn-r" onclick="saveBudget('${r.id}','${bgt?.id||''}')">Salvar ${isFee?'Custos':'Orçamento'}</button>
+        ${!isFee&&(r.status==='leader_reviewing'||r.status==='pending_leader_review')?`<button class="btn btn-r" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">Salvar & Enviar ao Account</button>`:''}
+        ${bgt&&!isFee?`<button class="btn" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Gerar PDF</button>`:''}
       </div>`:''}
-    </div>`:''}`;
+    </div>`}`;
   
   // Calculate on load
   setTimeout(()=>{calcBudget();
@@ -1538,6 +1546,7 @@ function calcBudget(){
   const manualCosts=v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const costs=crewCost+travelCost+foodCost+editCost+motionCost+colorCost+audioCost+manualCosts;
   if(el('bg-total-cost'))el('bg-total-cost').textContent=fMoney(costs);
+  if(el('bg-fee-cost-display'))el('bg-fee-cost-display').textContent=fMoney(costs);
   
   const price=v('bg-suggested-price');
   const taxPct=v('bg-tax')/100;
