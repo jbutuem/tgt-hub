@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.12.3</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.13.0</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.12.3</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.13.0</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -1135,17 +1135,17 @@ async function saveRequest(){
 // REQUEST DETAIL + APPROVAL FLOW
 // ═══════════════════════════════════════════════
 const STATUS_FLOW={
-  // Account submete → Líder recebe
-  pending_leader_review:['cancelled'],
-  // Líder analisa (auto ao salvar orçamento) — envia orçamento via botão na aba Orçamento
-  leader_reviewing:['cancelled'],
-  // Account recebe orçamento → aprova ou rejeita
+  // Líder recebe solicitação — pode enviar orçamento ou cancelar
+  pending_leader_review:['budget_sent','cancelled'],
+  // Líder analisando — pode enviar orçamento ou cancelar
+  leader_reviewing:['budget_sent','cancelled'],
+  // Account recebe orçamento — aprova ou rejeita
   budget_sent:['account_approved','account_rejected'],
-  // Account aprovou → entra na agenda
+  // Account aprovou → líder agenda
   account_approved:['scheduled','cancelled'],
-  // Account rejeitou → volta ao líder com feedback
+  // Account rejeitou → líder reabre
   account_rejected:['pending_leader_review'],
-  // Agendado → líder configura time e inicia captação
+  // Agendado → inicia captação
   scheduled:['in_capture','cancelled'],
   // Fluxo de produção
   in_capture:['in_edit'],
@@ -1155,6 +1155,7 @@ const STATUS_FLOW={
   cancelled:['pending_leader_review']
 };
 const STATUS_ACTION_LABELS={
+  budget_sent:'📤 Enviar Orçamento ao Account',
   account_approved:'✓ Aprovar Orçamento',account_rejected:'✗ Recusar Orçamento',
   scheduled:'📅 Colocar na Agenda',
   in_capture:'🎬 Iniciar Captação',in_edit:'✂ Enviar pra Edição',
@@ -1162,7 +1163,7 @@ const STATUS_ACTION_LABELS={
   cancelled:'Cancelar',pending_leader_review:'↩ Reabrir / Revisar'
 };
 const STATUS_ACTION_COLORS={
-  account_approved:'btn-r',delivered:'btn-r',
+  budget_sent:'btn-r',account_approved:'btn-r',delivered:'btn-r',
   account_rejected:'btn-o',cancelled:'btn-o'
 };
 
@@ -1174,10 +1175,10 @@ function showRequestDetail(id){
   const nextStatuses=STATUS_FLOW[r.status]||[];
   // Permissões: quem pode agir em cada etapa
   const isLeaderOrAdmin=isA()||isPL();
-  const isAccountOwner=isAcc()&&r.requested_by===S.user.id;
-  // Account só age em budget_sent (aprovar/rejeitar) e account_rejected (reabrir)
-  // Líder/ADM age em tudo exceto budget_sent (que é decisão do account)
-  const canAct=(r.status==='budget_sent'||r.status==='account_rejected')?(isAccountOwner||isA()):isLeaderOrAdmin;
+  const isAccountUser=isAcc();
+  // Account pode aprovar/rejeitar quando status é budget_sent
+  // Líder/ADM age em todo o resto
+  const canAct=(r.status==='budget_sent'||r.status==='account_rejected')?(isAccountUser||isA()):isLeaderOrAdmin;
   const canBudget=isLeaderOrAdmin;
   // Get existing budget
   let bgt=null;
@@ -1277,6 +1278,7 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         ${r.status==='account_rejected'?`<div style="background:rgba(237,28,36,.06);border:1px solid rgba(237,28,36,.15);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:12px"><span style="color:var(--red);font-weight:700">Motivo da rejeição:</span> <span style="color:var(--txt2)">${r.rejection_feedback||'Não informado'}</span></div>`:''}
         <div style="display:flex;flex-wrap:wrap;gap:8px">${nextStatuses.map(ns=>{
           if(ns==='account_rejected')return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-o'}" onclick="var fb=document.getElementById('rq-feedback');if(!fb||!fb.value.trim()){toast('Informe o motivo da rejeição','error');return}rejectRequest('${r.id}',fb.value)">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
+          if(ns==='budget_sent')return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
           return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="changeRequestStatus('${r.id}','${ns}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
         }).join('')}</div>
       </div>`:''}
