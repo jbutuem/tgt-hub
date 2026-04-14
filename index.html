@@ -971,6 +971,11 @@ function showNewRequest(){
       <div class="f-field"><label class="f-label">Qtd entregas</label><input class="f-input" type="number" id="rq-qty" min="1" value="1"></div>
       <div class="f-field"><label class="f-label">Prazo desejado</label><input class="f-input" type="date" id="rq-deadline"></div>
     </div>
+    <div class="f-field" style="background:var(--bg3);padding:14px;border-radius:var(--radius)">
+      <label class="f-label" style="color:var(--prod)">Verba disponível (R$) — opcional</label>
+      <input class="f-input" type="number" id="rq-budget" placeholder="Deixe vazio se não há verba definida" style="font-size:15px;font-weight:700;text-align:center">
+      <div style="font-size:10px;color:var(--txt3);margin-top:6px">Se informado, o líder otimizará a produção dentro deste valor. Se não, o líder montará o orçamento e submeterá para aprovação.</div>
+    </div>
     <div class="f-field">
       <label class="f-label">Formatos dos entregáveis</label>
       <div class="chk-grid" id="rq-formats">
@@ -981,6 +986,8 @@ function showNewRequest(){
     <div class="f-field"><label class="f-label">Briefing / Observações</label><textarea class="f-area" id="rq-notes" placeholder="Detalhes adicionais sobre a produção"></textarea></div>`;
   openM('m-req');
 }
+
+function getCostRate(type){const c=S.cost_defaults.find(d=>d.cost_type===type);return c?Number(c.default_value):0}
 
 // ═══════════════════════════════════════════════
 // MONDAY PROD AV SYNC
@@ -1003,29 +1010,30 @@ const MONDAY_PROD_GROUP_MAP={
 async function mondayCreateProdItem(req){
   try{
     const cl=S.clients.find(c=>c.id===req.client_id);
-    const acc=S.members.find(m=>m.id===req.requested_by);
-    const cols={
-      color_mm2ccsjs:{label:MONDAY_PROD_STATUS_MAP[req.status]||'Rascunho'},
-      text_mm2cstpc:cl?.name||'',
-      text_mm2czjm4:req.id,
-      dropdown_mm2cayca:{labels:[req.prod_type==='fee_prod'?'Fee Prod':req.prod_type==='extra_prod'?'Extra Prod':req.prod_type==='single_project'?'Single Project':'Pacote']}
-    };
-    if(req.objective)cols.long_text_mm2cjmef={text:req.objective};
-    if(req.desired_deadline)cols.date_mm2crf2={date:req.desired_deadline};
-    if(req.quantity_deliverables)cols.numeric_mm2cqa1f=String(req.quantity_deliverables);
-    if(req.formats)cols.text_mm2crdeb=req.formats;
-    if(req.video_type)cols.dropdown_mm2c4f2z={labels:req.video_type.split(',').map(v=>v.trim())};
-    if(req.briefing_notes)cols.long_text_mm2cwex8={text:req.briefing_notes};
-    if(acc?.monday_user_id)cols.multiple_person_mm2ch9ed={personsAndTeams:[{id:Number(acc.monday_user_id),kind:'person'}]};
     const groupId=MONDAY_PROD_GROUP_MAP[req.status]||'group_mm2c3x7w';
-    const mutQ=`mutation{create_item(board_id:${MONDAY_PROD_BOARD},group_id:"${groupId}",item_name:"${req.title.replace(/"/g,"'")}",column_values:"${JSON.stringify(cols).replace(/"/g,'\\"')}"){id}}`;
-    const r=await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
-    const d=await r.json();
-    const mondayId=d?.data?.create_item?.id;
-    if(mondayId){
-      // Save monday item ID back to Supabase
-      await sbPatch('av_requests',`id=eq.${req.id}`,{monday_item_id:String(mondayId)});
+    // Step 1: Create item with just the name
+    const createQ=`mutation{create_item(board_id:${MONDAY_PROD_BOARD},group_id:"${groupId}",item_name:"${req.title.replace(/"/g,"'")}"){id}}`;
+    const r1=await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:createQ})});
+    const d1=await r1.json();
+    const mondayId=d1?.data?.create_item?.id;
+    if(!mondayId){console.error('Monday create failed:',d1);return null}
+    // Step 2: Update columns via change_simple_column_value calls
+    const updates=[
+      {col:'color_mm2ccsjs',val:MONDAY_PROD_STATUS_MAP[req.status]||'Rascunho'},
+      {col:'text_mm2cstpc',val:cl?.name||''},
+      {col:'text_mm2czjm4',val:req.id}
+    ];
+    if(req.desired_deadline)updates.push({col:'date_mm2crf2',val:JSON.stringify({date:req.desired_deadline})});
+    if(req.quantity_deliverables)updates.push({col:'numeric_mm2cqa1f',val:String(req.quantity_deliverables)});
+    if(req.formats)updates.push({col:'text_mm2crdeb',val:req.formats});
+    for(const u of updates){
+      const isJson=u.val.startsWith('{');
+      const val=isJson?u.val.replace(/"/g,'\\"'):`${u.val.replace(/"/g,"'")}`;
+      const q=`mutation{change_simple_column_value(board_id:${MONDAY_PROD_BOARD},item_id:${mondayId},column_id:"${u.col}",value:"${val}"){id}}`;
+      await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:q})});
     }
+    // Save monday item ID back to Supabase
+    await sbPatch('av_requests',`id=eq.${req.id}`,{monday_item_id:String(mondayId)});
     return mondayId;
   }catch(e){console.error('Monday create prod error:',e);return null}
 }
@@ -1069,6 +1077,7 @@ async function saveRequest(){
       desired_deadline:n($('rq-deadline')?.value),
       reference_links:n($('rq-refs')?.value),
       briefing_notes:n($('rq-notes')?.value),
+      client_budget:parseFloat($('rq-budget')?.value)||null,
       status:'pending_leader_review'
     };
     const result=await sbPost('av_requests',body);
@@ -1166,88 +1175,93 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
     
     <!-- TAB: BUDGET -->
     ${!isFee?`<div id="req-tab-budget" style="display:none">
-      <div style="margin-bottom:16px;padding:12px 16px;background:var(--bg3);border-radius:var(--radius);display:flex;align-items:center;gap:12px">
-        <label class="chk-item ${bgt?.has_external_budget?'checked':''}" style="margin:0"><input type="checkbox" id="bg-external" ${bgt?.has_external_budget?'checked':''} onchange="this.parentElement.classList.toggle('checked',this.checked);toggleBudgetMode()"> Orçamento externo (cliente já tem valor)</label>
-      </div>
+      ${r.client_budget?`<div style="background:rgba(74,222,128,.06);border:2px solid rgba(74,222,128,.2);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+        <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--prod);font-weight:700">Verba definida pelo Account</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Otimize a produção dentro deste valor</div></div>
+        <div style="font-size:28px;font-weight:900;color:var(--prod);font-family:var(--mono)">${fMoney(r.client_budget)}</div>
+      </div>`:`<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--pack)">Sem verba definida — monte o orçamento e defina a receita desejada para calcular o preço ao cliente.</div>`}
       
-      <!-- WITH EXTERNAL BUDGET -->
-      <div id="bg-ext-section" style="display:${bgt?.has_external_budget?'block':'none'}">
-        <div class="f-field"><label class="f-label">Valor do cliente (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-client-price" value="${bgt?Number(bgt.client_price):0}" oninput="calcBudget()"></div>
-      </div>
-      
-      <!-- COSTS SECTION -->
+      <!-- COSTS (operational inputs → auto-calculated) -->
       <div style="margin-bottom:16px">
-        <div class="cl" style="margin-bottom:10px">Custos de Produção</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div class="f-field"><label class="f-label">Equipe / Diárias (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-crew" value="${bgt?Number(bgt.cost_crew_daily):0}" oninput="calcBudget()"></div>
-          <div class="f-field"><label class="f-label">Deslocamento (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-travel" value="${bgt?Number(bgt.cost_travel):0}" oninput="calcBudget()"></div>
-          <div class="f-field"><label class="f-label">Alimentação (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-food" value="${bgt?Number(bgt.cost_food):0}" oninput="calcBudget()"></div>
-          <div class="f-field"><label class="f-label">Equipamento (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-equip" value="${bgt?Number(bgt.cost_equipment):0}" oninput="calcBudget()"></div>
+        <div class="cl" style="margin-bottom:10px">Captação</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div class="f-field"><label class="f-label">Equipe (pessoas)</label><input class="f-input" type="number" min="0" id="bg-crew-qty" value="${bgt?.cost_crew_daily?Math.round(Number(bgt.cost_crew_daily)/getCostRate('crew_daily_rate')):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Dias de captação</label><input class="f-input" type="number" min="0" id="bg-crew-days" value="1" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label" style="color:var(--txt3)">= <span id="bg-crew-total" style="font-weight:700">R$ 0</span></label><div style="font-size:10px;color:var(--txt3)">R$ ${getCostRate('crew_daily_rate')}/pessoa/dia</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px">
+          <div class="f-field"><label class="f-label">Deslocamento (km)</label><input class="f-input" type="number" min="0" id="bg-travel-km" value="0" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Viagens (fixo)</label><input class="f-input" type="number" min="0" id="bg-travel-trips" value="0" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label" style="color:var(--txt3)">= <span id="bg-travel-total" style="font-weight:700">R$ 0</span></label><div style="font-size:10px;color:var(--txt3)">R$ ${getCostRate('travel_km')}/km + R$ ${getCostRate('travel_flat')}/viagem</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+          <div class="f-field"><label class="f-label" style="color:var(--txt3)">Alimentação (auto)</label><div style="font-size:12px;color:var(--txt3)">= pessoas × dias × R$ ${getCostRate('food_per_person')}</div></div>
+          <div style="display:flex;align-items:center"><span style="font-weight:700;font-family:var(--mono)" id="bg-food-total">R$ 0</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <div class="cl" style="margin-bottom:10px">Pós-produção</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div class="f-field"><label class="f-label">Edição (horas)</label><input class="f-input" type="number" min="0" step="0.5" id="bg-edit-hrs" value="${bgt?.cost_edit?Math.round(Number(bgt.cost_edit)/getCostRate('edit_hour_rate')):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Motion (horas)</label><input class="f-input" type="number" min="0" step="0.5" id="bg-motion-hrs" value="${bgt?.cost_motion?Math.round(Number(bgt.cost_motion)/getCostRate('motion_hour_rate')):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label" style="color:var(--txt3)">Edição: R$ ${getCostRate('edit_hour_rate')}/h · Motion: R$ ${getCostRate('motion_hour_rate')}/h</label></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px">
+          <div class="f-field"><label class="f-label">Color (vídeos)</label><input class="f-input" type="number" min="0" id="bg-color-qty" value="${bgt?.cost_color_grade?Math.round(Number(bgt.cost_color_grade)/getCostRate('color_grade_flat')):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Áudio/Mix (vídeos)</label><input class="f-input" type="number" min="0" id="bg-audio-qty" value="${bgt?.cost_audio?Math.round(Number(bgt.cost_audio)/getCostRate('audio_mix_flat')):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label" style="color:var(--txt3)">Color: R$ ${getCostRate('color_grade_flat')}/vídeo · Áudio: R$ ${getCostRate('audio_mix_flat')}/vídeo</label></div>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <div class="cl" style="margin-bottom:10px">Custos externos (valores manuais)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div class="f-field"><label class="f-label">Equipamento ext. (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-equip" value="${bgt?Number(bgt.cost_equipment):0}" oninput="calcBudget()"></div>
           <div class="f-field"><label class="f-label">Talento / Elenco (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-talent" value="${bgt?Number(bgt.cost_talent):0}" oninput="calcBudget()"></div>
           <div class="f-field"><label class="f-label">Locação (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-location" value="${bgt?Number(bgt.cost_location):0}" oninput="calcBudget()"></div>
         </div>
-      </div>
-      
-      <div style="margin-bottom:16px">
-        <div class="cl" style="margin-bottom:10px">Custos de Pós-produção</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div class="f-field"><label class="f-label">Edição (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-edit" value="${bgt?Number(bgt.cost_edit):0}" oninput="calcBudget()"></div>
-          <div class="f-field"><label class="f-label">Motion Design (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-motion" value="${bgt?Number(bgt.cost_motion):0}" oninput="calcBudget()"></div>
-          <div class="f-field"><label class="f-label">Color Grading (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-color" value="${bgt?Number(bgt.cost_color_grade):0}" oninput="calcBudget()"></div>
-          <div class="f-field"><label class="f-label">Áudio / Mixagem (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-audio" value="${bgt?Number(bgt.cost_audio):0}" oninput="calcBudget()"></div>
+        <div class="f-row" style="margin-top:8px">
+          <div class="f-field"><label class="f-label">Outros (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-other" value="${bgt?Number(bgt.cost_other):0}" oninput="calcBudget()"></div>
+          <div class="f-field"><label class="f-label">Descrição outros</label><input class="f-input" id="bg-other-desc" value="${bgt?.cost_other_desc||''}"></div>
         </div>
       </div>
       
-      <div class="f-row" style="margin-bottom:16px">
-        <div class="f-field"><label class="f-label">Outros custos (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-other" value="${bgt?Number(bgt.cost_other):0}" oninput="calcBudget()"></div>
-        <div class="f-field"><label class="f-label">Descrição outros</label><input class="f-input" id="bg-other-desc" value="${bgt?.cost_other_desc||''}"></div>
-      </div>
-      
-      <!-- TOTALS -->
+      <!-- TOTALS + PRICING -->
       <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--txt2)">Total Custos Internos</span><span style="font-weight:800;font-family:var(--mono);font-size:16px" id="bg-total-cost">R$ 0</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px"><span style="color:var(--txt2);font-weight:600">Total Custos</span><span style="font-weight:800;font-family:var(--mono);font-size:18px" id="bg-total-cost">R$ 0</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--txt2)">Impostos (18%)</span><span style="font-weight:700;font-family:var(--mono);color:var(--pack)" id="bg-tax-val">R$ 0</span></div>
+        <input type="hidden" id="bg-tax" value="18">
         
-        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
-          <div class="cl" style="margin-bottom:10px">Impostos & Comissões</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div class="f-field"><label class="f-label">Taxa impostos (%)</label><input class="f-input" type="number" step="any" min="0" max="100" id="bg-tax" value="${bgt?Number(bgt.tax_rate)*100:18}" oninput="calcBudget()"></div>
-            <div style="display:flex;align-items:center"><span style="color:var(--txt2);font-size:12px">Valor: </span><span style="font-weight:700;font-family:var(--mono);margin-left:6px" id="bg-tax-val">R$ 0</span></div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
-            <div class="f-field"><label class="f-label">Comissão Account (%)</label><input class="f-input" type="number" step="any" min="0" max="100" id="bg-comm-acc" value="${bgt?Number(bgt.commission_account_pct):(rule?Number(rule.account_pct):0)}" oninput="calcBudget()"></div>
-            <div style="display:flex;align-items:center"><span style="color:var(--txt2);font-size:12px">Valor: </span><span style="font-weight:700;font-family:var(--mono);margin-left:6px" id="bg-comm-acc-val">R$ 0</span></div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
-            <div class="f-field"><label class="f-label">Comissão Líder (%)</label><input class="f-input" type="number" step="any" min="0" max="100" id="bg-comm-ldr" value="${bgt?Number(bgt.commission_leader_pct):(rule?Number(rule.leader_pct):0)}" oninput="calcBudget()"></div>
-            <div style="display:flex;align-items:center"><span style="color:var(--txt2);font-size:12px">Valor: </span><span style="font-weight:700;font-family:var(--mono);margin-left:6px" id="bg-comm-ldr-val">R$ 0</span></div>
-          </div>
-        </div>
-        
-        <div style="border-top:2px solid var(--red);padding-top:12px;margin-top:16px">
-          <div id="bg-elig-info" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:9px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;margin-right:6px">Elegibilidade:</span></div>
-          <div id="bg-no-ext" style="${bgt?.has_external_budget?'display:none':''}">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-              <div class="f-field"><label class="f-label" style="color:var(--prod)">Receita desejada TGT (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-receita" value="0" style="font-size:15px;font-weight:700;text-align:center;border-color:var(--prod)" oninput="calcBudgetFromReceita()"></div>
-              <div class="f-field"><label class="f-label">Ou margem desejada</label>
-                <div style="display:flex;gap:4px">
-                  <button class="pill" onclick="setBudgetMargin(30)" style="flex:1;font-size:10px">30%</button>
-                  <button class="pill" onclick="setBudgetMargin(40)" style="flex:1;font-size:10px">40%</button>
-                  <button class="pill" onclick="setBudgetMargin(50)" style="flex:1;font-size:10px">50%</button>
-                  <input class="f-input" type="number" id="bg-margin-input" placeholder="%" style="width:60px;text-align:center;padding:6px" oninput="calcBudgetFromMarginInput()">
-                </div>
+        ${!r.client_budget?`<!-- SEM VERBA: Líder define receita/preço -->
+        <div style="border-top:2px solid var(--red);padding-top:14px;margin-top:14px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--red);font-weight:700;margin-bottom:10px">Definir preço ao cliente</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div class="f-field"><label class="f-label" style="color:var(--prod)">Receita desejada (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-receita" value="0" style="font-size:15px;font-weight:700;text-align:center;border-color:var(--prod)" oninput="calcBudgetFromReceita()"></div>
+            <div class="f-field"><label class="f-label">Margem desejada</label>
+              <div style="display:flex;gap:4px">
+                <button class="pill" onclick="setBudgetMargin(30)" style="flex:1;font-size:10px">30%</button>
+                <button class="pill" onclick="setBudgetMargin(40)" style="flex:1;font-size:10px">40%</button>
+                <button class="pill" onclick="setBudgetMargin(50)" style="flex:1;font-size:10px">50%</button>
+                <input class="f-input" type="number" id="bg-margin-input" placeholder="%" style="width:60px;text-align:center;padding:6px" oninput="calcBudgetFromMarginInput()">
               </div>
             </div>
-            <div class="f-field"><label class="f-label" style="color:var(--red)">Preço sugerido ao cliente (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-suggested-price" value="${bgt?Number(bgt.client_price):0}" style="font-size:18px;font-weight:800;text-align:center" oninput="calcBudget()"></div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;text-align:center">
-            <div><div style="font-size:11px;color:var(--txt2)">LUCRO TGT</div><div style="font-size:20px;font-weight:800;font-family:var(--mono)" id="bg-margin-val">R$ 0</div><div style="font-size:12px;font-family:var(--mono)" id="bg-margin-pct">0%</div></div>
-            <div><div style="font-size:11px;color:var(--txt2)">COMISSÕES</div><div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--t1)" id="bg-total-comm">R$ 0</div></div>
-            <div><div style="font-size:11px;color:var(--txt2)">IMPOSTOS</div><div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--pack)" id="bg-total-tax">R$ 0</div></div>
+          <div class="f-field"><label class="f-label" style="color:var(--red);font-size:13px">Preço sugerido ao cliente (R$)</label><input class="f-input" type="number" step="any" min="0" id="bg-suggested-price" value="${bgt?Number(bgt.client_price):0}" style="font-size:22px;font-weight:900;text-align:center;border-color:var(--red)" oninput="calcBudget()"></div>
+        </div>`:`<!-- COM VERBA: Preço = verba do account -->
+        <input type="hidden" id="bg-suggested-price" value="${r.client_budget}">`}
+        
+        <!-- RESULTADO -->
+        <div style="border-top:2px solid var(--border);padding-top:14px;margin-top:16px">
+          <div id="bg-profit-alert"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-top:10px;text-align:center">
+            <div><div style="font-size:10px;color:var(--txt3)">PREÇO CLIENTE</div><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="bg-price-display">R$ 0</div></div>
+            <div><div style="font-size:10px;color:var(--txt3)">LUCRO</div><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="bg-margin-val">R$ 0</div><div style="font-size:11px;font-family:var(--mono)" id="bg-margin-pct">0%</div></div>
+            <div><div style="font-size:10px;color:var(--txt3)">ACCOUNT</div><div style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--t1)" id="bg-comm-acc-val">R$ 0</div><div style="font-size:10px;color:var(--txt3)" id="bg-comm-acc-info">—</div></div>
+            <div><div style="font-size:10px;color:var(--txt3)">LÍDER PROD</div><div style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--pack)" id="bg-comm-ldr-val">R$ 0</div><div style="font-size:10px;color:var(--txt3)">10% do lucro</div></div>
           </div>
+          <div id="bg-elig-info" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center"></div>
         </div>
       </div>
       
-      <!-- LEADER NOTES -->
+      <!-- LEADER NOTES + DATES -->
       <div class="f-field"><label class="f-label">Observações do líder</label><textarea class="f-area" id="bg-notes">${bgt?.leader_notes||''}</textarea></div>
       <div class="f-row">
         <div class="f-field"><label class="f-label">Data captação sugerida</label><input class="f-input" type="date" id="bg-cap-date" value="${bgt?.suggested_capture_date||''}"></div>
@@ -1279,71 +1293,88 @@ function switchReqTab(tab){
   else{if(dEl)dEl.style.display='none';if(bEl)bEl.style.display='';if(dTab)dTab.classList.remove('active');if(bTab)bTab.classList.add('active')}
 }
 
-function toggleBudgetMode(){
-  const ext=$('bg-external')?.checked;
-  const extSec=$('bg-ext-section');if(extSec)extSec.style.display=ext?'block':'none';
-  const noExt=$('bg-no-ext');if(noExt)noExt.style.display=ext?'none':'';
-  calcBudget();
-}
-
 function calcBudget(){
   const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
-  // Costs
-  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
   const el=id=>$(id);
+  // Auto-calculated costs from operational inputs
+  const crewQty=v('bg-crew-qty'),crewDays=v('bg-crew-days');
+  const crewCost=crewQty*crewDays*getCostRate('crew_daily_rate');
+  const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
+  const foodCost=crewQty*crewDays*getCostRate('food_per_person');
+  const editCost=v('bg-edit-hrs')*getCostRate('edit_hour_rate');
+  const motionCost=v('bg-motion-hrs')*getCostRate('motion_hour_rate');
+  const colorCost=v('bg-color-qty')*getCostRate('color_grade_flat');
+  const audioCost=v('bg-audio-qty')*getCostRate('audio_mix_flat');
+  // Show sub-totals
+  if(el('bg-crew-total'))el('bg-crew-total').textContent=fMoney(crewCost);
+  if(el('bg-travel-total'))el('bg-travel-total').textContent=fMoney(travelCost);
+  if(el('bg-food-total'))el('bg-food-total').textContent=fMoney(foodCost);
+  // Manual costs
+  const manualCosts=v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
+  const costs=crewCost+travelCost+foodCost+editCost+motionCost+colorCost+audioCost+manualCosts;
   if(el('bg-total-cost'))el('bg-total-cost').textContent=fMoney(costs);
   
-  const ext=$('bg-external')?.checked;
-  const price=ext?v('bg-client-price'):v('bg-suggested-price');
-  
+  const price=v('bg-suggested-price');
   const taxPct=v('bg-tax')/100;
   const taxAmt=price*taxPct;
   if(el('bg-tax-val'))el('bg-tax-val').textContent=fMoney(taxAmt);
-  if(el('bg-total-tax'))el('bg-total-tax').textContent=fMoney(taxAmt);
+  if(el('bg-price-display'))el('bg-price-display').textContent=fMoney(price);
   
-  const commAccPct=v('bg-comm-acc')/100;
-  const commAccVal=price*commAccPct;
-  if(el('bg-comm-acc-val'))el('bg-comm-acc-val').textContent=fMoney(commAccVal);
+  // LUCRO = Preço - Impostos - Custos
+  const profit=price-taxAmt-costs;
+  const profitPct=price>0?(profit/price)*100:0;
   
-  const commLdrPct=v('bg-comm-ldr')/100;
-  const commLdrVal=price*commLdrPct;
-  if(el('bg-comm-ldr-val'))el('bg-comm-ldr-val').textContent=fMoney(commLdrVal);
+  // REGRA DE OURO: Comissão só existe se tem lucro
+  let commAcc=0,commLdr=0,accPctLabel='sem lucro';
+  if(profit>0){
+    const curMonth=new Date().toISOString().substring(0,7);
+    const accMembers=S.members.filter(m=>m.access_level==='account');
+    let bestPct=0.10;
+    accMembers.forEach(a=>{
+      const sc=S.scores.find(s=>s.account_id===a.id&&s.month===curMonth);
+      if(sc){const pct=scorePctDirect(Number(sc.final_score),sc.block_status);if(pct>bestPct)bestPct=pct}
+    });
+    commAcc=profit*bestPct;
+    commLdr=profit*0.10;
+    accPctLabel=`${(bestPct*100).toFixed(0)}% do lucro`;
+  }
   
-  const totalComm=commAccVal+commLdrVal;
-  if(el('bg-total-comm'))el('bg-total-comm').textContent=fMoney(totalComm);
+  if(el('bg-margin-val')){el('bg-margin-val').textContent=fMoney(profit);el('bg-margin-val').style.color=profit>=0?'var(--prod)':'var(--red)'}
+  if(el('bg-margin-pct')){el('bg-margin-pct').textContent=profitPct.toFixed(1)+'%';el('bg-margin-pct').style.color=profit>=0?'var(--prod)':'var(--red)'}
+  if(el('bg-comm-acc-val')){el('bg-comm-acc-val').textContent=fMoney(commAcc);el('bg-comm-acc-val').style.color=commAcc>0?'var(--t1)':'var(--red)'}
+  if(el('bg-comm-acc-info'))el('bg-comm-acc-info').textContent=accPctLabel;
+  if(el('bg-comm-ldr-val')){el('bg-comm-ldr-val').textContent=fMoney(commLdr);el('bg-comm-ldr-val').style.color=commLdr>0?'var(--pack)':'var(--red)'}
   
-  const margin=price-costs-taxAmt-totalComm;
-  const marginPct=price>0?(margin/price)*100:0;
-  if(el('bg-margin-val')){el('bg-margin-val').textContent=fMoney(margin);el('bg-margin-val').style.color=margin>=0?'var(--prod)':'var(--red)'}
-  if(el('bg-margin-pct')){el('bg-margin-pct').textContent=marginPct.toFixed(1)+'%';el('bg-margin-pct').style.color=margin>=0?'var(--prod)':'var(--red)'}
+  const alertEl=el('bg-profit-alert');
+  if(alertEl){
+    if(price>0&&profit<=0)alertEl.innerHTML='<div style="background:rgba(237,28,36,.1);border:2px solid rgba(237,28,36,.3);border-radius:var(--radius);padding:12px 16px;text-align:center"><div style="font-size:13px;font-weight:800;color:var(--red)">⚠ Produção deficitária — sem distribuição de comissão</div><div style="font-size:11px;color:var(--txt2);margin-top:4px">Custos + impostos excedem o preço. Revise os custos ou aumente o preço.</div></div>';
+    else if(price>0&&profitPct<15)alertEl.innerHTML='<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:10px 14px;text-align:center;font-size:11px;color:var(--pack)">Margem baixa ('+profitPct.toFixed(1)+'%). Considere ajustar.</div>';
+    else alertEl.innerHTML='';
+  }
   
-  // Show eligibility info if available
   const eligEl=el('bg-elig-info');
   if(eligEl&&S.scores.length){
     const curMonth=new Date().toISOString().substring(0,7);
-    const accMembers=S.members.filter(m=>m.access_level==='account');
     let eligHtml='';
-    accMembers.forEach(a=>{
+    S.members.filter(m=>m.access_level==='account').forEach(a=>{
       const sc=S.scores.find(s=>s.account_id===a.id&&s.month===curMonth);
-      if(sc){
-        const score=Number(sc.final_score);
-        const pct=scorePctDirect(score,sc.block_status);
-        const elig=getEligibility(score,sc.block_status);
-        eligHtml+=`<span style="font-size:10px;margin-right:12px">${a.name.split(' ')[0]}: <b style="color:${elig.color}">${score.toFixed(1)}</b> → <span class="bg ${elig.cls}" style="font-size:9px">${(pct*100).toFixed(0)}%</span></span>`;
-      }
+      if(sc){const score=Number(sc.final_score);const pct=scorePctDirect(score,sc.block_status);const elig=getEligibility(score,sc.block_status);eligHtml+=`<span style="font-size:10px;margin-right:8px">${a.name.split(' ')[0]}: <b style="color:${elig.color}">${score.toFixed(1)}</b> → <span class="bg ${elig.cls}" style="font-size:9px">${(pct*100).toFixed(0)}%</span></span>`}
     });
     eligEl.innerHTML=eligHtml;
   }
 }
 
+
 function calcBudgetFromReceita(){
   const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
-  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
+  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('crew_daily_rate');
+  const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
+  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('food_per_person');
+  const costs=crewCost+travelCost+foodCost+v('bg-edit-hrs')*getCostRate('edit_hour_rate')+v('bg-motion-hrs')*getCostRate('motion_hour_rate')+v('bg-color-qty')*getCostRate('color_grade_flat')+v('bg-audio-qty')*getCostRate('audio_mix_flat')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const receita=v('bg-receita');
   const taxPct=v('bg-tax')/100;
-  const commAccPct=v('bg-comm-acc')/100;
-  const commLdrPct=v('bg-comm-ldr')/100;
-  const divisor=1-taxPct-commAccPct-commLdrPct;
+  // Preço = (Custos + Receita desejada) / (1 - taxPct)
+  const divisor=1-taxPct;
   const price=divisor>0?Math.round((costs+receita)/divisor):0;
   if($('bg-suggested-price'))$('bg-suggested-price').value=price;
   if($('bg-margin-input')&&price>0)$('bg-margin-input').value=Math.round(receita/price*100);
@@ -1357,12 +1388,14 @@ function setBudgetMargin(pct){
 
 function calcBudgetFromMarginInput(){
   const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
-  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
+  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('crew_daily_rate');
+  const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
+  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('food_per_person');
+  const costs=crewCost+travelCost+foodCost+v('bg-edit-hrs')*getCostRate('edit_hour_rate')+v('bg-motion-hrs')*getCostRate('motion_hour_rate')+v('bg-color-qty')*getCostRate('color_grade_flat')+v('bg-audio-qty')*getCostRate('audio_mix_flat')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const marginPct=v('bg-margin-input')/100;
   const taxPct=v('bg-tax')/100;
-  const commAccPct=v('bg-comm-acc')/100;
-  const commLdrPct=v('bg-comm-ldr')/100;
-  const divisor=1-taxPct-commAccPct-commLdrPct-marginPct;
+  // Preço = Custos / (1 - taxPct - marginPct)
+  const divisor=1-taxPct-marginPct;
   const price=divisor>0?Math.round(costs/divisor):0;
   const receita=Math.round(price*marginPct);
   if($('bg-suggested-price'))$('bg-suggested-price').value=price;
@@ -1373,28 +1406,49 @@ function calcBudgetFromMarginInput(){
 async function saveBudget(reqId,budgetId){
   const v=id=>{const el=$(id);return el?parseFloat(el.value)||0:0};
   const n=id=>{const el=$(id);return el?(el.value||'').trim()||null:null};
-  const ext=$('bg-external')?.checked;
-  const price=ext?v('bg-client-price'):v('bg-suggested-price');
-  const costs=v('bg-crew')+v('bg-travel')+v('bg-food')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-edit')+v('bg-motion')+v('bg-color')+v('bg-audio')+v('bg-other');
+  const price=v('bg-suggested-price');
+  // Compute costs from operational inputs
+  const crewCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('crew_daily_rate');
+  const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
+  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*getCostRate('food_per_person');
+  const editCost=v('bg-edit-hrs')*getCostRate('edit_hour_rate');
+  const motionCost=v('bg-motion-hrs')*getCostRate('motion_hour_rate');
+  const colorCost=v('bg-color-qty')*getCostRate('color_grade_flat');
+  const audioCost=v('bg-audio-qty')*getCostRate('audio_mix_flat');
+  const costs=crewCost+travelCost+foodCost+editCost+motionCost+colorCost+audioCost+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const taxPct=v('bg-tax')/100;
+  const taxAmt=price*taxPct;
+  const profit=price-taxAmt-costs;
+  
+  // Commissions based on profit (regra de ouro)
+  let commAccPct=0,commAccVal=0,commLdrPct=0,commLdrVal=0;
+  if(profit>0){
+    const curMonth=new Date().toISOString().substring(0,7);
+    let bestPct=0.10;
+    S.members.filter(m=>m.access_level==='account').forEach(a=>{
+      const sc=S.scores.find(s=>s.account_id===a.id&&s.month===curMonth);
+      if(sc){const p=scorePctDirect(Number(sc.final_score),sc.block_status);if(p>bestPct)bestPct=p}
+    });
+    commAccPct=bestPct;commAccVal=profit*bestPct;
+    commLdrPct=0.10;commLdrVal=profit*0.10;
+  }
   
   const data={
     request_id:reqId,prepared_by:S.user.id,
-    has_external_budget:ext,client_price:price,
-    cost_crew_daily:v('bg-crew'),cost_travel:v('bg-travel'),cost_food:v('bg-food'),
+    has_external_budget:false,client_price:price,
+    cost_crew_daily:crewCost,cost_travel:travelCost,cost_food:foodCost,
     cost_equipment:v('bg-equip'),cost_talent:v('bg-talent'),cost_location:v('bg-location'),
     cost_other:v('bg-other'),cost_other_desc:n('bg-other-desc'),
-    cost_edit:v('bg-edit'),cost_motion:v('bg-motion'),cost_color_grade:v('bg-color'),cost_audio:v('bg-audio'),
+    cost_edit:editCost,cost_motion:motionCost,cost_color_grade:colorCost,cost_audio:audioCost,
     tax_rate:taxPct,
-    commission_account_pct:v('bg-comm-acc'),commission_account_value:price*(v('bg-comm-acc')/100),
-    commission_leader_pct:v('bg-comm-ldr'),commission_leader_value:price*(v('bg-comm-ldr')/100),
-    margin_tgt_value:price-costs-(price*taxPct)-(price*(v('bg-comm-acc')/100))-(price*(v('bg-comm-ldr')/100)),
-    margin_tgt_pct:price>0?((price-costs-(price*taxPct)-(price*(v('bg-comm-acc')/100))-(price*(v('bg-comm-ldr')/100)))/price)*100:0,
+    commission_account_pct:commAccPct,commission_account_value:commAccVal,
+    commission_leader_pct:commLdrPct,commission_leader_value:commLdrVal,
+    margin_tgt_value:profit-commAccVal-commLdrVal,
+    margin_tgt_pct:price>0?((profit-commAccVal-commLdrVal)/price)*100:0,
     leader_notes:n('bg-notes'),
     refined_capture_hours:v('bg-hrs-cap'),refined_edit_hours:v('bg-hrs-edit'),refined_post_hours:v('bg-hrs-post'),
     budget_status:'draft',updated_at:new Date().toISOString()
   };
-  // Only include date fields if they have valid values (avoid 400 from empty string → date cast)
   const capDate=n('bg-cap-date');if(capDate)data.suggested_capture_date=capDate;
   const delDate=n('bg-del-date');if(delDate)data.suggested_delivery_date=delDate;
   try{
