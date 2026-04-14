@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.9.3</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.9.4</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.9.3</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.9.4</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -1634,19 +1634,29 @@ async function pgProdCalendar(el){
   const today=new Date();
   const todayStr=today.toISOString().substring(0,10);
   
-  // Get scheduled productions from av_schedule
-  let schedules=[];
-  try{schedules=await sbGet('av_schedule','select=*,request:av_requests(title,client_id,status)')}catch(e){}
-  
+  // Build calendar events from av_requests + av_budgets
+  const STATUS_COLORS={
+    pending_leader_review:'#579bfc',leader_reviewing:'#579bfc',
+    budget_sent:'#ffcb00',account_approved:'#fdab3d',
+    scheduling:'#037f4c',scheduled:'#037f4c',
+    in_capture:'#e63946',in_edit:'#9d50dd',in_review:'#ff007f',
+    delivered:'#00c875',cancelled:'#df2f4a'
+  };
+  const events=[];
+  S.av_requests.filter(r=>r.status!=='cancelled').forEach(r=>{
+    const bgt=S.av_budgets.find(b=>b.request_id===r.id);
+    const captDate=bgt?.suggested_capture_date?.substring(0,10);
+    const delDate=bgt?.suggested_delivery_date?.substring(0,10);
+    const deadline=r.desired_deadline?.substring(0,10);
+    const date=captDate||deadline;
+    if(date)events.push({date,title:r.title,status:r.status,id:r.id,type:'captação',color:STATUS_COLORS[r.status]||'#9d9d9c'});
+    if(delDate&&delDate!==date)events.push({date:delDate,title:r.title,status:r.status,id:r.id,type:'entrega',color:'#00c875'});
+  });
+
   if(calView==='week'){
-    // Week view: current week or week containing today in calMonth
     const ref=new Date(y,m,today.getMonth()===m&&today.getFullYear()===y?today.getDate():1);
-    const dow=ref.getDay()||7;
-    const weekStart=new Date(ref);weekStart.setDate(ref.getDate()-(dow-1));
-    
-    const weekDays=[];
-    for(let i=0;i<7;i++){const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);weekDays.push(d)}
-    
+    const dow=ref.getDay()||7;const weekStart=new Date(ref);weekStart.setDate(ref.getDate()-(dow-1));
+    const weekDays=[];for(let i=0;i<7;i++){const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);weekDays.push(d)}
     el.innerHTML=`
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
         <div style="display:flex;align-items:center;gap:12px">
@@ -1661,25 +1671,26 @@ async function pgProdCalendar(el){
       </div>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--border);border-radius:var(--radius);overflow:hidden">
         ${weekDays.map(d=>{
-          const ds=d.toISOString().substring(0,10);
-          const isToday=ds===todayStr;
-          const dayProds=schedules.filter(s=>s.capture_date===ds);
+          const ds=d.toISOString().substring(0,10);const isToday=ds===todayStr;
+          const dayEvts=events.filter(e=>e.date===ds);
           return`<div style="background:var(--bg2);min-height:200px;padding:10px;${isToday?'border:2px solid var(--red);border-radius:4px;':''}">
             <div style="font-size:11px;color:var(--txt2);margin-bottom:4px">${d.toLocaleDateString('pt-BR',{weekday:'short'})}</div>
             <div style="font-size:18px;font-weight:700;${isToday?'color:var(--red)':''};margin-bottom:8px">${d.getDate()}</div>
-            ${dayProds.map(p=>{const req=p.request;return`<div style="padding:4px 8px;background:var(--red-glow);border-left:3px solid var(--red);border-radius:3px;margin-bottom:4px;font-size:11px">${req?.title||'Produção'}</div>`}).join('')}
+            ${dayEvts.map(e=>`<div style="padding:4px 8px;background:${e.color}22;border-left:3px solid ${e.color};border-radius:3px;margin-bottom:4px;font-size:10px;cursor:pointer" onclick="showRequestDetail('${e.id}')" title="${AV_STATUSES[e.status]||e.status}"><span style="font-weight:700">${e.title}</span><div style="font-size:8px;color:var(--txt3);margin-top:1px">${e.type} · ${AV_STATUSES[e.status]||e.status}</div></div>`).join('')}
           </div>`}).join('')}
       </div>`;
     return;
   }
   
   // Month view
-  const startDay=(first.getDay()||7);
-  const days=[];
-  for(let i=2-startDay;i<=last.getDate();i++){
-    days.push({num:i,inMonth:i>=1&&i<=last.getDate()});
-  }
+  const startDay=(first.getDay()||7);const days=[];
+  for(let i=2-startDay;i<=last.getDate();i++)days.push({num:i,inMonth:i>=1&&i<=last.getDate()});
   while(days.length%7!==0)days.push({num:days.length+2-startDay,inMonth:false});
+  
+  // Legend
+  const legend='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;font-size:10px">'+
+    [['#579bfc','Aguardando'],['#ffcb00','Orçamento'],['#fdab3d','Aprovado'],['#037f4c','Agendado'],['#e63946','Em Captação'],['#9d50dd','Em Edição'],['#00c875','Entrega']].map(([c,l])=>
+    '<div style="display:flex;align-items:center;gap:4px"><div style="width:10px;height:10px;border-radius:2px;background:'+c+'"></div>'+l+'</div>').join('')+'</div>';
   
   el.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
@@ -1694,16 +1705,17 @@ async function pgProdCalendar(el){
         <div class="pill ${calView==='week'?'active':''}" onclick="calView='week';renderPage()">Semana</div>
       </div>
     </div>
+    ${legend}
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--border);border-radius:var(--radius);overflow:hidden">
       ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>`<div style="padding:10px;text-align:center;font-size:11px;font-weight:600;color:var(--txt2);background:var(--bg2)">${d}</div>`).join('')}
       ${days.map(d=>{
         const dt=d.inMonth?new Date(y,m,d.num):null;
         const ds=dt?dt.toISOString().substring(0,10):'';
         const isToday=ds===todayStr;
-        const dayProds=d.inMonth?schedules.filter(s=>s.capture_date===ds):[];
-        return`<div style="padding:8px;min-height:80px;background:${d.inMonth?'var(--bg2)':'var(--bg)'};${isToday?'border:2px solid var(--red);border-radius:4px;':''}">
+        const dayEvts=d.inMonth?events.filter(e=>e.date===ds):[];
+        return`<div style="padding:6px;min-height:80px;background:${d.inMonth?'var(--bg2)':'var(--bg)'};${isToday?'border:2px solid var(--red);border-radius:4px;':''}">
           <div style="font-size:12px;${d.inMonth?'':'color:var(--txt3)'}${isToday?';color:var(--red);font-weight:700':''};">${d.inMonth?d.num:''}</div>
-          ${dayProds.map(p=>{const req=p.request;return`<div style="padding:2px 6px;background:var(--red-glow);border-left:2px solid var(--red);border-radius:2px;margin-top:4px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${req?.title||'Prod'}</div>`}).join('')}
+          ${dayEvts.map(e=>`<div style="padding:2px 5px;background:${e.color}22;border-left:2px solid ${e.color};border-radius:2px;margin-top:3px;font-size:9px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" onclick="showRequestDetail('${e.id}')" title="${e.title} — ${e.type} — ${AV_STATUSES[e.status]||e.status}"><span style="font-weight:600">${e.title.substring(0,15)}${e.title.length>15?'…':''}</span></div>`).join('')}
         </div>`}).join('')}
     </div>`;
 }
