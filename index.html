@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.11.0</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.12.1</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.11.0</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.12.1</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -924,33 +924,73 @@ async function pgDashFinance(el){
 // ═══════════════════════════════════════════════
 async function pgProdRequests(el){
   let reqs=S.av_requests;
-  // Filter by role
   if(isUser()) reqs=reqs.filter(r=>r.requested_by===S.user.id);
   else if(isAcc()){
-    // Account sees requests from their clients
     const myClientIds=S.clients.filter(c=>c.team===S.user.team).map(c=>c.id);
     reqs=reqs.filter(r=>myClientIds.includes(r.client_id)||r.requested_by===S.user.id);
   }
-  // Admin and Prod Leader see all
   
-  const running=reqs.filter(r=>!['delivered','cancelled'].includes(r.status));
+  const needsLeader=reqs.filter(r=>['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status));
+  const needsAccount=reqs.filter(r=>r.status==='budget_sent');
+  const approved=reqs.filter(r=>r.status==='account_approved');
+  const scheduled=reqs.filter(r=>['scheduled','in_capture','in_edit','in_review'].includes(r.status));
   const done=reqs.filter(r=>['delivered','cancelled'].includes(r.status));
   
-  const pendingCount=reqs.filter(r=>r.status==='budget_sent').length;
+  // Determine which filter to show by default
+  const isLeaderOrAdmin=isA()||isPL();
+  const defaultFilter=isLeaderOrAdmin&&needsLeader.length?'leader':needsAccount.length?'account':'all';
   
+  const filterBtns=[
+    {id:'all',label:'Todas',count:reqs.length},
+    {id:'leader',label:'🔧 Ação do Líder',count:needsLeader.length,color:'var(--t1)'},
+    {id:'account',label:'📋 Ação do Account',count:needsAccount.length,color:'var(--pack)'},
+    {id:'approved',label:'✓ Aprovadas',count:approved.length,color:'var(--prod)'},
+    {id:'production',label:'🎬 Em Produção',count:scheduled.length,color:'var(--red)'},
+    {id:'done',label:'✅ Finalizadas',count:done.length},
+  ];
+
   el.innerHTML=`
-    ${pendingCount&&(isAcc()||isA())?`<div style="background:rgba(237,28,36,.08);border:2px solid rgba(237,28,36,.3);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
-      <div style="font-size:24px">📋</div>
-      <div><div style="font-size:14px;font-weight:800;color:var(--red)">${pendingCount} orçamento${pendingCount>1?'s':''} aguardando aprovação</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Clique no item para revisar o orçamento e aprovar ou rejeitar</div></div>
+    ${isLeaderOrAdmin&&needsLeader.length?`<div style="background:rgba(96,165,250,.08);border:2px solid rgba(96,165,250,.3);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="filterProdReqs('leader')">
+      <div style="font-size:24px">🔧</div>
+      <div><div style="font-size:14px;font-weight:800;color:var(--t1)">${needsLeader.length} produção${needsLeader.length>1?'ões':''} aguardando sua ação</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Montar orçamento, revisar rejeição ou enviar ao account</div></div>
     </div>`:''}
-    <div class="cards">
-      <div class="card"><div class="cl">Em andamento</div><div class="cv">${running.length}</div></div>
-      <div class="card card-green"><div class="cl">Finalizadas</div><div class="cv">${done.length}</div></div>
-      ${pendingCount?`<div class="card" style="border-color:var(--red)"><div class="cl" style="color:var(--red)">Aguardando aprovação</div><div class="cv" style="color:var(--red)">${pendingCount}</div></div>`:''}
+    ${needsAccount.length&&(isAcc()||isA())?`<div style="background:rgba(237,28,36,.08);border:2px solid rgba(237,28,36,.3);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="filterProdReqs('account')">
+      <div style="font-size:24px">📋</div>
+      <div><div style="font-size:14px;font-weight:800;color:var(--red)">${needsAccount.length} orçamento${needsAccount.length>1?'s':''} aguardando aprovação</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Revise e aprove ou rejeite</div></div>
+    </div>`:''}
+    ${approved.length&&isLeaderOrAdmin?`<div style="background:rgba(74,222,128,.06);border:2px solid rgba(74,222,128,.2);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="filterProdReqs('approved')">
+      <div style="font-size:24px">✅</div>
+      <div><div style="font-size:14px;font-weight:800;color:var(--prod)">${approved.length} produção${approved.length>1?'ões':''} aprovada${approved.length>1?'s':''} — configurar agenda</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Escalar time, reservar equipamentos e agendar</div></div>
+    </div>`:''}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px" id="prod-filter-tabs">
+      ${filterBtns.map(f=>`<button class="pill ${f.id===defaultFilter?'active':''}" onclick="filterProdReqs('${f.id}')" id="prod-filter-${f.id}" style="${f.color&&f.count?'border-color:'+f.color+';':''}">${f.label} ${f.count?`<span style="font-weight:800;${f.color?'color:'+f.color:''}">${f.count}</span>`:''}</button>`).join('')}
     </div>
     <div class="tbl"><div class="tbl-h"><h3>Solicitações</h3><button class="btn btn-r btn-sm" onclick="showNewRequest()">${ICONS.plus} Nova Solicitação</button></div>
     <div class="tbl-r"><table><thead><tr><th>Título</th><th>Cliente</th><th>Tipo</th><th>Status</th><th>Prazo</th><th>Solicitante</th></tr></thead>
-    <tbody>${reqs.length?reqs.map(r=>{const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);const hl=r.status==='budget_sent'?'background:rgba(237,28,36,.06);border-left:3px solid var(--red);':'';return`<tr style="cursor:pointer;${hl}" onclick="showRequestDetail('${r.id}')"><td style="font-weight:600">${r.title}${r.status==='budget_sent'?' ⚠️':''}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join(''):'<tr><td colspan="6" class="empty">Nenhuma solicitação ainda</td></tr>'}</tbody></table></div></div>`;
+    <tbody id="prod-req-tbody">${renderProdReqRows(reqs,defaultFilter)}</tbody></table></div></div>`;
+}
+
+function renderProdReqRows(reqs,filter){
+  let filtered=reqs;
+  if(filter==='leader')filtered=reqs.filter(r=>['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status));
+  else if(filter==='account')filtered=reqs.filter(r=>r.status==='budget_sent');
+  else if(filter==='approved')filtered=reqs.filter(r=>r.status==='account_approved');
+  else if(filter==='production')filtered=reqs.filter(r=>['scheduled','in_capture','in_edit','in_review'].includes(r.status));
+  else if(filter==='done')filtered=reqs.filter(r=>['delivered','cancelled'].includes(r.status));
+  if(!filtered.length)return'<tr><td colspan="6" class="empty">Nenhuma solicitação neste filtro</td></tr>';
+  return filtered.map(r=>{
+    const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);
+    const isAction=(['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status)&&(isA()||isPL()))||(r.status==='budget_sent'&&(isAcc()||isA()))||(r.status==='account_approved'&&(isA()||isPL()));
+    const hl=isAction?'background:rgba(237,28,36,.04);border-left:3px solid var(--red);':'';
+    const icon=r.status==='account_rejected'?'🔄':r.status==='budget_sent'?'⚠️':r.status==='account_approved'?'✅':'';
+    return`<tr style="cursor:pointer;${hl}" onclick="showRequestDetail('${r.id}')"><td style="font-weight:600">${icon} ${r.title}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join('');
+}
+
+function filterProdReqs(filter){
+  document.querySelectorAll('#prod-filter-tabs .pill').forEach(p=>p.classList.remove('active'));
+  const btn=$(`prod-filter-${filter}`);if(btn)btn.classList.add('active');
+  const tbody=$('prod-req-tbody');
+  if(tbody)tbody.innerHTML=renderProdReqRows(S.av_requests,filter);
 }
 
 function showNewRequest(){
@@ -1677,74 +1717,79 @@ async function saveBudgetAndSend(reqId,budgetId){
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
-async function addProdTeamMember(reqId){
-  const sel=$(`prod-add-member-${reqId}`);if(!sel||!sel.value)return;
-  const memberId=sel.value;
+async function toggleProdTeamMember(reqId,memberId){
   const req=S.av_requests.find(r=>r.id===reqId);if(!req)return;
-  const ids=[...(req.team_member_ids||[]),memberId];
+  let ids=[...(req.team_member_ids||[])];
+  if(ids.includes(memberId))ids=ids.filter(id=>id!==memberId);
+  else ids.push(memberId);
   try{
     await sbPatch('av_requests',`id=eq.${reqId}`,{team_member_ids:ids});
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
-    closeM('m-req');showRequestDetail(reqId);toast('Membro adicionado');
-  }catch(e){toast('Erro: '+e.message,'error')}
-}
-
-async function removeProdTeamMember(reqId,memberId){
-  const req=S.av_requests.find(r=>r.id===reqId);if(!req)return;
-  const ids=(req.team_member_ids||[]).filter(id=>id!==memberId);
-  try{
-    await sbPatch('av_requests',`id=eq.${reqId}`,{team_member_ids:ids});
-    S.av_requests=await sbGet('av_requests','order=created_at.desc');
-    closeM('m-req');showRequestDetail(reqId);toast('Membro removido');
+    closeM('m-req');showRequestDetail(reqId);
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
 async function loadProdEquipment(reqId){
-  // Load reserved equipment for this production and populate picker
   try{
     const reserved=await sbGet('production_items',`av_request_id=eq.${reqId}&order=created_at.desc`);
+    const allBusy=await sbGet('production_items',`status=in.(reserved,checked_out)&select=equipment_id,av_request_id`);
+    const busyByOthers=allBusy.filter(pi=>pi.av_request_id!==reqId).map(pi=>pi.equipment_id);
+    const reservedIds=reserved.map(pi=>pi.equipment_id);
+    const canEdit=isA()||isPL();
+    
     const listEl=$(`prod-equip-${reqId}`);
-    if(listEl){
-      if(reserved.length){
-        listEl.innerHTML=reserved.map(pi=>{
-          const eq=S.equipment.find(e=>e.id===pi.equipment_id);
-          const statusColor=pi.status==='reserved'?'var(--pack)':pi.status==='checked_out'?'var(--red)':'var(--prod)';
-          const statusLabel=pi.status==='reserved'?'Reservado':pi.status==='checked_out'?'Em uso':'Devolvido';
-          return`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg3);border-radius:var(--radius);margin-bottom:4px;border-left:3px solid ${statusColor}">
-            <div><span style="font-weight:600;font-size:12px">${eq?.name||'Equipamento'}</span> <span style="font-size:10px;color:var(--txt3)">${eq?.internal_code||''}</span></div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:10px;color:${statusColor};font-weight:700">${statusLabel}</span>
-              ${pi.status==='reserved'?`<button class="pill" style="font-size:9px" onclick="checkoutEquipment('${pi.id}','${reqId}')">Check-out</button>`:''}
-              ${pi.status==='checked_out'?`<button class="pill" style="font-size:9px" onclick="checkinEquipment('${pi.id}','${pi.equipment_id}','${reqId}')">Devolver</button>`:''}
-              ${pi.status==='reserved'?`<button style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:12px" onclick="releaseProdEquipment('${pi.id}','${pi.equipment_id}','${reqId}')">✕</button>`:''}
-            </div>
-          </div>`;
-        }).join('');
-      }else{
-        listEl.innerHTML='<span style="font-size:12px;color:var(--txt3)">Nenhum equipamento reservado</span>';
-      }
-    }
-    // Populate available equipment picker
-    const reservedIds=reserved.filter(pi=>pi.status!=='checked_in').map(pi=>pi.equipment_id);
-    const allReserved=await sbGet('production_items',`status=in.(reserved,checked_out)&select=equipment_id`);
-    const busyIds=allReserved.map(pi=>pi.equipment_id);
-    const selEl=$(`prod-add-equip-${reqId}`);
-    if(selEl){
-      const available=S.equipment.filter(e=>!busyIds.includes(e.id));
-      selEl.innerHTML=`<option value="">+ Reservar equipamento (${available.length} disponíveis)</option>`+
-        available.map(e=>{const cat=S.categories.find(c=>c.id===e.category_id);return`<option value="${e.id}">${e.name} (${cat?.name||'—'}) — ${e.internal_code||''}</option>`}).join('');
-    }
+    if(!listEl)return;
+    
+    // Group equipment by category
+    const cats=[...new Set(S.equipment.map(e=>e.category_id))];
+    let html='';
+    
+    cats.forEach(catId=>{
+      const cat=S.categories.find(c=>c.id===catId);
+      const catEquip=S.equipment.filter(e=>e.category_id===catId);
+      if(!catEquip.length)return;
+      
+      html+=`<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${cat?.name||'Outros'}</div>`;
+      html+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px">`;
+      
+      catEquip.forEach(eq=>{
+        const pi=reserved.find(p=>p.equipment_id===eq.id);
+        const busyOther=busyByOthers.includes(eq.id);
+        const isReserved=!!pi&&pi.status!=='checked_in';
+        const isCheckedOut=pi?.status==='checked_out';
+        const isReturned=pi?.status==='checked_in';
+        
+        let border='var(--border)',bg='var(--bg3)',statusText='Disponível',statusColor='var(--prod)';
+        if(busyOther){border='var(--txt3)';bg='var(--bg)';statusText='Em outra prod';statusColor='var(--txt3)'}
+        else if(isCheckedOut){border='var(--red)';bg='rgba(237,28,36,.08)';statusText='Em uso';statusColor='var(--red)'}
+        else if(isReserved){border='var(--pack)';bg='rgba(245,158,11,.08)';statusText='Reservado';statusColor='var(--pack)'}
+        
+        html+=`<div style="padding:6px 8px;border-radius:var(--radius);border:2px solid ${border};background:${bg};display:flex;align-items:center;justify-content:space-between;gap:4px">`;
+        html+=`<div><div style="font-size:11px;font-weight:600">${eq.name}</div><div style="font-size:9px;color:var(--txt3)">${eq.internal_code||''}</div></div>`;
+        html+=`<div style="display:flex;align-items:center;gap:4px">`;
+        html+=`<span style="font-size:8px;color:${statusColor};font-weight:700">${statusText}</span>`;
+        
+        if(canEdit){
+          if(!isReserved&&!busyOther)html+=`<button class="pill" style="font-size:8px;padding:2px 6px" onclick="addProdEquipment('${reqId}','${eq.id}')">+</button>`;
+          if(isReserved&&!isCheckedOut)html+=`<button class="pill" style="font-size:8px;padding:2px 6px" onclick="checkoutEquipment('${pi.id}','${reqId}')">▶</button>`;
+          if(isCheckedOut)html+=`<button class="pill" style="font-size:8px;padding:2px 6px;background:var(--prod);color:var(--bg);border-color:var(--prod)" onclick="checkinEquipment('${pi.id}','${eq.id}','${reqId}')">✓</button>`;
+          if(isReserved&&!isCheckedOut)html+=`<button style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:10px" onclick="releaseProdEquipment('${pi.id}','${eq.id}','${reqId}')">✕</button>`;
+        }
+        html+=`</div></div>`;
+      });
+      html+=`</div></div>`;
+    });
+    
+    listEl.innerHTML=html||'<span style="font-size:12px;color:var(--txt3)">Nenhum equipamento cadastrado</span>';
   }catch(e){console.error('loadProdEquipment error:',e)}
 }
 
-async function addProdEquipment(reqId){
-  const sel=$(`prod-add-equip-${reqId}`);if(!sel||!sel.value)return;
-  const equipId=sel.value;
+async function addProdEquipment(reqId,equipId){
   try{
     await sbPost('production_items',{av_request_id:reqId,equipment_id:equipId,status:'reserved',reserved_from:new Date().toISOString()});
     await sbPatch('equipment',`id=eq.${equipId}`,{status:'reserved'});
     S.equipment=await sbGet('equipment','order=name');
-    await loadProdEquipment(reqId);toast('Equipamento reservado');
+    await loadProdEquipment(reqId);toast('Reservado');
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
