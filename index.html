@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.9.2</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.9.3</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.9.2</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.9.3</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -291,7 +291,7 @@ const AV_STATUSES={draft:'Rascunho',pending_leader_review:'Aguardando Líder',le
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
-let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],scores:[],commission_rules:[],cost_defaults:[]};
+let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],av_budgets:[],scores:[],commission_rules:[],cost_defaults:[]};
 let curPage='timer';
 let timerStart=null,timerSec=0,timerInt=null,running=false,activeEntryId=null;
 let dateRange='this_month',customFrom='',customTo='';
@@ -419,6 +419,7 @@ async function loadData(){
     try{S.equipment=await sbGet('equipment','order=name')}catch(e){S.equipment=[]}
     // AV Requests
     try{S.av_requests=await sbGet('av_requests','order=created_at.desc')}catch(e){S.av_requests=[]}
+    try{S.av_budgets=await sbGet('av_budgets','order=created_at.desc')}catch(e){S.av_budgets=[]}
     // Score ADM
     try{S.scores=await sbGet('score_adm','order=month.desc,account_id')}catch(e){S.scores=[]}
     // Commission rules
@@ -1274,17 +1275,29 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
       <!-- PROGRAMAÇÃO -->
       <div style="margin-bottom:16px">
         <div class="cl" style="margin-bottom:10px">Programação</div>
-        ${r.desired_deadline?`<div style="background:var(--bg3);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between"><div><span style="font-size:11px;color:var(--txt2)">Prazo solicitado pelo Account:</span> <span style="font-weight:700">${fD(r.desired_deadline)}</span></div><button class="pill" onclick="var d=document.getElementById('bg-cap-date');if(d)d.value='${r.desired_deadline}'">Usar esta data</button></div>`:''}
-        <div class="f-row">
+        ${r.desired_deadline?`<div style="background:var(--bg3);border-radius:var(--radius);padding:12px 16px;margin-bottom:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div><span style="font-size:11px;color:var(--txt2)">Prazo solicitado pelo Account:</span> <span style="font-weight:700;font-size:15px">${fD(r.desired_deadline)}</span></div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm" style="background:var(--prod);color:var(--bg);border:none;flex:1" onclick="var d=document.getElementById('bg-cap-date');if(d)d.value='${r.desired_deadline}';this.parentElement.parentElement.querySelector('.date-status').textContent='✓ Data aprovada';this.parentElement.parentElement.querySelector('.date-status').style.color='var(--prod)'">✓ Aprovar data</button>
+            <button class="btn btn-sm" style="background:var(--bg2);color:var(--txt);border:1px solid var(--border);flex:1" onclick="var el=document.getElementById('bg-alt-date-row');if(el)el.style.display='flex'">✗ Sugerir outra</button>
+            <button class="btn btn-sm" style="background:var(--bg2);color:var(--txt);border:1px solid var(--border)" onclick="showProdCalendarPopup()">📅 Ver agenda</button>
+          </div>
+          <div class="date-status" style="font-size:11px;margin-top:6px;color:var(--txt3)"></div>
+        </div>`:''}
+        <div class="f-row" id="bg-alt-date-row" style="${r.desired_deadline?'display:none':'display:flex'}">
           <div class="f-field"><label class="f-label">Data captação</label><input class="f-input" type="date" id="bg-cap-date" value="${bgt?.suggested_capture_date||''}"></div>
           <div class="f-field"><label class="f-label">Data entrega</label><input class="f-input" type="date" id="bg-del-date" value="${bgt?.suggested_delivery_date||''}"></div>
         </div>
+        <div id="bg-mini-calendar" style="margin-top:8px"></div>
       </div>
       <div class="f-field"><label class="f-label">Observações do líder</label><textarea class="f-area" id="bg-notes">${bgt?.leader_notes||''}</textarea></div>
       
       ${canBudget?`<div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
         <button class="btn btn-r" onclick="saveBudget('${r.id}','${bgt?.id||''}')">Salvar Orçamento</button>
         ${r.status==='leader_reviewing'?`<button class="btn btn-r" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">Salvar & Enviar ao Account</button>`:''}
+        ${bgt?`<button class="btn" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Gerar PDF</button>`:''}
       </div>`:''}
     </div>`:''}`;
   
@@ -1293,6 +1306,99 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
     // Fix input focus for modal
     $('m-req-body').querySelectorAll('input,textarea,select').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})
   },50);
+}
+
+function showProdCalendarPopup(){
+  // Build a mini month calendar showing existing productions
+  const now=new Date();const y=now.getFullYear(),m=now.getMonth();
+  const prods=S.av_requests.filter(r=>r.status!=='cancelled'&&r.status!=='delivered');
+  const dates={};
+  prods.forEach(r=>{
+    const bgt=S.av_budgets?.find(b=>b.request_id===r.id);
+    const d=bgt?.suggested_capture_date||r.desired_deadline;
+    if(d){const key=d.substring(0,10);if(!dates[key])dates[key]=[];dates[key].push(r.title)}
+  });
+  const firstDay=new Date(y,m,1).getDay();
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const monthNames=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  let cal=`<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)this.remove()">
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:20px;max-width:480px;width:90%;max-height:80vh;overflow:auto" onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-weight:800;font-size:16px">📅 Agenda de Produções — ${monthNames[m]} ${y}</div>
+      <button style="background:none;border:none;color:var(--txt);cursor:pointer;font-size:18px" onclick="this.closest('[style*=fixed]').remove()">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">
+      ${['D','S','T','Q','Q','S','S'].map(d=>`<div style="font-size:10px;font-weight:700;color:var(--txt3);padding:4px">${d}</div>`).join('')}
+      ${'<div></div>'.repeat(firstDay)}`;
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const has=dates[ds];
+    const isToday=d===now.getDate();
+    cal+=`<div style="padding:4px;border-radius:4px;font-size:12px;${isToday?'border:2px solid var(--red);font-weight:700;':''}${has?'background:rgba(237,28,36,.15);color:var(--red);font-weight:700;cursor:pointer':''}" ${has?`title="${has.join(', ')}"`:''}>${d}${has?`<div style="font-size:7px;line-height:1.1">${has.length} prod</div>`:''}</div>`;
+  }
+  cal+=`</div>
+    <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:6px">Produções agendadas:</div>
+      ${Object.entries(dates).sort().map(([d,titles])=>`<div style="font-size:11px;padding:3px 0"><span style="color:var(--red);font-weight:700;font-family:var(--mono)">${d.substring(8,10)}/${d.substring(5,7)}</span> — ${titles.join(', ')}</div>`).join('')||'<div style="font-size:11px;color:var(--txt3)">Nenhuma produção agendada este mês</div>'}
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',cal);
+}
+
+async function exportBudgetPDF(reqId){
+  const r=S.av_requests.find(x=>x.id===reqId);if(!r)return;
+  const c=S.clients.find(x=>x.id===r.client_id);
+  const bgt=S.av_budgets?.find(b=>b.request_id===reqId);
+  const acc=S.members.find(x=>x.id===r.requested_by);
+  const price=bgt?Number(bgt.client_price):0;
+  const taxAmt=price*(bgt?Number(bgt.tax_rate):0.18);
+  // Build PDF using jsPDF
+  if(!window.jspdf){
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js';
+    document.head.appendChild(s);
+    await new Promise(r=>{s.onload=r;setTimeout(r,3000)});
+  }
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF();
+  let y=20;
+  const addLine=(text,opts={})=>{
+    doc.setFontSize(opts.size||11);doc.setFont('helvetica',opts.bold?'bold':'normal');
+    if(opts.color)doc.setTextColor(...opts.color);else doc.setTextColor(40,40,40);
+    doc.text(text,opts.x||20,y);y+=opts.gap||7;
+  };
+  // Header
+  doc.setFillColor(35,31,32);doc.rect(0,0,210,45,'F');
+  doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(237,28,36);
+  doc.text('TGT',20,28);
+  doc.setFontSize(9);doc.setTextColor(255,255,255);doc.text('A AGÊNCIA ALÉM DO MARKETING',52,25);
+  doc.setFontSize(14);doc.setTextColor(255,255,255);doc.text('Proposta de Produção Audiovisual',20,40);
+  y=58;
+  addLine('FICHA TÉCNICA',{size:14,bold:true,color:[237,28,36],gap:10});
+  addLine(`Projeto: ${r.title}`,{bold:true,size:12,gap:8});
+  addLine(`Cliente: ${c?.name||'—'}`,{gap:6});
+  addLine(`Tipo: ${r.prod_type==='fee_prod'?'Fee':'Extra'}`,{gap:6});
+  if(r.objective){addLine(`Objetivo: ${r.objective}`,{gap:6})}
+  if(r.video_type){addLine(`Tipo de vídeo: ${r.video_type}`,{gap:6})}
+  addLine(`Entregáveis: ${r.quantity_deliverables||1}`,{gap:6});
+  if(r.formats){addLine(`Formatos: ${r.formats}`,{gap:6})}
+  if(bgt?.suggested_capture_date){addLine(`Data captação: ${fD(bgt.suggested_capture_date)}`,{gap:6})}
+  if(bgt?.suggested_delivery_date){addLine(`Data entrega: ${fD(bgt.suggested_delivery_date)}`,{gap:6})}
+  y+=6;
+  doc.setDrawColor(237,28,36);doc.line(20,y,190,y);y+=10;
+  addLine('INVESTIMENTO',{size:14,bold:true,color:[237,28,36],gap:10});
+  addLine(`Valor total: R$ ${price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,{size:16,bold:true,gap:8});
+  addLine(`Impostos inclusos: ${((bgt?Number(bgt.tax_rate):0.18)*100).toFixed(0)}%`,{gap:6});
+  y+=6;
+  addLine('Condições: Pagamento conforme acordo contratual.',{size:9,color:[120,120,120],gap:5});
+  addLine('Valores válidos por 30 dias a partir da data de emissão.',{size:9,color:[120,120,120],gap:5});
+  y+=8;
+  addLine(`Emitido por: ${acc?.name||'TGT Studio'}`,{size:9,color:[100,100,100],gap:5});
+  addLine(`Data: ${new Date().toLocaleDateString('pt-BR')}`,{size:9,color:[100,100,100]});
+  // Footer
+  doc.setFillColor(35,31,32);doc.rect(0,280,210,17,'F');
+  doc.setFontSize(8);doc.setTextColor(150,150,150);doc.text('TGT Studio — A Agência Além do Marketing | tgtstudio.com.br',20,288);
+  doc.save(`TGT_Proposta_${r.title.replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+  toast('PDF gerado');
 }
 
 function switchReqTab(tab){
