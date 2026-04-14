@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.9.4</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.9.5</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.9.4</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.9.5</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -1173,6 +1173,37 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
       ${r.formats?`<div style="margin-bottom:14px"><div class="cl">Formatos</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.formats.split(',').map(f=>`<span class="bg bg-t3">${f.trim()}</span>`).join('')}</div></div>`:''}
       ${r.reference_links?`<div style="margin-bottom:14px"><div class="cl">Referências</div><div style="margin-top:4px;color:var(--txt2);font-size:13px;word-break:break-all">${r.reference_links}</div></div>`:''}
       ${r.briefing_notes?`<div style="margin-bottom:14px"><div class="cl">Briefing</div><div style="margin-top:4px;line-height:1.5">${r.briefing_notes}</div></div>`:''}
+      ${bgt?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
+        <div class="cl" style="margin-bottom:10px">Orçamento</div>
+        ${(()=>{
+          const price=Number(bgt.client_price)||0;
+          const taxR=Number(bgt.tax_rate)||0.18;
+          const taxAmt=price*taxR;
+          const costs=Number(bgt.cost_crew_daily||0)+Number(bgt.cost_travel||0)+Number(bgt.cost_food||0)+Number(bgt.cost_equipment||0)+Number(bgt.cost_talent||0)+Number(bgt.cost_location||0)+Number(bgt.cost_other||0)+Number(bgt.cost_edit||0)+Number(bgt.cost_motion||0)+Number(bgt.cost_color_grade||0)+Number(bgt.cost_audio||0);
+          const profit=price-taxAmt-costs;
+          const commAcc=Number(bgt.commission_account_value)||0;
+          const commLdr=Number(bgt.commission_leader_value)||0;
+          const receitaTGT=profit-commAcc-commLdr;
+          return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center">
+            <div style="background:var(--bg3);border-radius:var(--radius);padding:12px">
+              <div style="font-size:9px;color:var(--txt3);text-transform:uppercase">Preço Cliente</div>
+              <div style="font-size:20px;font-weight:900;font-family:var(--mono)">${fMoney(price)}</div>
+            </div>
+            <div style="background:var(--bg3);border-radius:var(--radius);padding:12px">
+              <div style="font-size:9px;color:var(--txt3);text-transform:uppercase">Custos + Impostos</div>
+              <div style="font-size:20px;font-weight:900;font-family:var(--mono);color:var(--pack)">${fMoney(costs+taxAmt)}</div>
+            </div>
+            <div style="background:${receitaTGT>=0?'rgba(74,222,128,.08)':'rgba(237,28,36,.08)'};border:1px solid ${receitaTGT>=0?'rgba(74,222,128,.2)':'rgba(237,28,36,.2)'};border-radius:var(--radius);padding:12px">
+              <div style="font-size:9px;color:${receitaTGT>=0?'var(--prod)':'var(--red)'};text-transform:uppercase;font-weight:700">Receita TGT</div>
+              <div style="font-size:20px;font-weight:900;font-family:var(--mono);color:${receitaTGT>=0?'var(--prod)':'var(--red)'}">${fMoney(receitaTGT)}</div>
+            </div>
+          </div>
+          ${bgt.suggested_capture_date||bgt.suggested_delivery_date?`<div style="display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--txt2)">${bgt.suggested_capture_date?`<span>📅 Captação: <b>${fD(bgt.suggested_capture_date)}</b></span>`:''}${bgt.suggested_delivery_date?`<span>📦 Entrega: <b>${fD(bgt.suggested_delivery_date)}</b></span>`:''}</div>`:''}
+          ${bgt.leader_notes?`<div style="margin-top:8px;font-size:12px;color:var(--txt2)"><b>Obs líder:</b> ${bgt.leader_notes}</div>`:''}
+          ${profit<=0?`<div style="margin-top:8px;padding:6px 10px;background:rgba(237,28,36,.1);border-radius:var(--radius);font-size:11px;color:var(--red);font-weight:700;text-align:center">⚠ Produção deficitária — sem comissão</div>`:''}`;
+        })()}
+        <div style="margin-top:10px"><button class="btn btn-sm" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Baixar proposta PDF</button></div>
+      </div>`:r.client_budget?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px"><div style="font-size:11px;color:var(--txt2)">Verba disponível: <span style="font-weight:700;color:var(--prod)">${fMoney(r.client_budget)}</span></div></div>`:''}
       ${canAct&&nextStatuses.length?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px"><div class="cl" style="margin-bottom:10px">Ações</div><div style="display:flex;flex-wrap:wrap;gap:8px">${nextStatuses.map(ns=>`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="changeRequestStatus('${r.id}','${ns}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`).join('')}</div></div>`:''}
     </div>
     
