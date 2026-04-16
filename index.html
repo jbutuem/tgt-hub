@@ -235,7 +235,7 @@ tr:hover td{background:var(--bg3)}
 <div class="sb-logo">
 <svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.13.0</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.13.1</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -252,7 +252,7 @@ tr:hover td{background:var(--bg3)}
 <button class="menu-toggle" onclick="toggleSb()"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.13.0</span>
+<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.13.1</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -300,8 +300,8 @@ let dateRange='this_month',customFrom='',customTo='';
 // HELPERS
 // ═══════════════════════════════════════════════
 const $=id=>document.getElementById(id);
-const TB=t=>({T1:'T1',T3:'T3',T4:'T4',PACK:'Pack',PROD:'Prod',ADM:'ADM'}[t]||t||'—');
-const TBC=t=>({T1:'bg-t1',T3:'bg-t3',T4:'bg-t4',PACK:'bg-pack',PROD:'bg-prod',ADM:'bg-adm'}[t]||'bg-adm');
+const TB=t=>({T1:'T1',T3:'T3',T4:'T4',T5:'T5',PACK:'T5',PROD:'Prod',ADM:'ADM'}[t]||t||'—');
+const TBC=t=>({T1:'bg-t1',T3:'bg-t3',T4:'bg-t4',T5:'bg-pack',PACK:'bg-pack',PROD:'bg-prod',ADM:'bg-adm'}[t]||'bg-adm');
 const fH=h=>{const hh=Math.floor(h),mm=Math.round((h-hh)*60);return `${hh}h${mm>0?mm+'m':''}`};
 const fD=d=>d?new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'—';
 const fMoney=v=>v?'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0}):'—';
@@ -865,7 +865,7 @@ async function pgDashClient(el){
 
 async function pgDashTeam(el){
   if(!isA()&&!isAcc()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
-  const teams=['T1','T3','T4','PACK','PROD','ADM'];
+  const teams=['T1','T3','T4','T5','PROD','ADM'];
   const teamData=teams.map(t=>{
     const ms=S.members.filter(m=>m.team===t);
     const cap=ms.reduce((s,m)=>s+(m.capacity_hours||140),0);
@@ -2598,7 +2598,7 @@ function showMemberModal(id){
     <input type="hidden" id="mb-id" value="${m?m.id:''}">
     <div class="f-row"><div class="f-field"><label class="f-label">Nome completo *</label><input class="f-input" id="mb-name" value="${m?m.name:''}"></div><div class="f-field"><label class="f-label">Email *</label><input class="f-input" id="mb-email" value="${m?m.email:''}"></div></div>
     <div class="f-row3">
-      <div class="f-field"><label class="f-label">Time</label><select class="f-sel" id="mb-team"><option value="">Sem time</option>${['T1','T3','T4','PACK','PROD','ADM'].map(t=>`<option value="${t}" ${m?.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="f-field"><label class="f-label">Time</label><select class="f-sel" id="mb-team"><option value="">Sem time</option>${['T1','T3','T4','T5','PROD','ADM'].map(t=>`<option value="${t}" ${m?.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Nível de acesso</label><select class="f-sel" id="mb-role" onchange="toggleClientField()"><option value="user" ${m?.access_level==='user'?'selected':''}>User (operador)</option><option value="account" ${m?.access_level==='account'?'selected':''}>Account</option><option value="prod_leader" ${m?.access_level==='prod_leader'?'selected':''}>Líder Prod</option><option value="admin" ${m?.access_level==='admin'?'selected':''}>Admin</option><option value="client" ${m?.access_level==='client'?'selected':''}>Cliente externo</option></select></div>
       <div class="f-field"><label class="f-label">Função</label><input class="f-input" id="mb-job" value="${m?m.job_title||'':''}"></div>
     </div>
@@ -2644,11 +2644,12 @@ async function pgClients(el){
   if(!isA()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   el.innerHTML=`
     <div class="tbl"><div class="tbl-h"><h3>Clientes (${S.clients.length})</h3><button class="btn btn-r btn-sm" onclick="showClientModal()">${ICONS.plus} Adicionar</button></div>
-    <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta h/mês</th><th class="rt">Fee mensal</th><th></th></tr></thead>
+    <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta h/mês</th><th>Modelo</th><th class="rt">Fee mensal</th><th></th></tr></thead>
     <tbody>${S.clients.map(c=>`<tr>
       <td style="font-weight:600">${c.name}</td><td><span class="bg ${TBC(c.team)}">${c.team?TB(c.team):'—'}</span></td>
       <td class="rt" style="font-family:var(--mono)">${c.target_hours_month?Number(c.target_hours_month).toFixed(0)+'h':'—'}</td>
-      <td class="rt" style="font-family:var(--mono)">${Number(c.fee_monthly)>0?fMoney(c.fee_monthly):'—'}</td>
+      <td>${c.is_fee?'<span class="bg bg-t1">Fee</span>':'<span class="bg bg-adm">Pontual</span>'}</td>
+      <td class="rt" style="font-family:var(--mono)">${c.is_fee&&Number(c.fee_monthly)>0?fMoney(c.fee_monthly):'—'}</td>
       <td><button class="btn-icon" onclick="showClientModal('${c.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>
     </tr>`).join('')}</tbody></table></div></div>`;
 }
@@ -2660,10 +2661,11 @@ function showClientModal(id){
     <input type="hidden" id="cl-id" value="${c?c.id:''}">
     <div class="f-field"><label class="f-label">Nome *</label><input class="f-input" id="cl-name" value="${c?c.name:''}"></div>
     <div class="f-row3">
-      <div class="f-field"><label class="f-label">Time</label><select class="f-sel" id="cl-team"><option value="">Sem time</option>${['T1','T3','T4','PACK'].map(t=>`<option value="${t}" ${c?.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="f-field"><label class="f-label">Time</label><select class="f-sel" id="cl-team"><option value="">Sem time</option>${['T1','T3','T4','T5'].map(t=>`<option value="${t}" ${c?.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Meta h/mês</label><input class="f-input" type="number" id="cl-target" min="0" step="any" inputmode="decimal" value="${c?Number(c.target_hours_month)||'':''}"></div>
-      <div class="f-field"><label class="f-label">Fee mensal (R$)</label><input class="f-input" type="number" id="cl-fee" min="0" step="any" inputmode="decimal" value="${c?Number(c.fee_monthly)||'':''}"></div>
-    </div>`;
+      <div class="f-field"><label class="f-label">É Fee?</label><select class="f-sel" id="cl-isfee" onchange="document.getElementById('cl-fee-wrap').style.display=this.value==='1'?'block':'none'"><option value="0" ${!c?.is_fee?'selected':''}>Não</option><option value="1" ${c?.is_fee?'selected':''}>Sim</option></select></div>
+    </div>
+    <div class="f-field" id="cl-fee-wrap" style="display:${c?.is_fee?'block':'none'};margin-top:12px"><label class="f-label">Valor do Fee mensal (R$)</label><input class="f-input" type="number" id="cl-fee" min="0" step="any" inputmode="decimal" value="${c&&c.is_fee?Number(c.fee_monthly)||'':''}"></div>`;
   $('m-client-save').onclick=saveClient;
   openM('m-client');
 }
@@ -2671,7 +2673,8 @@ function showClientModal(id){
 async function saveClient(){
   const id=$('cl-id')?.value,name=$('cl-name')?.value;
   if(!name){toast('Preencha o nome','error');return}
-  const data={name,team:$('cl-team')?.value||null,target_hours_month:parseFloat($('cl-target')?.value)||0,fee_monthly:parseFloat($('cl-fee')?.value)||0};
+  const isFee=$('cl-isfee')?.value==='1';
+  const data={name,team:$('cl-team')?.value||null,target_hours_month:parseFloat($('cl-target')?.value)||0,is_fee:isFee,fee_monthly:isFee?(parseFloat($('cl-fee')?.value)||0):0};
   try{
     if(id)await sbPatch('tt_clients',`id=eq.${id}`,data);
     else{data.is_active=true;await sbPost('tt_clients',data)}
