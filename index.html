@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TGT Hub</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <style>
 :root{
 --bg:#0a0a0a;--bg2:#141414;--bg3:#1e1e1e;--bg4:#282828;
@@ -206,6 +208,181 @@ tr:hover td{background:var(--bg3)}
 .modal{max-width:100%;margin:8px}
 }
 @media(max-width:480px){.cards{grid-template-columns:1fr}}
+
+/* ═══════════════════════════════════════════════
+   BRAND GUARDIAN AGENTES
+   ═══════════════════════════════════════════════ */
+.ag-hero{margin-bottom:24px}
+.ag-hero h1{font-size:28px;font-weight:800;margin-bottom:6px}
+.ag-hero h1 .hl{color:var(--red)}
+.ag-hero p{color:var(--txt2);font-size:14px;max-width:700px;line-height:1.5}
+.ag-field{margin-bottom:20px}
+.ag-label{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;color:var(--txt);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.ag-label .req{font-size:10px;color:var(--red);font-weight:500}
+.ag-label .opt{font-size:10px;color:var(--txt3);font-weight:500}
+.ag-label .cnt{font-size:10px;color:var(--txt3);font-family:var(--mono)}
+.ag-sel,.ag-input,.ag-textarea{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;color:var(--txt);font-family:var(--font);font-size:14px;transition:border-color .15s}
+.ag-sel:focus,.ag-input:focus,.ag-textarea:focus{outline:none;border-color:var(--red)}
+.ag-textarea{resize:vertical;min-height:200px;font-family:var(--mono);font-size:13px;line-height:1.5}
+.ag-warn{font-size:12px;color:var(--pack);margin-top:6px;min-height:16px}
+.ag-warn-err{color:var(--red)}
+.ag-tabs{display:flex;gap:2px;background:var(--bg2);padding:4px;border-radius:var(--radius-sm);margin-bottom:10px;border:1px solid var(--border)}
+.ag-tab{flex:1;padding:8px 14px;background:transparent;border:none;color:var(--txt2);font-size:13px;font-weight:500;cursor:pointer;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,color .15s}
+.ag-tab:hover{color:var(--txt)}
+.ag-tab-active{background:var(--bg3);color:var(--white);font-weight:600}
+.ag-dropzone{border:2px dashed var(--border2);border-radius:var(--radius);padding:32px 24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.ag-dropzone:hover{border-color:var(--red);background:var(--red-glow)}
+.ag-dropzone.drag{border-color:var(--red);background:var(--red-glow)}
+.ag-dropzone.disabled{opacity:.5;cursor:not-allowed}
+.ag-dz-icon{color:var(--txt3);margin-bottom:10px}
+.ag-dz-title{color:var(--txt);font-size:14px;font-weight:500;margin-bottom:4px}
+.ag-dz-title .link{color:var(--red);text-decoration:underline}
+.ag-dz-sub{color:var(--txt3);font-size:11px;font-family:var(--mono)}
+.ag-file-prev{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-top:10px}
+.ag-file-prev-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.ag-file-prev-name{font-size:13px;font-weight:500;color:var(--txt)}
+.ag-file-prev details{margin-top:10px}
+.ag-file-prev summary{cursor:pointer;font-size:11px;color:var(--txt2);font-family:var(--mono)}
+.ag-file-prev pre{margin-top:8px;max-height:200px;overflow:auto;background:var(--bg);padding:10px;border-radius:var(--radius-sm);font-size:11px;color:var(--txt2);white-space:pre-wrap;word-wrap:break-word}
+.ag-actions{display:flex;gap:10px;align-items:center;margin-top:20px}
+.ag-hint{font-size:12px;color:var(--txt3);margin-top:8px}
+.ag-hint-err{color:var(--red)}
+.ag-loading{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:40px;text-align:center;margin-top:20px}
+.ag-loader-dots{display:inline-flex;gap:4px;margin-bottom:12px}
+.ag-loader-dots span{width:8px;height:8px;border-radius:50%;background:var(--red);animation:ag-pulse 1.4s infinite}
+.ag-loader-dots span:nth-child(2){animation-delay:.2s}
+.ag-loader-dots span:nth-child(3){animation-delay:.4s}
+@keyframes ag-pulse{0%,80%,100%{opacity:.3}40%{opacity:1}}
+.ag-loader-txt{color:var(--txt);font-size:14px;font-weight:500}
+.ag-loader-sub{color:var(--txt3);font-size:11px;font-family:var(--mono);margin-top:4px}
+.ag-result{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-top:24px}
+.ag-result-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.ag-result-head .lbl{font-size:11px;color:var(--txt3);font-family:var(--mono);text-transform:uppercase}
+.ag-res-sum{margin-bottom:20px}
+.ag-res-sum-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.ag-res-sum-lbl{font-size:11px;color:var(--txt3);font-family:var(--mono);text-transform:uppercase}
+.ag-res-sum-txt{color:var(--txt);font-size:14px;line-height:1.5}
+.ag-tipo-badge{display:inline-block;padding:4px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;color:var(--red);font-family:var(--mono);text-transform:uppercase}
+.ag-score{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm)}
+.ag-score-lbl{font-size:11px;color:var(--txt3);font-family:var(--mono);text-transform:uppercase;min-width:90px}
+.ag-score-bar{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
+.ag-score-fill{height:100%;background:linear-gradient(90deg,var(--red),var(--prod));transition:width .8s ease}
+.ag-score-val{font-size:14px;font-weight:700;color:var(--txt);font-family:var(--mono);min-width:50px;text-align:right}
+.ag-checklist{list-style:none;padding:0;margin:0 0 20px}
+.ag-checklist-item{display:flex;gap:12px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:6px;border-left:3px solid transparent}
+.ag-checklist-item.ok{border-left-color:var(--prod)}
+.ag-checklist-item.partial{border-left-color:var(--pack)}
+.ag-checklist-item.missing{border-left-color:var(--red)}
+.ag-check-icon{font-size:16px;flex-shrink:0}
+.ag-check-field{font-size:13px;font-weight:600;color:var(--txt);margin-bottom:2px}
+.ag-check-value{font-size:12px;color:var(--txt);margin-bottom:4px;font-style:italic}
+.ag-check-note{font-size:11px;color:var(--txt2);line-height:1.4}
+.ag-res-section{margin-top:20px;padding-top:20px;border-top:1px solid var(--border)}
+.ag-res-title{font-size:13px;font-weight:700;color:var(--txt);margin-bottom:12px;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.5px}
+.ag-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.ag-dot-red{background:var(--red)}
+.ag-dot-yellow{background:var(--pack)}
+.ag-dot-green{background:var(--prod)}
+.ag-dot-white{background:var(--txt)}
+.ag-gap-list,.ag-incons-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.ag-gap-item,.ag-incons-item{padding:12px;background:var(--bg3);border-radius:var(--radius-sm)}
+.ag-gap-field{font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px;text-transform:uppercase}
+.ag-gap-sug{font-size:13px;color:var(--txt);line-height:1.5}
+.ag-incons-desc{font-size:13px;color:var(--txt);line-height:1.5;margin-bottom:6px}
+.ag-incons-fix{font-size:12px;color:var(--txt2);line-height:1.4}
+.ag-incons-fix .lbl{color:var(--pack);font-weight:600;text-transform:uppercase;font-size:10px}
+.ag-next{font-size:14px;color:var(--txt);line-height:1.6;padding:12px 14px;background:var(--bg3);border-radius:var(--radius-sm)}
+.ag-res-err{padding:16px;background:rgba(237,28,36,.1);border:1px solid rgba(237,28,36,.3);border-radius:var(--radius-sm);color:var(--red);font-size:13px}
+.ag-res-err strong{display:block;margin-bottom:6px;font-size:14px}
+.ag-onepager-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;background:var(--red);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.ag-onepager-btn:hover{background:var(--red2)}
+/* Arte agent */
+.ag-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:12px}
+.ag-thumb{position:relative;aspect-ratio:1;background:var(--bg3);border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)}
+.ag-thumb img{width:100%;height:100%;object-fit:cover}
+.ag-thumb-remove{position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.ag-thumb-label{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(0,0,0,.8),transparent);color:#fff;font-size:10px;padding:6px 8px 4px;font-family:var(--mono)}
+.ag-thumb.processing{animation:ag-proc 1.5s infinite}
+.ag-thumb.done{border-color:var(--prod)}
+.ag-thumb.error{border-color:var(--red)}
+@keyframes ag-proc{0%,100%{opacity:1}50%{opacity:.5}}
+.ag-progress{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin-top:12px;max-width:300px;margin-left:auto;margin-right:auto}
+.ag-progress-fill{height:100%;background:var(--red);transition:width .3s}
+.ag-arte-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+.ag-arte-sum-cell{text-align:center;padding:14px;background:var(--bg3);border-radius:var(--radius-sm)}
+.ag-arte-sum-val{font-size:28px;font-weight:800;font-family:var(--mono)}
+.ag-arte-sum-val.ok{color:var(--prod)}
+.ag-arte-sum-val.warn{color:var(--pack)}
+.ag-arte-sum-val.rep{color:var(--red)}
+.ag-arte-sum-lbl{font-size:10px;color:var(--txt3);text-transform:uppercase;font-family:var(--mono);margin-top:4px}
+.ag-arte-cards{display:flex;flex-direction:column;gap:14px}
+.ag-arte-card{display:grid;grid-template-columns:180px 1fr;gap:14px;background:var(--bg3);border-radius:var(--radius-sm);overflow:hidden;border-left:3px solid transparent}
+.ag-arte-card.approved{border-left-color:var(--prod)}
+.ag-arte-card.warn{border-left-color:var(--pack)}
+.ag-arte-card.reproved{border-left-color:var(--red)}
+.ag-arte-card.error{border-left-color:var(--red)}
+.ag-arte-card-img{aspect-ratio:1;background:var(--bg)}
+.ag-arte-card-img img{width:100%;height:100%;object-fit:contain}
+.ag-arte-card-body{padding:14px 14px 14px 0}
+.ag-arte-status{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:var(--radius-sm);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.ag-arte-status.approved{background:rgba(34,197,94,.15);color:var(--prod)}
+.ag-arte-status.warn{background:rgba(245,158,11,.15);color:var(--pack)}
+.ag-arte-status.reproved{background:rgba(237,28,36,.15);color:var(--red)}
+.ag-arte-status.error{background:rgba(237,28,36,.15);color:var(--red)}
+.ag-arte-status-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.ag-arte-card-name{display:block;font-size:12px;color:var(--txt3);font-family:var(--mono);margin-bottom:8px}
+.ag-arte-just{font-size:13px;color:var(--txt);line-height:1.5;margin-bottom:10px}
+.ag-arte-crit{display:flex;flex-wrap:wrap;gap:4px}
+.ag-arte-crit-item{font-size:10px;padding:3px 8px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.ag-arte-crit-item.ok{background:rgba(34,197,94,.15);color:var(--prod)}
+.ag-arte-crit-item.fail{background:rgba(237,28,36,.15);color:var(--red)}
+/* ═══════════════════════════════════════════════
+   BRAND GUARDIAN DASHBOARD UNIFICADO
+   ═══════════════════════════════════════════════ */
+.bg-hero{margin-bottom:40px;animation:fadeIn .6s .1s both}
+.bg-hero-meta{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.bg-meta-line{color:var(--red);font-size:18px;font-weight:900;line-height:1}
+.bg-meta-mono{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--txt2)}
+.bg-hero-title{font-family:var(--font);font-weight:800;font-size:clamp(32px,5vw,54px);line-height:1;letter-spacing:-.03em;margin-bottom:14px;color:var(--white)}
+.bg-hero-title .bg-hl{background:var(--red);color:var(--white);padding:0 10px;display:inline-block}
+.bg-hero-title .bg-ast{color:var(--red);font-size:.9em}
+.bg-hero-sub{color:var(--txt2);font-size:15px;max-width:620px;line-height:1.55}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes cardRise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+.bg-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:56px}
+.bg-card{position:relative;padding:28px 24px 24px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:transform .25s,border-color .2s,background .2s;display:flex;flex-direction:column;min-height:280px;overflow:hidden;animation:cardRise .6s both}
+.bg-card:nth-child(1){animation-delay:.15s}
+.bg-card:nth-child(2){animation-delay:.25s}
+.bg-card::before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--red);transform:scaleY(0);transform-origin:top;transition:transform .3s}
+.bg-card:hover{transform:translateY(-4px);border-color:var(--border2);background:var(--bg3)}
+.bg-card:hover::before{transform:scaleY(1)}
+.bg-card:hover .bg-card-arrow{color:var(--red);transform:translateX(4px)}
+.bg-card:hover .bg-card-icon{color:var(--red)}
+.bg-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.bg-card-num{color:var(--txt2)}
+.bg-card-status{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:500;background:rgba(237,28,36,.1);color:var(--red);border:1px solid rgba(237,28,36,.3)}
+.bg-card-icon{color:var(--white);margin-bottom:22px;transition:color .25s;display:flex;align-items:center}
+.bg-card-title{font-family:var(--font);font-weight:800;font-size:22px;letter-spacing:-.02em;margin-bottom:8px;line-height:1.15;color:var(--white)}
+.bg-card-desc{color:var(--txt2);font-size:13px;line-height:1.55;margin-bottom:auto;padding-bottom:18px}
+.bg-card-foot{display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.08em}
+.bg-card-tag{color:var(--txt3)}
+.bg-card-arrow{color:var(--txt2);font-size:20px;transition:color .25s,transform .25s}
+
+.bg-section-head{display:flex;align-items:center;gap:14px;margin:0 0 20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.bg-section-meta{font-family:var(--mono);font-size:11px;color:var(--red);text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+.bg-section-title{font-family:var(--font);font-weight:800;font-size:24px;letter-spacing:-.02em;color:var(--white)}
+.bg-section-sub{color:var(--txt2);font-size:13px;margin-left:auto;font-family:var(--mono)}
+
+/* Back link inside agent pages */
+.bg-back{display:inline-flex;align-items:center;gap:6px;color:var(--txt2);font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:20px;cursor:pointer;border:1px solid var(--border);padding:8px 12px;border-radius:var(--radius-sm);background:var(--bg2);transition:color .2s,border-color .2s}
+.bg-back:hover{color:var(--red);border-color:var(--red)}
+
+@media(max-width:640px){
+.bg-cards{grid-template-columns:1fr}
+.bg-hero-title{font-size:32px}
+}
+
 </style>
 </head>
 <body>
@@ -537,7 +714,7 @@ function buildNav(){
     const qcPending=S.qc_requests.filter(r=>r.qc_status==='pending').length;
     const qcBadge=qcPending?` <span class="sb-badge">${qcPending}</span>`:'';
     h+=`<div class="sb-section">Brand Guardian</div>`;
-    h+=`<div class="sb-item" data-p="qc" onclick="nav('qc')">${ICONS.qc} Painel QC${qcBadge}</div>`;
+    h+=`<div class="sb-item" data-p="qc" onclick="nav('qc')">${ICONS.qc} Brand Guardian${qcBadge}</div>`;
   }
   
   // SCORE ADM — admin only
@@ -555,7 +732,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',qc:'Painel QC — Brand Guardian',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
 
 function nav(page){
   curPage=page;
@@ -575,11 +752,14 @@ async function renderPage(){
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
       extras:pgExtras,'extras-hist':pgExtrasHist,
-      qc:pgQC,
+      qc:pgQC,'ag-briefing':pgBriefing,'ag-arte':pgArte,
       score:pgScore,members:pgMembers,clients:pgClients,profile:pgProfile
     };
     if(pages[curPage])await pages[curPage](el);
     else el.innerHTML='<div class="empty">Página não encontrada</div>';
+    // Post-render hooks
+    if(curPage==='ag-briefing'&&typeof bfSetupFile==='function')bfSetupFile();
+    if(curPage==='ag-arte'&&typeof atSetupFile==='function')atSetupFile();
   }catch(ex){el.innerHTML=`<div class="empty">Erro: ${ex.message}</div>`;console.error(ex)}
 }
 
@@ -2491,7 +2671,7 @@ let qcClientFilter='all';
 let qcCurrentId=null;
 
 async function pgQC(el){
-  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito ao Painel QC</div>';return}
+  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito ao Brand Guardian</div>';return}
   
   // Refresh from Supabase to get latest
   try{S.qc_requests=await sbGet('qc_requests','order=submitted_at.desc')}catch(e){}
@@ -2511,6 +2691,74 @@ async function pgQC(el){
   const clientOpts=clientIds.map(cid=>{const c=S.clients.find(cl=>cl.id===cid);return{id:cid,name:c?c.name:cid.substring(0,8)}});
   
   el.innerHTML=`
+    <!-- HERO -->
+    <div class="bg-hero">
+      <div class="bg-hero-meta">
+        <span class="bg-meta-line">—</span>
+        <span class="bg-meta-mono">brand guardian · tgt studio</span>
+      </div>
+      <h1 class="bg-hero-title">
+        Guardião da <span class="bg-hl">marca</span><span class="bg-ast">*</span>
+      </h1>
+      <p class="bg-hero-sub">
+        Ferramentas pra validar briefings, avaliar peças contra o guia de cada cliente e acompanhar as revisões do Lead Designer. Feito pelo time, pro time.
+      </p>
+    </div>
+
+    <!-- AGENTS CARDS -->
+    <div class="bg-cards">
+      <article class="bg-card" onclick="nav('ag-briefing')">
+        <header class="bg-card-head">
+          <span class="bg-card-num">01</span>
+          <span class="bg-card-status">ativo</span>
+        </header>
+        <div class="bg-card-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="8" y="6" width="32" height="38" rx="2"/>
+            <line x1="14" y1="16" x2="34" y2="16"/>
+            <line x1="14" y1="22" x2="34" y2="22"/>
+            <line x1="14" y1="28" x2="28" y2="28"/>
+            <circle cx="34" cy="34" r="6" stroke-dasharray="2 2"/>
+            <path d="m31 34 2 2 4-4"/>
+          </svg>
+        </div>
+        <h2 class="bg-card-title">Validador de Briefing</h2>
+        <p class="bg-card-desc">Cole um briefing em texto livre ou envie um PDF/DOCX. O agente analisa contra o guia da marca do cliente e aponta o que está faltando.</p>
+        <footer class="bg-card-foot">
+          <span class="bg-card-tag">entrada: texto</span>
+          <span class="bg-card-arrow">→</span>
+        </footer>
+      </article>
+
+      <article class="bg-card" onclick="nav('ag-arte')">
+        <header class="bg-card-head">
+          <span class="bg-card-num">02</span>
+          <span class="bg-card-status">ativo</span>
+        </header>
+        <div class="bg-card-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="8" width="36" height="28" rx="2"/>
+            <circle cx="16" cy="18" r="3"/>
+            <path d="m6 32 10-10 8 8 6-6 12 12"/>
+            <path d="M38 4v6M35 7h6"/>
+          </svg>
+        </div>
+        <h2 class="bg-card-title">Feedback de Arte</h2>
+        <p class="bg-card-desc">Envie até 5 peças. O agente avalia aderência visual ao guia da marca e devolve Aprovado, com ressalvas ou Reprovado.</p>
+        <footer class="bg-card-foot">
+          <span class="bg-card-tag">entrada: imagem</span>
+          <span class="bg-card-arrow">→</span>
+        </footer>
+      </article>
+    </div>
+
+    <!-- LEAD DESIGNER SECTION -->
+    <div class="bg-section-head">
+      <span class="bg-section-meta">03 · fluxo de revisão</span>
+      <h2 class="bg-section-title">Avaliações de Lead Designer</h2>
+      <span class="bg-section-sub">${pending} pendentes · ${S.qc_requests.length} total</span>
+    </div>
+
     <div class="cards" style="margin-bottom:20px">
       <div class="card" style="border-left:4px solid #fdab3d"><div class="cl">Pendentes</div><div class="cv">${pending}</div></div>
       <div class="card card-green"><div class="cl">Aprovados</div><div class="cv">${approved}</div></div>
@@ -2532,7 +2780,7 @@ async function pgQC(el){
     </div>
     
     <div class="tbl">
-      <div class="tbl-h"><h3>Demandas QC (${filtered.length})</h3><button class="btn btn-o btn-sm" onclick="pgQC($('pg'))">↻ Atualizar</button></div>
+      <div class="tbl-h"><h3>Demandas (${filtered.length})</h3><button class="btn btn-o btn-sm" onclick="pgQC($('pg'))">↻ Atualizar</button></div>
       <div class="tbl-r">
         <table>
           <thead><tr><th>Status</th><th>Cliente</th><th>Item</th><th>Designer</th><th>Enviado em</th><th>Revisado em</th><th></th></tr></thead>
@@ -2645,6 +2893,538 @@ async function qcAct(newStatus){
   await loadData();
   buildNav();
   renderPage();
+}
+
+// ═══════════════════════════════════════════════
+// BRAND GUARDIAN AGENTES — Briefing + Arte
+// ═══════════════════════════════════════════════
+
+async function pgBriefing(el){
+  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  if(!window.CLIENTES){el.innerHTML='<div class="empty">Base de clientes não carregou. Recarregue a página.</div>';return}
+  el.innerHTML=`
+    <button class="bg-back" onclick="nav('qc')">← Voltar ao Brand Guardian</button>
+
+    <div class="ag-hero">
+      <h1>Validador de <span class="hl">Briefing</span></h1>
+      <p>Cole o briefing completo ou faça upload de PDF/DOCX. O agente verifica se está completo, identifica gaps e aponta inconsistências com o guia de marca do cliente.</p>
+    </div>
+
+    <div class="ag-field">
+      <div class="ag-label"><span>Cliente</span><span class="req">obrigatório</span></div>
+      <select id="bf-client" class="ag-sel" onchange="bfOnClient()">
+        <option value="" disabled selected>Selecione o cliente…</option>
+      </select>
+      <div id="bf-warn" class="ag-warn"></div>
+    </div>
+
+    <div class="ag-field">
+      <div class="ag-label"><span>Briefing</span><span class="cnt" id="bf-counter">0 caracteres</span></div>
+      <div class="ag-tabs">
+        <button class="ag-tab ag-tab-active" data-tab="text" onclick="bfSwitchTab('text')">📝 Texto colado</button>
+        <button class="ag-tab" data-tab="file" onclick="bfSwitchTab('file')">📎 Arquivo (PDF/DOCX)</button>
+      </div>
+      <div id="bf-tab-text">
+        <textarea id="bf-text" class="ag-textarea" rows="10" placeholder="Cole o briefing aqui...&#10;&#10;Inclua objetivos, público, entregáveis, prazos, canais — tudo que tiver." oninput="bfUpdate()"></textarea>
+      </div>
+      <div id="bf-tab-file" style="display:none">
+        <div id="bf-drop" class="ag-dropzone" onclick="bfDropClick()">
+          <input type="file" id="bf-file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none">
+          <div class="ag-dz-icon">📄</div>
+          <div class="ag-dz-title">Arraste o arquivo ou <span class="link">clique pra selecionar</span></div>
+          <div class="ag-dz-sub">PDF · DOCX · máx 10MB</div>
+        </div>
+        <div id="bf-file-err" class="ag-warn ag-warn-err"></div>
+        <div id="bf-file-prev" class="ag-file-prev" style="display:none">
+          <div class="ag-file-prev-head">
+            <span class="ag-file-prev-name" id="bf-file-name"></span>
+            <button class="btn btn-o btn-sm" onclick="bfClearFile()">Remover</button>
+          </div>
+          <details><summary>Ver texto extraído <span class="cnt" id="bf-file-chars"></span></summary><pre id="bf-file-text"></pre></details>
+        </div>
+        <div id="bf-file-loading" style="display:none;padding:12px;color:var(--txt2);font-size:12px"><span class="spin" style="display:inline-block"></span> Extraindo texto do arquivo…</div>
+      </div>
+    </div>
+
+    <div class="ag-actions">
+      <button id="bf-submit" class="btn btn-r" disabled onclick="bfSubmit()">Validar briefing →</button>
+      <button class="btn btn-o" onclick="bfClear()">Limpar</button>
+    </div>
+    <div id="bf-hint" class="ag-hint"></div>
+
+    <div id="bf-loading" class="ag-loading" style="display:none">
+      <div class="ag-loader-dots"><span></span><span></span><span></span></div>
+      <div class="ag-loader-txt">Analisando briefing…</div>
+      <div class="ag-loader-sub">claude sonnet 4.6</div>
+    </div>
+
+    <div id="bf-result" class="ag-result" style="display:none">
+      <div class="ag-result-head">
+        <span class="lbl">resultado da análise</span>
+        <button class="btn btn-o btn-sm" onclick="bfReset()">Nova análise</button>
+      </div>
+      <div id="bf-result-content"></div>
+    </div>
+  `;
+  // Populate clients
+  const sel=$('bf-client');
+  populateClientsAgrupado(sel);
+  bfUpdate();
+}
+
+function populateClientsAgrupado(sel){
+  if(!sel||!window.CLIENTES)return;
+  const placeholder=sel.querySelector('option[disabled]');
+  sel.innerHTML='';if(placeholder)sel.appendChild(placeholder);
+  const TL={'tgt':'Estúdio TGT','t12':'Time 1 & 2','t3':'Time 3','t4':'Time 4'};
+  const TO=['tgt','t12','t3','t4'];
+  const grupos={};
+  Object.entries(window.CLIENTES).forEach(([key,data])=>{
+    const t=data.time||'sem_time';if(!grupos[t])grupos[t]=[];grupos[t].push({key,data});
+  });
+  Object.values(grupos).forEach(a=>a.sort((x,y)=>{if(!!x.data.guia===!!y.data.guia)return x.data.nome.localeCompare(y.data.nome);return x.data.guia?-1:1}));
+  TO.forEach(t=>{
+    if(!grupos[t]||!grupos[t].length)return;
+    const og=document.createElement('optgroup');og.label=TL[t]||t;
+    grupos[t].forEach(({key,data})=>{const o=document.createElement('option');o.value=key;o.textContent=data.guia?data.nome:`${data.nome}  ·  (sem guia)`;og.appendChild(o)});
+    sel.appendChild(og);
+  });
+  if(grupos['sem_time']&&grupos['sem_time'].length){
+    const og=document.createElement('optgroup');og.label='Outros';
+    grupos['sem_time'].forEach(({key,data})=>{const o=document.createElement('option');o.value=key;o.textContent=data.guia?data.nome:`${data.nome}  ·  (sem guia)`;og.appendChild(o)});
+    sel.appendChild(og);
+  }
+}
+
+// ── Briefing agent state ──
+let bfTab='text',bfFileState=null;
+const BF_MAX_FILE=10*1024*1024,BF_MAX_CHARS=50000;
+
+function bfSwitchTab(t){
+  bfTab=t;
+  document.querySelectorAll('.ag-tab').forEach(b=>b.classList.toggle('ag-tab-active',b.dataset.tab===t));
+  $('bf-tab-text').style.display=t==='text'?'':'none';
+  $('bf-tab-file').style.display=t==='file'?'':'none';
+  bfUpdate();
+}
+
+function bfDropClick(){if(!$('bf-drop').classList.contains('disabled'))$('bf-file').click()}
+
+function bfOnClient(){
+  const k=$('bf-client').value,c=window.CLIENTES[k];
+  const w=$('bf-warn');
+  if(c&&!c.guia)w.textContent=`⚠ ${c.nome} ainda não tem guia de marca cadastrado. Análise roda em modo genérico.`;
+  else w.textContent='';
+  bfUpdate();
+}
+
+function bfUpdate(){
+  const clientOk=!!$('bf-client')?.value;
+  let len=0,textOk=false;
+  if(bfTab==='text'){len=$('bf-text')?.value.length||0;textOk=len>=30}
+  else{len=bfFileState?.extractedText?.length||0;textOk=!!bfFileState&&len>=30}
+  if($('bf-counter'))$('bf-counter').textContent=`${len.toLocaleString('pt-BR')} caracteres`;
+  const blocked=!(clientOk&&textOk);
+  if($('bf-submit'))$('bf-submit').disabled=blocked;
+  const hint=$('bf-hint');
+  if(hint){
+    let m='';
+    if(!clientOk&&!textOk)m=bfTab==='text'?'Selecione o cliente e cole o briefing.':'Selecione o cliente e envie um arquivo.';
+    else if(!clientOk)m='Selecione o cliente.';
+    else if(!textOk)m=bfTab==='text'?(len===0?'Cole o briefing acima.':`Briefing muito curto (mínimo 30 caracteres — atual: ${len}).`):'Envie um arquivo PDF ou DOCX.';
+    hint.textContent=m;
+  }
+}
+
+function bfClearFile(){
+  bfFileState=null;
+  $('bf-file-prev').style.display='none';$('bf-file-err').textContent='';
+  $('bf-file-text').textContent='';$('bf-file-name').textContent='';
+  bfUpdate();
+}
+
+function bfClear(){
+  if(bfTab==='text'){$('bf-text').value='';$('bf-text').focus()}
+  else bfClearFile();
+  bfUpdate();
+}
+
+function bfReset(){
+  $('bf-result').style.display='none';
+  $('bf-result-content').innerHTML='';
+}
+
+// Setup file input listener + drag/drop (idempotent)
+function bfSetupFile(){
+  const inp=$('bf-file'),dz=$('bf-drop');
+  if(!inp||inp.dataset.bound)return;
+  inp.dataset.bound='1';
+  inp.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)bfHandleFile(f);e.target.value=''});
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();if(!dz.classList.contains('disabled'))dz.classList.add('drag')}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag')}));
+  dz.addEventListener('drop',e=>{if(dz.classList.contains('disabled'))return;const f=e.dataTransfer?.files?.[0];if(f)bfHandleFile(f)});
+}
+
+async function bfHandleFile(file){
+  $('bf-file-err').textContent='';
+  if(file.size>BF_MAX_FILE){$('bf-file-err').textContent='Arquivo ultrapassa 10MB.';return}
+  const n=file.name.toLowerCase();
+  const isPdf=file.type==='application/pdf'||n.endsWith('.pdf');
+  const isDocx=file.type==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'||n.endsWith('.docx');
+  if(!isPdf&&!isDocx){$('bf-file-err').textContent='Formato não suportado. Use PDF ou DOCX.';return}
+  $('bf-file-prev').style.display='none';$('bf-file-loading').style.display='';$('bf-drop').classList.add('disabled');
+  try{
+    let text=isPdf?await bfExtractPdf(file):await bfExtractDocx(file);
+    text=(text||'').replace(/\r\n?/g,'\n').replace(/\n{3,}/g,'\n\n').replace(/[ \t]+/g,' ').replace(/^[ \t]+|[ \t]+$/gm,'').trim();
+    if(!text||text.length<30)throw new Error('Não foi possível extrair texto suficiente. Arquivo pode ser imagem escaneada.');
+    let trunc=false;if(text.length>BF_MAX_CHARS){text=text.slice(0,BF_MAX_CHARS);trunc=true}
+    bfFileState={file,extractedText:text};
+    $('bf-file-name').textContent=file.name;$('bf-file-text').textContent=text;
+    $('bf-file-chars').textContent=`${text.length.toLocaleString('pt-BR')} caracteres${trunc?' (truncado)':''}`;
+    $('bf-file-prev').style.display='';
+  }catch(e){$('bf-file-err').textContent=e.message||'Erro';bfFileState=null}
+  finally{$('bf-file-loading').style.display='none';$('bf-drop').classList.remove('disabled');bfUpdate()}
+}
+
+async function bfExtractPdf(file){
+  if(typeof pdfjsLib==='undefined')throw new Error('PDF.js não carregou.');
+  if(!pdfjsLib.GlobalWorkerOptions.workerSrc)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const ab=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+  const pages=[];
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i),c=await page.getTextContent();
+    if(!c.items.length)continue;
+    let lastY=null,line=[];const lines=[];
+    c.items.forEach(it=>{const y=it.transform?it.transform[5]:null;if(lastY!==null&&Math.abs(y-lastY)>2){lines.push(line.join(' '));line=[]}line.push(it.str);lastY=y});
+    if(line.length)lines.push(line.join(' '));
+    pages.push(lines.join('\n'));
+  }
+  return pages.join('\n\n');
+}
+
+async function bfExtractDocx(file){
+  if(typeof mammoth==='undefined')throw new Error('mammoth.js não carregou.');
+  const r=await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});
+  return r.value||'';
+}
+
+async function bfSubmit(){
+  const k=$('bf-client').value,c=window.CLIENTES?.[k];if(!c)return;
+  let briefing='',fonte='texto';
+  if(bfTab==='text'){briefing=$('bf-text').value.trim()}
+  else{briefing=bfFileState?.extractedText?.trim()||'';fonte=bfFileState?.file?.name||'arquivo'}
+  if(briefing.length<30)return;
+  const guiaTexto=c.guia&&typeof window.guiaParaTexto==='function'?window.guiaParaTexto(c.guia):null;
+  $('bf-result').style.display='none';$('bf-loading').style.display='';$('bf-submit').disabled=true;
+  try{
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent:'briefing',client:k,payload:{clienteNome:c.nome,briefing,guiaTexto,fonteBriefing:fonte}})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok||!data.ok)throw new Error(data.error||`HTTP ${res.status}`);
+    bfRenderResult(data.data,c);
+  }catch(e){
+    $('bf-result-content').innerHTML=`<div class="ag-res-err"><strong>Não foi possível analisar.</strong>${escapeHtml(e.message||'Erro')}</div>`;
+    $('bf-result').style.display='';
+  }finally{
+    $('bf-loading').style.display='none';$('bf-submit').disabled=false;
+    setTimeout(()=>$('bf-result').scrollIntoView({behavior:'smooth',block:'start'}),100);
+  }
+}
+
+function bfRenderResult(data,c){
+  const{tipo_entrega,campos,score,total,resumo,gaps,inconsistencias,proxima_acao}=data;
+  const pct=total?Math.round((score/total)*100):0;
+  const sm={presente:{i:'✅',cls:'ok'},incompleto:{i:'⚠️',cls:'partial'},ausente:{i:'❌',cls:'missing'}};
+  const items=(campos||[]).map(x=>{
+    const s=sm[x.status]||sm.ausente;
+    return `<li class="ag-checklist-item ${s.cls}"><span class="ag-check-icon">${s.i}</span><div><div class="ag-check-field">${escapeHtml(x.nome||x.id)}</div>${x.valor?`<div class="ag-check-value">${escapeHtml(x.valor)}</div>`:''}<div class="ag-check-note">${escapeHtml(x.nota||'')}</div></div></li>`;
+  }).join('');
+  const gapsH=(gaps&&gaps.length)?`<section class="ag-res-section"><h3 class="ag-res-title"><span class="ag-dot ag-dot-red"></span>Gaps a resolver</h3><ul class="ag-gap-list">${gaps.map(g=>`<li class="ag-gap-item"><div class="ag-gap-field">${escapeHtml(g.campo||'')}</div><div class="ag-gap-sug">${escapeHtml(g.sugestao||'')}</div></li>`).join('')}</ul></section>`:'';
+  const inconsH=(inconsistencias&&inconsistencias.length)?`<section class="ag-res-section"><h3 class="ag-res-title"><span class="ag-dot ag-dot-yellow"></span>Inconsistências com a marca</h3><ul class="ag-incons-list">${inconsistencias.map(i=>`<li class="ag-gap-item"><div class="ag-incons-desc">${escapeHtml(i.descricao||'')}</div><div class="ag-incons-fix"><span class="lbl">Como alinhar:</span> ${escapeHtml(i.como_alinhar||'')}</div></li>`).join('')}</ul></section>`:'';
+  const tudoOk=(!gaps||!gaps.length)&&(!inconsistencias||!inconsistencias.length);
+  const okH=tudoOk?`<section class="ag-res-section"><h3 class="ag-res-title"><span class="ag-dot ag-dot-green"></span>Briefing completo e alinhado</h3><div class="ag-next">Todos os campos obrigatórios estão presentes e nada contradiz o guia da marca.</div></section>`:'';
+  const nextH=proxima_acao?`<section class="ag-res-section"><h3 class="ag-res-title"><span class="ag-dot ag-dot-white"></span>Próxima ação</h3><div class="ag-next">${escapeHtml(proxima_acao)}</div></section>`:'';
+  const opH=data.onepager?`<section class="ag-res-section"><h3 class="ag-res-title"><span class="ag-dot ag-dot-red"></span>Onepager para o designer</h3><div style="margin-bottom:12px;color:var(--txt2);font-size:13px">Documento A4 pronto pra passar pro criativo.</div><button class="ag-onepager-btn" id="bf-op-btn">↓ Baixar onepager PDF</button></section>`:'';
+  const tipoBadge=tipo_entrega?`<span class="ag-tipo-badge">${escapeHtml(tipo_entrega)}</span>`:'';
+  $('bf-result-content').innerHTML=`
+    <div class="ag-res-sum">
+      <div class="ag-res-sum-head"><span class="ag-res-sum-lbl">Cliente · ${escapeHtml(c.nome)}</span>${tipoBadge}</div>
+      <div class="ag-res-sum-txt">${escapeHtml(resumo||'')}</div>
+    </div>
+    <div class="ag-score"><span class="ag-score-lbl">Completude</span><div class="ag-score-bar"><div class="ag-score-fill" style="width:0%"></div></div><span class="ag-score-val">${score}/${total}</span></div>
+    <ul class="ag-checklist">${items}</ul>
+    ${okH}${gapsH}${inconsH}${nextH}${opH}`;
+  $('bf-result').style.display='';
+  requestAnimationFrame(()=>{const f=$('bf-result-content').querySelector('.ag-score-fill');if(f)f.style.width=pct+'%'});
+  if(data.onepager){
+    const btn=$('bf-op-btn');
+    if(btn)btn.onclick=()=>{
+      if(!window.Onepager){alert('Módulo de onepager não carregou.');return}
+      try{const html=window.Onepager.gerarHTML(data.onepager,c);window.Onepager.abrirParaImpressao(html)}
+      catch(e){alert('Erro: '+(e.message||''))}
+    };
+  }
+}
+
+function escapeHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+// ═══════════════════════════════════════════════
+// ARTE AGENT
+// ═══════════════════════════════════════════════
+
+let artePecas=[],arteCtr=0;
+const ARTE_MAX=5,ARTE_MAX_BYTES=20*1024*1024,ARTE_MAX_SIDE=1200,ARTE_JPEG_Q=.85,ARTE_PDF_MAX=5;
+
+async function pgArte(el){
+  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  if(!window.CLIENTES){el.innerHTML='<div class="empty">Base de clientes não carregou. Recarregue a página.</div>';return}
+  el.innerHTML=`
+    <button class="bg-back" onclick="nav('qc')">← Voltar ao Brand Guardian</button>
+
+    <div class="ag-hero">
+      <h1>Feedback de <span class="hl">Arte</span></h1>
+      <p>Envie até 5 peças (PNG, JPG, WEBP ou PDF). O agente avalia cada uma contra o guia da marca e devolve Aprovado, com ressalvas ou Reprovado.</p>
+    </div>
+
+    <div class="ag-field">
+      <div class="ag-label"><span>Cliente</span><span class="req">obrigatório</span></div>
+      <select id="at-client" class="ag-sel" onchange="atOnClient()">
+        <option value="" disabled selected>Selecione o cliente…</option>
+      </select>
+      <div id="at-warn" class="ag-warn"></div>
+    </div>
+
+    <div class="ag-field">
+      <div class="ag-label"><span>Contexto da peça</span><span class="opt">opcional</span></div>
+      <input type="text" id="at-context" class="ag-input" placeholder="Ex: Post pra Feed do Instagram · Campanha de Dia das Mães" maxlength="240">
+    </div>
+
+    <div class="ag-field">
+      <div class="ag-label"><span>Peças para análise</span><span class="cnt"><span id="at-count">0</span>/${ARTE_MAX} peças</span></div>
+      <div id="at-drop" class="ag-dropzone" onclick="atDropClick()">
+        <input type="file" id="at-file" accept="image/png,image/jpeg,image/webp,application/pdf" multiple style="display:none">
+        <div class="ag-dz-icon">⬆️</div>
+        <div class="ag-dz-title">Arraste os arquivos ou <span class="link">clique pra selecionar</span></div>
+        <div class="ag-dz-sub">PNG · JPG · WEBP · PDF · até ${ARTE_MAX} peças · máx 20MB por arquivo</div>
+      </div>
+      <div id="at-err" class="ag-warn ag-warn-err"></div>
+      <div id="at-thumbs" class="ag-thumbs" style="display:none"></div>
+    </div>
+
+    <div class="ag-actions">
+      <button id="at-submit" class="btn btn-r" disabled onclick="atSubmit()">Avaliar peças →</button>
+      <button class="btn btn-o" onclick="atClear()">Limpar</button>
+    </div>
+    <div id="at-hint" class="ag-hint"></div>
+
+    <div id="at-loading" class="ag-loading" style="display:none">
+      <div class="ag-loader-dots"><span></span><span></span><span></span></div>
+      <div class="ag-loader-txt">Avaliando peças…</div>
+      <div class="ag-loader-sub" id="at-progress">0 de 0 concluídas</div>
+      <div class="ag-progress"><div class="ag-progress-fill" id="at-progress-bar"></div></div>
+    </div>
+
+    <div id="at-result" class="ag-result" style="display:none">
+      <div class="ag-result-head">
+        <span class="lbl">resultado da avaliação</span>
+        <button class="btn btn-o btn-sm" onclick="atReset()">Nova avaliação</button>
+      </div>
+      <div id="at-result-content"></div>
+    </div>
+  `;
+  populateClientsAgrupado($('at-client'));
+  // reset state
+  artePecas.forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl)});
+  artePecas=[];arteCtr=0;
+  atUpdate();
+}
+
+function atDropClick(){if(!$('at-drop').classList.contains('disabled'))$('at-file').click()}
+
+function atOnClient(){
+  const k=$('at-client').value,c=window.CLIENTES[k];
+  const w=$('at-warn');
+  if(c&&!c.guia)w.textContent=`⚠ ${c.nome} ainda não tem guia de marca cadastrado. Avaliação roda em modo genérico.`;
+  else w.textContent='';
+  atUpdate();
+}
+
+function atUpdate(){
+  const clientOk=!!$('at-client')?.value,tem=artePecas.length>0;
+  const blocked=!(clientOk&&tem);
+  if($('at-submit'))$('at-submit').disabled=blocked;
+  if($('at-count'))$('at-count').textContent=artePecas.length;
+  const hint=$('at-hint');
+  if(hint){
+    let m='';
+    if(!clientOk&&!tem)m='Selecione o cliente e envie ao menos uma peça.';
+    else if(!clientOk)m='Selecione o cliente.';
+    else if(!tem)m='Envie ao menos uma peça para avaliar.';
+    hint.textContent=m;
+  }
+}
+
+function atClear(){
+  artePecas.forEach(p=>{if(p.previewUrl)URL.revokeObjectURL(p.previewUrl)});
+  artePecas=[];$('at-thumbs').innerHTML='';$('at-thumbs').style.display='none';
+  if($('at-context'))$('at-context').value='';
+  $('at-err').textContent='';
+  atUpdate();
+}
+
+function atReset(){
+  $('at-result').style.display='none';$('at-result-content').innerHTML='';
+  artePecas.forEach(p=>{if(p.element)p.element.classList.remove('done','error','processing');p.status='idle'});
+}
+
+function atSetupFile(){
+  const inp=$('at-file'),dz=$('at-drop');
+  if(!inp||inp.dataset.bound)return;
+  inp.dataset.bound='1';
+  inp.addEventListener('change',e=>{atHandleFiles(Array.from(e.target.files||[]));e.target.value=''});
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();if(!dz.classList.contains('disabled'))dz.classList.add('drag')}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.remove('drag')}));
+  dz.addEventListener('drop',e=>{if(dz.classList.contains('disabled'))return;atHandleFiles(Array.from(e.dataTransfer?.files||[]))});
+}
+
+async function atHandleFiles(files){
+  $('at-err').textContent='';
+  if(!files.length)return;
+  for(const f of files){
+    if(artePecas.length>=ARTE_MAX){$('at-err').textContent=`Limite de ${ARTE_MAX} peças atingido.`;break}
+    if(f.size>ARTE_MAX_BYTES){$('at-err').textContent=`"${f.name}" ultrapassa 20MB.`;continue}
+    try{
+      if(f.type==='application/pdf')await atProcessPdf(f);
+      else if(['image/png','image/jpeg','image/webp'].includes(f.type))await atProcessImg(f);
+      else $('at-err').textContent=`Tipo não suportado: ${f.name}`;
+    }catch(e){console.error(e);$('at-err').textContent=`Erro em "${f.name}": ${e.message}`}
+  }
+  atUpdate();
+  $('at-thumbs').style.display=artePecas.length===0?'none':'';
+}
+
+async function atProcessImg(f){
+  const {blob,dataUrl}=await atResize(f);
+  atAdd({nomeArquivo:f.name,previewUrl:dataUrl,blob,imageMediaType:'image/jpeg'});
+}
+
+async function atProcessPdf(f){
+  if(typeof pdfjsLib==='undefined')throw new Error('PDF.js não carregou.');
+  if(!pdfjsLib.GlobalWorkerOptions.workerSrc)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;
+  const tp=Math.min(pdf.numPages,ARTE_PDF_MAX);
+  if(pdf.numPages>ARTE_PDF_MAX)$('at-err').textContent=`"${f.name}" tem ${pdf.numPages} páginas. Usando ${ARTE_PDF_MAX}.`;
+  for(let i=1;i<=tp;i++){
+    if(artePecas.length>=ARTE_MAX){$('at-err').textContent=`Limite de ${ARTE_MAX} atingido. Algumas páginas ignoradas.`;break}
+    const page=await pdf.getPage(i);
+    const v1=page.getViewport({scale:1});
+    const s=Math.min(ARTE_MAX_SIDE/Math.max(v1.width,v1.height),2);
+    const v=page.getViewport({scale:s});
+    const c=document.createElement('canvas');c.width=v.width;c.height=v.height;
+    const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
+    await page.render({canvasContext:ctx,viewport:v}).promise;
+    const {blob,dataUrl}=await atCanvasJpeg(c);
+    atAdd({nomeArquivo:`${f.name} · pág ${i}`,previewUrl:dataUrl,blob,imageMediaType:'image/jpeg'});
+  }
+}
+
+async function atResize(f){
+  const bm=typeof createImageBitmap==='function'?await createImageBitmap(f):await new Promise((r,j)=>{const i=new Image(),u=URL.createObjectURL(f);i.onload=()=>{URL.revokeObjectURL(u);r(i)};i.onerror=()=>{URL.revokeObjectURL(u);j(new Error('Falha imagem'))};i.src=u});
+  const {width:w,height:h}=bm,ms=Math.max(w,h),sc=ms>ARTE_MAX_SIDE?ARTE_MAX_SIDE/ms:1;
+  const nw=Math.round(w*sc),nh=Math.round(h*sc);
+  const c=document.createElement('canvas');c.width=nw;c.height=nh;
+  const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,nw,nh);ctx.drawImage(bm,0,0,nw,nh);
+  if(bm.close)bm.close();
+  return atCanvasJpeg(c);
+}
+
+function atCanvasJpeg(c){
+  return new Promise((r,j)=>{
+    c.toBlob(b=>{
+      if(!b){j(new Error('Falha JPEG'));return}
+      const fr=new FileReader();
+      fr.onload=()=>r({blob:b,dataUrl:fr.result});
+      fr.onerror=()=>j(new Error('Falha ler'));
+      fr.readAsDataURL(b);
+    },'image/jpeg',ARTE_JPEG_Q);
+  });
+}
+
+function atAdd({nomeArquivo,previewUrl,blob,imageMediaType}){
+  const id=`p-${++arteCtr}`;
+  const el=document.createElement('div');el.className='ag-thumb';el.dataset.id=id;
+  el.innerHTML=`<img src="${previewUrl}" alt=""><button class="ag-thumb-remove" onclick="atRemove('${id}')">×</button><div class="ag-thumb-label">${escapeHtml(nomeArquivo)}</div>`;
+  $('at-thumbs').appendChild(el);
+  artePecas.push({id,nomeArquivo,blob,imageMediaType,previewUrl,element:el,status:'idle'});
+}
+
+function atRemove(id){
+  const i=artePecas.findIndex(p=>p.id===id);if(i===-1)return;
+  const p=artePecas[i];if(p.element?.parentNode)p.element.parentNode.removeChild(p.element);
+  artePecas.splice(i,1);
+  $('at-thumbs').style.display=artePecas.length===0?'none':'';
+  atUpdate();
+}
+
+async function atSubmit(){
+  const k=$('at-client').value,c=window.CLIENTES?.[k];if(!c||!artePecas.length)return;
+  const guiaTexto=c.guia&&typeof window.guiaParaTexto==='function'?window.guiaParaTexto(c.guia):null;
+  const ctx=$('at-context')?.value.trim()||'';
+  $('at-result').style.display='none';$('at-loading').style.display='';
+  $('at-submit').disabled=true;$('at-drop').classList.add('disabled');
+  atProgress(0,artePecas.length);
+  artePecas.forEach(p=>{p.status='processing';p.element.classList.add('processing')});
+  let done=0;
+  const results=await Promise.all(artePecas.map(async p=>{
+    try{
+      const imageBase64=await atBlobB64(p.blob);
+      const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent:'arte',client:k,payload:{clienteNome:c.nome,guiaTexto,contexto:ctx,imageBase64,imageMediaType:p.imageMediaType,nomeArquivo:p.nomeArquivo}})});
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok||!data.ok)throw new Error(data.error||`HTTP ${res.status}`);
+      p.status='done';p.element.classList.remove('processing');p.element.classList.add('done');
+      return{peca:p,ok:true,data:data.data};
+    }catch(e){
+      p.status='error';p.element.classList.remove('processing');p.element.classList.add('error');
+      return{peca:p,ok:false,error:e.message||'Erro'};
+    }finally{done++;atProgress(done,artePecas.length)}
+  }));
+  $('at-loading').style.display='none';$('at-submit').disabled=false;$('at-drop').classList.remove('disabled');
+  atRenderResults(results,c);
+  setTimeout(()=>$('at-result').scrollIntoView({behavior:'smooth',block:'start'}),100);
+}
+
+function atProgress(d,t){
+  if($('at-progress'))$('at-progress').textContent=`${d} de ${t} concluídas`;
+  if($('at-progress-bar'))$('at-progress-bar').style.width=(t?Math.round(d/t*100):0)+'%';
+}
+
+function atBlobB64(b){
+  return new Promise((r,j)=>{
+    const fr=new FileReader();
+    fr.onload=()=>{const s=fr.result||'',i=String(s).indexOf(',');r(i>=0?String(s).slice(i+1):String(s))};
+    fr.onerror=()=>j(new Error('Falha'));
+    fr.readAsDataURL(b);
+  });
+}
+
+function atRenderResults(results,c){
+  const cnt={aprovado:0,ressalvas:0,reprovado:0,erro:0};
+  results.forEach(r=>{if(!r.ok)cnt.erro++;else if(r.data?.status==='aprovado')cnt.aprovado++;else if(r.data?.status==='ressalvas')cnt.ressalvas++;else if(r.data?.status==='reprovado')cnt.reprovado++;else cnt.erro++});
+  const sumH=`<div class="ag-arte-sum"><div class="ag-arte-sum-cell"><div class="ag-arte-sum-val ok">${cnt.aprovado}</div><div class="ag-arte-sum-lbl">Aprovadas</div></div><div class="ag-arte-sum-cell"><div class="ag-arte-sum-val warn">${cnt.ressalvas}</div><div class="ag-arte-sum-lbl">Com ressalvas</div></div><div class="ag-arte-sum-cell"><div class="ag-arte-sum-val rep">${cnt.reprovado+cnt.erro}</div><div class="ag-arte-sum-lbl">Reprov / erro</div></div></div>`;
+  const cardsH=results.map(r=>atRenderCard(r)).join('');
+  $('at-result-content').innerHTML=`<div class="ag-res-sum"><div class="ag-res-sum-head"><span class="ag-res-sum-lbl">Cliente · ${escapeHtml(c.nome)}</span></div><div class="ag-res-sum-txt">${results.length} ${results.length===1?'peça avaliada':'peças avaliadas'} no total.</div></div>${sumH}<div class="ag-arte-cards">${cardsH}</div>`;
+  $('at-result').style.display='';
+}
+
+function atRenderCard({peca,ok,data,error}){
+  if(!ok){
+    return `<article class="ag-arte-card error"><div class="ag-arte-card-img"><img src="${peca.previewUrl}" alt=""></div><div class="ag-arte-card-body"><span class="ag-arte-status error"><span class="ag-arte-status-dot"></span>Erro na análise</span><span class="ag-arte-card-name">${escapeHtml(peca.nomeArquivo)}</span><p class="ag-arte-just">${escapeHtml(error||'Erro')}</p></div></article>`;
+  }
+  const sm={aprovado:{cls:'approved',badge:'approved',lbl:'Aprovado'},ressalvas:{cls:'warn',badge:'warn',lbl:'Aprovado com ressalvas'},reprovado:{cls:'reproved',badge:'reproved',lbl:'Reprovado'}};
+  const s=sm[data.status]||sm.reprovado;
+  const crit=(data.criterios||[]).map(c=>`<span class="ag-arte-crit-item ${c.ok?'ok':'fail'}" title="${escapeHtml(c.nota||'')}">${escapeHtml(c.nome)}</span>`).join('');
+  const md=String(data.justificativa||'').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  return `<article class="ag-arte-card ${s.cls}"><div class="ag-arte-card-img"><img src="${peca.previewUrl}" alt=""></div><div class="ag-arte-card-body"><span class="ag-arte-status ${s.badge}"><span class="ag-arte-status-dot"></span>${s.lbl}</span><span class="ag-arte-card-name">${escapeHtml(peca.nomeArquivo)}</span><p class="ag-arte-just">${md}</p>${crit?`<div class="ag-arte-crit">${crit}</div>`:''}</div></article>`;
 }
 
 async function pgScore(el){
@@ -3093,5 +3873,7 @@ async function pgClientProds(el){
   $('auth-screen').style.display='flex';
 })();
 </script>
+<script src="agents/clientes.js"></script>
+<script src="agents/onepager.js"></script>
 </body>
 </html>
