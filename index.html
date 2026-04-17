@@ -275,6 +275,8 @@ tr:hover td{background:var(--bg3)}
 
 <div class="modal-ov" id="m-score"><div class="modal modal-lg"><div class="modal-h"><span class="modal-title" id="m-score-title">Avaliação Score ADM</span><button class="btn-icon" onclick="closeM('m-score')">✕</button></div><div class="modal-b" id="m-score-body"></div><div class="modal-f"><button class="btn btn-o" onclick="closeM('m-score')">Cancelar</button><button class="btn btn-r" id="m-score-save">Salvar Avaliação</button></div></div></div>
 
+<div class="modal-ov" id="m-qc"><div class="modal modal-lg"><div class="modal-h"><span class="modal-title" id="m-qc-title">Revisão QC</span><button class="btn-icon" onclick="closeM('m-qc')">✕</button></div><div class="modal-b" id="m-qc-body"></div><div class="modal-f"><button class="btn btn-o" onclick="closeM('m-qc')">Fechar</button><button class="btn" style="background:#e2445c;color:#fff" id="m-qc-reject">Reprovar</button><button class="btn" style="background:#00c875;color:#fff" id="m-qc-approve">Aprovar</button></div></div></div>
+
 <script>
 // ═══════════════════════════════════════════════
 // CONFIG
@@ -291,7 +293,7 @@ const AV_STATUSES={draft:'Rascunho',pending_leader_review:'Aguardando Líder',le
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
-let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],av_budgets:[],scores:[],commission_rules:[],cost_defaults:[]};
+let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],av_budgets:[],scores:[],commission_rules:[],cost_defaults:[],qc_requests:[]};
 let curPage='timer';
 let timerStart=null,timerSec=0,timerInt=null,running=false,activeEntryId=null;
 let dateRange='this_month',customFrom='',customTo='';
@@ -310,6 +312,7 @@ const isPL=()=>S.user&&S.user.access_level==='prod_leader';
 const isAcc=()=>S.user&&S.user.access_level==='account';
 const isCli=()=>S.user&&S.user.access_level==='client';
 const isUser=()=>S.user&&S.user.access_level==='user';
+const isQC=()=>S.user&&(S.user.access_level==='admin'||S.user.access_level==='account'||S.user.qc_reviewer===true);
 
 function getDateRange(){
   const now=new Date(),y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
@@ -425,6 +428,7 @@ async function loadData(){
     // Commission rules
     try{S.commission_rules=await sbGet('commission_rules','order=prod_type')}catch(e){S.commission_rules=[]}
     try{S.cost_defaults=await sbGet('cost_defaults','order=cost_type')}catch(e){S.cost_defaults=[]}
+    try{S.qc_requests=await sbGet('qc_requests','order=submitted_at.desc')}catch(e){S.qc_requests=[]}
   }catch(e){console.error('loadData:',e);toast('Erro ao carregar dados','error')}
 }
 
@@ -472,7 +476,8 @@ const ICONS={
   gear:'<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
   cal:'<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   box:'<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/></svg>',
-  plus:'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
+  plus:'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  qc:'<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.21 0 4.24.8 5.81 2.13"/></svg>'
 };
 
 function buildNav(){
@@ -527,6 +532,14 @@ function buildNav(){
     h+=`<div class="sb-item" data-p="extras-hist" onclick="nav('extras-hist')">${ICONS.entries} Meus Extras</div>`;
   }
   
+  // BRAND GUARDIAN / PAINEL QC — admin, account, or qc_reviewer
+  if(isQC()){
+    const qcPending=S.qc_requests.filter(r=>r.qc_status==='pending').length;
+    const qcBadge=qcPending?` <span class="sb-badge">${qcPending}</span>`:'';
+    h+=`<div class="sb-section">Brand Guardian</div>`;
+    h+=`<div class="sb-item" data-p="qc" onclick="nav('qc')">${ICONS.qc} Painel QC${qcBadge}</div>`;
+  }
+  
   // SCORE ADM — admin only
   if(isA()){
     h+=`<div class="sb-section">Gestão</div>`;
@@ -542,7 +555,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',qc:'Painel QC — Brand Guardian',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
 
 function nav(page){
   curPage=page;
@@ -562,6 +575,7 @@ async function renderPage(){
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
       extras:pgExtras,'extras-hist':pgExtrasHist,
+      qc:pgQC,
       score:pgScore,members:pgMembers,clients:pgClients,profile:pgProfile
     };
     if(pages[curPage])await pages[curPage](el);
@@ -641,6 +655,12 @@ const MONDAY_TIMER_BOARDS=[
   {board_id:'18401417952', timer_col:'color_mm2b5g4d', name:'NONO'},
   {board_id:'4911397036', timer_col:'color_mm2cvezy', name:'LESAFFRE'},
   {board_id:'5845978306', timer_col:'color_mm2c9c2f', name:'CELERA'},
+];
+// Board → Design Check column for QC (Painel Brand Guardian)
+const QC_BOARDS=[
+  {board_id:'8067947432', dc_col:'color_mm2gh178', name:'NOU', client_id:'cf8d9c05-3778-4e2e-8da3-3ce58bddd8ff'},
+  {board_id:'4911421503', dc_col:'color_mm2gep8x', name:'BAPTISTELLA', client_id:'d9145d77-cfea-4541-b0aa-578aae80b333'},
+  {board_id:'4911397036', dc_col:'color_mm2g2g6d', name:'LESAFFRE', client_id:'d2d884b3-9855-4df9-9cb6-5ed115675a48'},
 ];
 const MONDAY_API_TOKEN='eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzODU1NzY3OCwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwiaWFkIjoiMjAyNi0wMy0yN1QwOTo1Mzo0Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY4NjczMjAsInJnbiI6InVzZTEifQ.Rcm5SgNkiGizjRY_z1ECf7jCEGC2j_UGqtX2h_NkTAw';
 
@@ -2391,6 +2411,171 @@ async function pgExtrasHist(el){
 // ═══════════════════════════════════════════════
 // SCORE ADM
 // ═══════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════
+// PAINEL QC — BRAND GUARDIAN
+// ═══════════════════════════════════════════════
+let qcFilter='pending'; // pending | approved | rejected | all
+let qcClientFilter='all';
+let qcCurrentId=null;
+
+async function pgQC(el){
+  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito ao Painel QC</div>';return}
+  
+  // Refresh from Supabase to get latest
+  try{S.qc_requests=await sbGet('qc_requests','order=submitted_at.desc')}catch(e){}
+  
+  const filtered=S.qc_requests.filter(r=>{
+    if(qcFilter!=='all'&&r.qc_status!==qcFilter)return false;
+    if(qcClientFilter!=='all'&&r.client_id!==qcClientFilter)return false;
+    return true;
+  });
+  
+  const pending=S.qc_requests.filter(r=>r.qc_status==='pending').length;
+  const approved=S.qc_requests.filter(r=>r.qc_status==='approved').length;
+  const rejected=S.qc_requests.filter(r=>r.qc_status==='rejected').length;
+  
+  // Unique clients present in qc_requests
+  const clientIds=[...new Set(S.qc_requests.map(r=>r.client_id).filter(Boolean))];
+  const clientOpts=clientIds.map(cid=>{const c=S.clients.find(cl=>cl.id===cid);return{id:cid,name:c?c.name:cid.substring(0,8)}});
+  
+  el.innerHTML=`
+    <div class="cards" style="margin-bottom:20px">
+      <div class="card" style="border-left:4px solid #fdab3d"><div class="cl">Pendentes</div><div class="cv">${pending}</div></div>
+      <div class="card card-green"><div class="cl">Aprovados</div><div class="cv">${approved}</div></div>
+      <div class="card" style="border-left:4px solid #e2445c"><div class="cl">Reprovados</div><div class="cv">${rejected}</div></div>
+      <div class="card card-blue"><div class="cl">Total</div><div class="cv">${S.qc_requests.length}</div></div>
+    </div>
+    
+    <div class="pills" style="margin-bottom:16px">
+      <div class="pill ${qcFilter==='pending'?'active':''}" onclick="qcSetFilter('pending')">Pendentes (${pending})</div>
+      <div class="pill ${qcFilter==='approved'?'active':''}" onclick="qcSetFilter('approved')">Aprovados</div>
+      <div class="pill ${qcFilter==='rejected'?'active':''}" onclick="qcSetFilter('rejected')">Reprovados</div>
+      <div class="pill ${qcFilter==='all'?'active':''}" onclick="qcSetFilter('all')">Todos</div>
+      <div style="margin-left:auto">
+        <select class="f-sel" style="width:auto;min-width:180px" onchange="qcSetClient(this.value)">
+          <option value="all">Todos os clientes</option>
+          ${clientOpts.map(c=>`<option value="${c.id}" ${qcClientFilter===c.id?'selected':''}>${c.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    
+    <div class="tbl">
+      <div class="tbl-h"><h3>Demandas QC (${filtered.length})</h3><button class="btn btn-o btn-sm" onclick="pgQC($('pg'))">↻ Atualizar</button></div>
+      <div class="tbl-r">
+        <table>
+          <thead><tr><th>Status</th><th>Cliente</th><th>Item</th><th>Designer</th><th>Enviado em</th><th>Revisado em</th><th></th></tr></thead>
+          <tbody>
+            ${filtered.map(r=>{
+              const c=S.clients.find(cl=>cl.id===r.client_id);
+              const cn=c?c.name:'—';
+              const statusBadge=r.qc_status==='pending'
+                ?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#fdab3d;color:#000;padding:2px 8px;border-radius:10px">Pendente</span>'
+                :r.qc_status==='approved'
+                ?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#00c875;color:#fff;padding:2px 8px;border-radius:10px">Aprovado</span>'
+                :'<span style="display:inline-block;font-size:10px;font-weight:700;background:#e2445c;color:#fff;padding:2px 8px;border-radius:10px">Reprovado</span>';
+              const submit=r.submitted_at?new Date(r.submitted_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+              const review=r.reviewed_at?new Date(r.reviewed_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+              return`<tr>
+                <td>${statusBadge}</td>
+                <td style="font-weight:600">${cn}</td>
+                <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${r.monday_item_name||'—'}</td>
+                <td>${r.submitted_by_name||'—'}</td>
+                <td style="font-family:var(--mono);font-size:12px">${submit}</td>
+                <td style="font-family:var(--mono);font-size:12px">${review}</td>
+                <td style="text-align:right;white-space:nowrap">
+                  ${r.monday_item_url?`<a href="${r.monday_item_url}" target="_blank" class="btn btn-o btn-sm" style="margin-right:4px">↗ Monday</a>`:''}
+                  <button class="btn btn-r btn-sm" onclick="qcOpen('${r.id}')">Revisar</button>
+                </td>
+              </tr>`;
+            }).join('')||'<tr><td colspan="7" class="empty">Nenhuma demanda encontrada</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function qcSetFilter(f){qcFilter=f;pgQC($('pg'))}
+function qcSetClient(c){qcClientFilter=c;pgQC($('pg'))}
+
+async function qcOpen(id){
+  const r=S.qc_requests.find(x=>x.id===id);
+  if(!r){toast('Demanda não encontrada','error');return}
+  qcCurrentId=id;
+  const c=S.clients.find(cl=>cl.id===r.client_id);
+  const cn=c?c.name:'—';
+  const submit=r.submitted_at?new Date(r.submitted_at).toLocaleString('pt-BR'):'—';
+  const review=r.reviewed_at?new Date(r.reviewed_at).toLocaleString('pt-BR'):null;
+  const statusTxt=r.qc_status==='pending'?'Pendente':r.qc_status==='approved'?'Aprovado':'Reprovado';
+  const statusColor=r.qc_status==='pending'?'#fdab3d':r.qc_status==='approved'?'#00c875':'#e2445c';
+  
+  $('m-qc-title').textContent=`Revisão QC — ${r.monday_item_name||'—'}`;
+  $('m-qc-body').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600">Status</div><div style="font-weight:700;color:${statusColor}">${statusTxt}</div></div>
+      <div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600">Cliente</div><div style="font-weight:700">${cn}</div></div>
+      <div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600">Designer</div><div>${r.submitted_by_name||'—'}</div></div>
+      <div><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600">Enviado em</div><div style="font-family:var(--mono);font-size:12px">${submit}</div></div>
+      ${review?`<div style="grid-column:span 2"><div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600">Revisado em</div><div style="font-family:var(--mono);font-size:12px">${review} — ${r.reviewer_name||''}</div></div>`:''}
+    </div>
+    ${r.monday_item_url?`<div style="margin-bottom:16px"><a href="${r.monday_item_url}" target="_blank" class="btn btn-o btn-sm">↗ Abrir no Monday</a></div>`:''}
+    <div class="f-field">
+      <label class="f-label">Notas / Feedback ${r.qc_status==='rejected'?'<span style="color:#e2445c">(justifique a reprovação)</span>':'(opcional)'}</label>
+      <textarea class="f-input" id="qc-notes" rows="5" placeholder="Observações do revisor…" ${r.qc_status!=='pending'?'readonly':''}>${r.notes||''}</textarea>
+    </div>
+  `;
+  
+  // Show/hide action buttons based on state
+  const btnA=$('m-qc-approve'),btnR=$('m-qc-reject');
+  if(r.qc_status==='pending'){
+    btnA.style.display='';btnR.style.display='';
+    btnA.onclick=()=>qcAct('approved');
+    btnR.onclick=()=>qcAct('rejected');
+  }else{
+    btnA.style.display='none';btnR.style.display='none';
+  }
+  openM('m-qc');
+}
+
+async function qcAct(newStatus){
+  if(!qcCurrentId)return;
+  const r=S.qc_requests.find(x=>x.id===qcCurrentId);
+  if(!r){toast('Demanda não encontrada','error');return}
+  const notes=($('qc-notes')?.value||'').trim();
+  if(newStatus==='rejected'&&!notes){toast('Justifique a reprovação nas notas','error');return}
+  
+  // 1) Update Supabase
+  try{
+    await sbPatch('qc_requests',`id=eq.${qcCurrentId}`,{
+      qc_status:newStatus,
+      reviewer_id:S.user.id,
+      reviewer_name:S.user.name,
+      notes:notes||null,
+      reviewed_at:new Date().toISOString()
+    });
+  }catch(e){toast('Erro ao salvar: '+e.message,'error');return}
+  
+  // 2) Update Monday — ONLY for rejected (push back to "Design REPROV")
+  //    For approved, designer already set "Design Check" manually — no change needed
+  if(newStatus==='rejected'){
+    const board=QC_BOARDS.find(b=>b.board_id===r.monday_board_id);
+    if(board){
+      try{
+        const mutQ=`mutation{change_simple_column_value(board_id:${board.board_id},item_id:${r.monday_item_id},column_id:"${board.dc_col}",value:"Design REPROV"){id}}`;
+        await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
+      }catch(e){console.error('Monday sync failed:',e)}
+    }
+  }
+  
+  toast(newStatus==='approved'?'Aprovado':'Reprovado','success');
+  closeM('m-qc');
+  qcCurrentId=null;
+  await loadData();
+  buildNav();
+  renderPage();
+}
+
 async function pgScore(el){
   if(!isA()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   const accounts=S.members.filter(m=>m.access_level==='account');
