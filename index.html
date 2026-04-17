@@ -2766,12 +2766,13 @@ async function pgMembers(el){
   if(!isA()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   el.innerHTML=`
     <div class="tbl"><div class="tbl-h"><h3>Equipe (${S.members.length})</h3><button class="btn btn-r btn-sm" onclick="showMemberModal()">${ICONS.plus} Adicionar</button></div>
-    <div class="tbl-r"><table><thead><tr><th>Nome</th><th>Time</th><th>Função</th><th>Nível</th><th class="rt">Cap</th><th class="rt">R$/h</th><th>Email</th><th></th></tr></thead>
+    <div class="tbl-r"><table><thead><tr><th>Nome</th><th>Time</th><th>Função</th><th>Nível</th><th class="rt">Cap</th><th class="rt">R$/h</th><th>Email</th><th style="text-align:center">QC</th><th></th></tr></thead>
     <tbody>${S.members.map(m=>{const cli=m.client_id?S.clients.find(c=>c.id===m.client_id):null;return`<tr>
       <td style="font-weight:600">${m.name}</td><td>${m.access_level==='client'?(cli?`<span style="font-size:11px;color:var(--txt2)">${cli.name}</span>`:'—'):`<span class="bg ${TBC(m.team)}">${TB(m.team)}</span>`}</td><td>${m.job_title||'—'}</td>
       <td><span class="bg ${m.access_level==='admin'?'bg-red':m.access_level==='account'?'bg-t1':m.access_level==='prod_leader'?'bg-prod':m.access_level==='client'?'bg-amber':'bg-adm'}">${m.access_level}</span></td>
       <td class="rt">${m.access_level==='client'?'—':((m.capacity_hours||'—')+'h')}</td><td class="rt" style="font-family:var(--mono)">${m.access_level==='client'?'—':'R$'+Number(m.hourly_cost||0).toFixed(0)}</td>
       <td style="font-size:12px;color:var(--txt2)">${m.email||'—'}</td>
+      <td style="text-align:center">${m.qc_reviewer===true?'<span title="Revisor QC" style="color:#00c875;font-weight:700">✓</span>':'<span style="color:var(--txt3)">—</span>'}</td>
       <td><button class="btn-icon" onclick="showMemberModal('${m.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>
     </tr>`}).join('')}</tbody></table></div></div>`;
 }
@@ -2796,6 +2797,15 @@ function showMemberModal(id){
       <div class="f-field"><label class="f-label">Capacidade (h/mês)</label><input class="f-input" type="number" id="mb-cap" value="${m?m.capacity_hours||140:140}"></div>
       <div class="f-field"><label class="f-label">Custo hora (R$)</label><input class="f-input" type="number" id="mb-cost" step="1" min="0" value="${m?Number(m.hourly_cost||0):0}"></div>
       <div class="f-field"><label class="f-label">Senha login</label><input class="f-input" id="mb-pass" value="${m?m.login_password||'':'TGTtime2026'}" placeholder="TGTtime2026"></div>
+    </div>
+    <div class="f-field" style="margin-top:8px;padding:12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="mb-qc" ${m?.qc_reviewer===true?'checked':''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--red)">
+        <div>
+          <div style="font-weight:600">Revisor QC — Brand Guardian</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px">Dá acesso ao Painel QC para revisar Design Checks dos boards (mesmo sem ser admin/account)</div>
+        </div>
+      </label>
     </div>`;
   $('m-member-save').onclick=saveMember;
   openM('m-member');
@@ -2814,7 +2824,7 @@ async function saveMember(){
   if(!name||!email){toast('Preencha nome e email','error');return}
   const role=$('mb-role')?.value||'user';
   if(role==='client'&&!$('mb-client-id')?.value){toast('Selecione a empresa vinculada','error');return}
-  const data={name,email,team:$('mb-team')?.value||null,access_level:role,job_title:$('mb-job')?.value||null,capacity_hours:parseInt($('mb-cap')?.value)||140,hourly_cost:parseFloat($('mb-cost')?.value)||0,login_password:$('mb-pass')?.value||'TGTtime2026',client_id:role==='client'?($('mb-client-id')?.value||null):null};
+  const data={name,email,team:$('mb-team')?.value||null,access_level:role,job_title:$('mb-job')?.value||null,capacity_hours:parseInt($('mb-cap')?.value)||140,hourly_cost:parseFloat($('mb-cost')?.value)||0,login_password:$('mb-pass')?.value||'TGTtime2026',client_id:role==='client'?($('mb-client-id')?.value||null):null,qc_reviewer:$('mb-qc')?.checked===true};
   try{
     if(id)await sbPatch('tt_members',`id=eq.${id}`,data);
     else{data.is_active=true;await sbPost('tt_members',data)}
