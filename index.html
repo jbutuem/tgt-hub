@@ -232,7 +232,7 @@ tr:hover td{background:var(--bg3)}
 @media(max-width:768px){
 .sidebar{transform:translateX(-100%);width:260px}
 .sidebar.open{transform:translateX(0)}
-.main{margin-left:0}
+.main{margin-left:0;width:100%}
 .menu-toggle{display:flex}
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99}
 .overlay.show{display:block}
@@ -242,8 +242,54 @@ tr:hover td{background:var(--bg3)}
 .timer-display{font-size:40px}
 .pills{gap:4px}.pill{padding:5px 10px;font-size:11px}
 .modal{max-width:100%;margin:8px}
+
+/* Topbar fix */
+.topbar{padding:12px 14px;gap:8px;flex-wrap:nowrap}
+.topbar-title{font-size:15px;min-width:0;flex:1;gap:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-title #pg-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-date{display:none}
+.topbar > span[style*="font-size:9px"]{display:none!important}
+
+/* Brand Guardian hero — stack timer below */
+.bg-hero-wrap{grid-template-columns:1fr!important;gap:20px}
+.bg-hero-title{font-size:clamp(26px,8vw,36px)!important;line-height:1.05}
+.bg-hero-sub{font-size:13px}
+.bg-timer-widget{width:100%}
+.bg-timer-clock{font-size:30px}
+.bg-hero-collage{display:none}
+
+/* Cards 1 per row */
+.bg-cards{grid-template-columns:1fr!important;gap:12px;margin-bottom:32px}
+.bg-card{min-height:auto;padding:20px 18px}
+.bg-card-head{margin-bottom:18px}
+.bg-card-icon{margin-bottom:16px}
+.bg-card-icon svg{width:36px;height:36px}
+.bg-card-title{font-size:18px}
+.bg-card-desc{font-size:13px;padding-bottom:14px}
+
+/* Lead Designer section header */
+.bg-section-head{flex-wrap:wrap;gap:8px}
+.bg-section-title{font-size:18px}
+.bg-section-sub{margin-left:0;font-size:11px;width:100%}
+
+/* Agent pages hero */
+.ag-hero-collage{width:100px!important;top:-10px!important;opacity:.4!important}
+.ag-hero h1{font-size:26px!important}
+
+/* Back button spacing */
+.bg-back{margin-bottom:18px;font-size:10px}
+
+/* Tables scrollable */
+.tbl-r{overflow-x:auto}
+.tbl-r table{min-width:540px}
 }
-@media(max-width:480px){.cards{grid-template-columns:1fr}}
+@media(max-width:480px){
+.cards{grid-template-columns:1fr}
+.topbar-title #pg-title{font-size:14px}
+.bg-hero-title{font-size:clamp(24px,7vw,30px)!important}
+.bg-timer-clock{font-size:26px}
+.bg-card-title{font-size:17px}
+}
 
 /* ═══════════════════════════════════════════════
    BRAND GUARDIAN AGENTES
@@ -666,19 +712,27 @@ function toggleSb(){$('sidebar').classList.toggle('open');$('overlay').classList
 // AUTH
 // ═══════════════════════════════════════════════
 async function doLogin(){
-  const email=$('a-email').value.trim().toLowerCase(),pass=$('a-pass').value.trim();
+  // Normalize inputs — trim, lowercase email, strip zero-width chars
+  const emailRaw=$('a-email').value||'';
+  const passRaw=$('a-pass').value||'';
+  const email=emailRaw.trim().toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g,'');
+  const pass=passRaw.replace(/[\u200B-\u200D\uFEFF]/g,'');
   if(!email||!pass){showErr('Preencha todos os campos');return}
   try{
-    // Login by tt_members.login_password (case-insensitive email)
     const emailField=email.includes('@')?'email':'name';
     const members=await sbGet('tt_members',`${emailField}=ilike.${encodeURIComponent(email)}&is_active=eq.true`);
-    if(!members.length){showErr('Usuário não encontrado');return}
+    if(!members.length){showErr(`Usuário "${email}" não encontrado`);return}
     const u=members[0];
-    if(u.login_password!==pass){showErr('Senha incorreta');return}
+    if(u.login_password!==pass){
+      // Debug info to help diagnose mobile issues
+      const hint=pass.length!==passRaw.length?' (espaços removidos)':'';
+      showErr(`Senha incorreta · ${pass.length} caracteres digitados${hint}`);
+      return;
+    }
     S.user=u;
     localStorage.setItem('tgt_hub_user',JSON.stringify(u));
     await initApp();
-  }catch(e){showErr('Erro: '+e.message)}
+  }catch(e){showErr('Erro de conexão: '+e.message)}
 }
 function showErr(msg){const el=$('a-err');el.textContent=msg;el.style.display='block';setTimeout(()=>el.style.display='none',4000)}
 
