@@ -372,6 +372,13 @@ tr:hover td{background:var(--bg3)}
 .bg-card-foot{display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.08em}
 .bg-card-tag{color:var(--txt3)}
 .bg-card-arrow{color:var(--txt2);font-size:20px;transition:color .25s,transform .25s}
+.bg-card-soon{cursor:not-allowed;opacity:.5}
+.bg-card-soon:hover{transform:none;border-color:var(--border);background:var(--bg2)}
+.bg-card-soon:hover::before{transform:scaleY(0)}
+.bg-card-status-soon{background:var(--bg3);color:var(--txt3);border:1px solid var(--border)}
+.bg-card-icon-muted{color:var(--txt3)}
+.bg-card-title-muted{color:var(--txt2)}
+.bg-card-desc-muted{color:var(--txt3)}
 
 .bg-section-head{display:flex;align-items:center;gap:14px;margin:0 0 20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
 .bg-section-meta{font-family:var(--mono);font-size:11px;color:var(--red);text-transform:uppercase;letter-spacing:.1em;font-weight:600}
@@ -2755,18 +2762,21 @@ async function pgQC(el){
   const clientIds=[...new Set(S.qc_requests.map(r=>r.client_id).filter(Boolean))];
   const clientOpts=clientIds.map(cid=>{const c=S.clients.find(cl=>cl.id===cid);return{id:cid,name:c?c.name:cid.substring(0,8)}});
   
+  // Lead Designer section only for admin, account, prod_leader
+  const canSeeLeadDesigner = isA() || isAcc() || isPL();
+  
   el.innerHTML=`
     <!-- HERO -->
     <div class="bg-hero">
       <div class="bg-hero-meta">
         <span class="bg-meta-line">—</span>
-        <span class="bg-meta-mono">brand guardian · tgt studio</span>
+        <span class="bg-meta-mono">01 / agentes disponíveis</span>
       </div>
       <h1 class="bg-hero-title">
-        Guardião da <span class="bg-hl">marca</span><span class="bg-ast">*</span>
+        O que vamos <span class="bg-hl">criar</span> hoje<span class="bg-ast">*</span>
       </h1>
       <p class="bg-hero-sub">
-        Ferramentas pra validar briefings, avaliar peças contra o guia de cada cliente e acompanhar as revisões do Lead Designer. Feito pelo time, pro time.
+        Escolha um agente para começar. Todos respeitam os guias de marca cadastrados por cliente.
       </p>
     </div>
 
@@ -2788,7 +2798,7 @@ async function pgQC(el){
           </svg>
         </div>
         <h2 class="bg-card-title">Validador de Briefing</h2>
-        <p class="bg-card-desc">Cole um briefing em texto livre ou envie um PDF/DOCX. O agente analisa contra o guia da marca do cliente e aponta o que está faltando.</p>
+        <p class="bg-card-desc">Cole um briefing em texto livre. O agente analisa contra o guia da marca do cliente e aponta o que está faltando.</p>
         <footer class="bg-card-foot">
           <span class="bg-card-tag">entrada: texto</span>
           <span class="bg-card-arrow">→</span>
@@ -2809,14 +2819,32 @@ async function pgQC(el){
           </svg>
         </div>
         <h2 class="bg-card-title">Feedback de Arte</h2>
-        <p class="bg-card-desc">Envie até 5 peças. O agente avalia aderência visual ao guia da marca e devolve Aprovado, com ressalvas ou Reprovado.</p>
+        <p class="bg-card-desc">Envie uma peça. O agente avalia aderência visual ao guia da marca e devolve aprovação com justificativa.</p>
         <footer class="bg-card-foot">
           <span class="bg-card-tag">entrada: imagem</span>
           <span class="bg-card-arrow">→</span>
         </footer>
       </article>
+
+      <article class="bg-card bg-card-soon" aria-disabled="true">
+        <header class="bg-card-head">
+          <span class="bg-card-num">03</span>
+          <span class="bg-card-status bg-card-status-soon">em breve</span>
+        </header>
+        <div class="bg-card-icon bg-card-icon-muted">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M24 6v8M24 34v8M6 24h8M34 24h8M11 11l6 6M31 31l6 6M37 11l-6 6M17 31l-6 6"/>
+          </svg>
+        </div>
+        <h2 class="bg-card-title bg-card-title-muted">Próximo agente</h2>
+        <p class="bg-card-desc bg-card-desc-muted">Mais ferramentas em desenvolvimento. A estrutura está pronta pra escalar.</p>
+        <footer class="bg-card-foot">
+          <span class="bg-card-tag">pipeline</span>
+        </footer>
+      </article>
     </div>
 
+    ${canSeeLeadDesigner ? `
     <!-- LEAD DESIGNER SECTION -->
     <div class="bg-section-head">
       <span class="bg-section-meta">03 · fluxo de revisão</span>
@@ -2877,6 +2905,7 @@ async function pgQC(el){
         </table>
       </div>
     </div>
+    ` : ''}
   `;
 }
 
