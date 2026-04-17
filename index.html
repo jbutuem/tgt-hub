@@ -22,18 +22,46 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt);font-size:14p
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
 
 /* AUTH */
-.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
-.auth-box{width:360px;padding:48px 32px;background:var(--bg2);border:1px solid var(--border);border-radius:16px;text-align:center}
-.auth-logo{margin-bottom:24px}
-.auth-logo svg{width:120px;height:auto}
-.auth-title{font-size:13px;color:var(--txt2);margin-bottom:32px;letter-spacing:2px;text-transform:uppercase}
-.auth-field{margin-bottom:16px;text-align:left}
-.auth-field label{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:block}
-.auth-field input{width:100%;padding:12px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--txt);font-size:14px;font-family:var(--font);outline:none;transition:.2s}
-.auth-field input:focus{border-color:var(--red)}
-.auth-btn{width:100%;padding:14px;background:var(--red);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer;margin-top:8px;transition:.2s}
+.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);position:relative;overflow:hidden;padding:24px}
+.auth-wrap::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle at 1px 1px,rgba(255,255,255,.04) 1px,transparent 0);background-size:24px 24px;pointer-events:none;z-index:1}
+
+.auth-deco{position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden}
+.auth-collage{position:absolute;animation:collageIn 1.2s cubic-bezier(.2,.8,.2,1) .2s both;filter:drop-shadow(0 20px 40px rgba(0,0,0,.5))}
+@keyframes collageIn{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes floatSlow{0%,100%{transform:translateY(0) rotate(-6deg)}50%{transform:translateY(-10px) rotate(-4deg)}}
+.auth-collage-mega{width:min(48vw,620px);height:auto;left:-4%;bottom:-6%;transform:rotate(-6deg);animation:collageIn 1.2s cubic-bezier(.2,.8,.2,1) .2s both,floatSlow 9s ease-in-out infinite 1.4s;opacity:.85}
+
+.auth-box{position:relative;z-index:10;width:100%;max-width:420px;padding:40px 36px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;text-align:left;box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 0 1px rgba(237,28,36,.08)}
+.auth-box::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--red)}
+
+.auth-logo{margin-bottom:22px}
+.auth-logo svg{width:78px;height:auto;display:block}
+
+.auth-eyebrow{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.auth-eyebrow .line{color:var(--red);font-size:16px;font-weight:900;line-height:1}
+.auth-eyebrow .mono{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--txt2)}
+
+.auth-hero-title{font-family:var(--font);font-weight:800;font-size:36px;line-height:1;letter-spacing:-.03em;margin-bottom:12px;color:var(--white)}
+.auth-hero-title .hl{background:var(--red);color:var(--white);padding:0 8px;display:inline-block}
+.auth-hero-title .ast{color:var(--red);font-size:.9em}
+.auth-hero-sub{color:var(--txt2);font-size:13px;line-height:1.5;margin-bottom:28px;max-width:340px}
+
+.auth-field{margin-bottom:14px;text-align:left}
+.auth-field label{font-family:var(--mono);font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px;display:block;font-weight:500}
+.auth-field input{width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:2px;color:var(--txt);font-size:14px;font-family:var(--font);outline:none;transition:.15s}
+.auth-field input:focus{border-color:var(--red);background:var(--bg3)}
+.auth-btn{width:100%;padding:14px;background:var(--red);color:var(--white);border:none;border-radius:2px;font-size:13px;font-weight:700;font-family:var(--font);cursor:pointer;margin-top:10px;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.01em;text-transform:uppercase}
 .auth-btn:hover{background:var(--red2)}
-.auth-err{color:var(--red);font-size:12px;margin-top:12px;display:none}
+.auth-btn .arrow{transition:transform .2s}
+.auth-btn:hover .arrow{transform:translateX(4px)}
+.auth-err{color:var(--red);font-size:12px;margin-top:12px;display:none;font-family:var(--mono);padding:8px 12px;background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.3);border-radius:2px}
+
+.auth-footer{display:flex;justify-content:space-between;align-items:center;margin-top:28px;padding-top:16px;border-top:1px solid var(--border);font-size:10px;color:var(--txt3);font-family:var(--mono);letter-spacing:.05em}
+
+@media(max-width:768px){
+.auth-collage-mega{width:90vw;opacity:.5}
+.auth-hero-title{font-size:28px}
+}
 
 /* LAYOUT */
 .app{display:none;height:100vh}
@@ -215,7 +243,16 @@ tr:hover td{background:var(--bg3)}
 /* ═══════════════════════════════════════════════
    BRAND GUARDIAN AGENTES
    ═══════════════════════════════════════════════ */
-.ag-hero{margin-bottom:36px;animation:fadeIn .6s .1s both}
+.ag-hero{margin-bottom:36px;animation:fadeIn .6s .1s both;position:relative;min-height:160px}
+.ag-hero > *:not(.ag-hero-collage){position:relative;z-index:2}
+.ag-hero-collage{position:absolute;top:-30px;right:0;width:200px;height:auto;opacity:.85;pointer-events:none;z-index:1;filter:drop-shadow(0 12px 28px rgba(0,0,0,.5));animation:collageIn 1.2s cubic-bezier(.2,.8,.2,1) .3s both}
+.ag-hero-briefing .ag-hero-collage{transform:rotate(6deg)}
+.ag-hero-arte .ag-hero-collage{transform:rotate(-8deg)}
+
+@media(max-width:900px){
+.ag-hero-collage{width:120px;opacity:.45}
+}
+
 .ag-hero-meta{display:flex;align-items:center;gap:10px;margin-bottom:14px}
 .ag-hero-meta .line{color:var(--red);font-size:18px;font-weight:900;line-height:1}
 .ag-hero-meta .mono{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--txt2)}
@@ -346,8 +383,12 @@ tr:hover td{background:var(--bg3)}
 /* ═══════════════════════════════════════════════
    BRAND GUARDIAN DASHBOARD UNIFICADO
    ═══════════════════════════════════════════════ */
-.bg-hero-wrap{display:grid;grid-template-columns:1fr auto;gap:32px;align-items:end;margin-bottom:40px}
-.bg-hero-wrap .bg-hero{margin-bottom:0}
+.bg-hero-wrap{display:grid;grid-template-columns:1fr auto;gap:32px;align-items:end;margin-bottom:40px;position:relative}
+.bg-hero-wrap .bg-hero{margin-bottom:0;position:relative;z-index:2}
+
+/* Hero collage */
+.bg-hero-collage{position:absolute;top:-30px;right:calc(340px + 40px);width:220px;height:auto;opacity:.18;pointer-events:none;z-index:0;transform:rotate(-8deg);animation:collageIn 1.2s cubic-bezier(.2,.8,.2,1) .3s both}
+@media(max-width:1100px){.bg-hero-collage{display:none}}
 .bg-hero{margin-bottom:40px;animation:fadeIn .6s .1s both;min-width:0}
 .bg-hero-meta{display:flex;align-items:center;gap:10px;margin-bottom:18px}
 .bg-meta-line{color:var(--red);font-size:18px;font-weight:900;line-height:1}
@@ -443,17 +484,28 @@ tr:hover td{background:var(--bg3)}
 <body>
 
 <!-- AUTH SCREEN -->
+<!-- AUTH SCREEN -->
 <div class="auth-wrap" id="auth-screen">
-<div class="auth-box">
-<div class="auth-logo">
-<svg viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg"><text x="0" y="48" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="52">TGT</text><text x="138" y="22" fill="#999" font-family="'IBM Plex Sans',sans-serif" font-weight="400" font-size="11">A AGÊNCIA</text><text x="138" y="34" fill="#999" font-family="'IBM Plex Sans',sans-serif" font-weight="400" font-size="11">ALÉM DO</text><text x="138" y="46" fill="#999" font-family="'IBM Plex Sans',sans-serif" font-weight="400" font-size="11">MARKETING</text></svg>
-</div>
-<div class="auth-title">Hub</div>
-<div class="auth-field"><label>E-mail</label><input id="a-email" type="email" placeholder="seu@tgtstudio.com.br"></div>
-<div class="auth-field"><label>Senha</label><input id="a-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
-<button class="auth-btn" onclick="doLogin()">Entrar</button>
-<div class="auth-err" id="a-err"></div>
-</div>
+  <div class="auth-deco">
+    <img class="auth-collage auth-collage-mega" src="assets/Ativo_8.svg" alt="">
+  </div>
+
+  <div class="auth-box">
+    <div class="auth-logo">
+      <svg viewBox="0 0 696.66 299.25" xmlns="http://www.w3.org/2000/svg" aria-label="TGT">
+        <path fill="#ED1C24" d="M82.97,52.64v246.52h68.95V52.51h83.4v-31.49c12.87,13.69,26.41,24.26,41.78,32.44,15.28,8.13,31.57,13.32,48.54,16.68-2.21.79-4.32,1.19-6.43,1.59-103.71,19.64-158.04,129.65-115.74,223.43,1.36,3.02,3.07,4.11,6.42,4.08,21.31-.16,42.63-.07,63.94-.09,1.09,0,2.17-.2,3.81-.36-1.2-1.68-2.02-2.88-2.89-4.05-33.32-44.46-28.77-105.37,10.77-144.3,36.45-35.88,95.51-34.43,129.93,3.49,6.42,7.07,11.63,15.23,17.54,23.06,16.71-10.72,33.77-21.66,50.81-32.58-19.27-35.85-60.47-63.07-113.36-74.39,36.59-6.08,66.23-22.36,90.93-50.26v32.97h83.32v246.3h68.9V52.43h83.06V.21c-1.28-.08-2.24-.2-3.21-.2-96.58,0-193.16-.02-289.74.06-1.82,0-3.92.73-5.42,1.79-30.52,21.63-67.6,21.93-98.5.88-2.28-1.55-5.41-2.62-8.14-2.63C196.24-.02,100.83,0,5.41,0c-1.77,0-3.55,0-5.41,0v52.64h82.97ZM323.35,202.1c.42,1.17.59,1.81.87,2.38,8.5,17.31,17.08,34.57,25.44,51.94,1.38,2.88,3.31,3.13,5.96,3.13,24.64-.05,49.27-.03,73.91-.03,1.96,0,3.93,0,6.56,0-3.36,14.78-9.88,27.28-19.08,39.35,2.33.12,3.93.28,5.52.28,20.31.02,40.62-.09,60.93.1,3.8.04,5.51-1.33,6.96-4.71,8.11-18.87,12.52-38.57,13.11-59.02.32-11.06-.57-22.15-.92-33.42h-179.24Z"/>
+        <path fill="#ED1C24" d="M323.35,202.1h179.24c.35,11.27,1.25,22.37.92,33.42-.59,20.45-5,40.16-13.11,59.02-1.45,3.38-3.16,4.75-6.96,4.71-20.31-.19-40.62-.09-60.93-.1-1.6,0-3.19-.16-5.52-.28,9.2-12.07,15.72-24.57,19.08-39.35-2.63,0-4.59,0-6.56,0-24.64,0-49.27-.02-73.91.03-2.64,0-4.57-.25-5.96-3.13-8.36-17.37-16.94-34.64-25.44-51.94-.28-.58-.45-1.21-.87-2.38Z"/>
+      </svg>
+    </div>
+    <div class="auth-eyebrow"><span class="line">—</span><span class="mono">acesso restrito · uso interno</span></div>
+    <h1 class="auth-hero-title">Além do <span class="hl">marketing</span><span class="ast">*</span></h1>
+    <p class="auth-hero-sub">Hub interno da TGT Studio. Ferramentas pra produção, gestão e criação.</p>
+    <div class="auth-field"><label>E-mail</label><input id="a-email" type="email" placeholder="seu@tgtstudio.com.br"></div>
+    <div class="auth-field"><label>Senha</label><input id="a-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button class="auth-btn" onclick="doLogin()"><span>Entrar no Hub</span><span class="arrow">→</span></button>
+    <div class="auth-err" id="a-err"></div>
+    <div class="auth-footer"><span>© TGT Studio</span><span class="mono">confidencial</span></div>
+  </div>
 </div>
 
 <!-- OVERLAY MOBILE -->
@@ -2844,6 +2896,9 @@ async function pgQC(el){
   el.innerHTML=`
     <!-- HERO -->
     <div class="bg-hero-wrap">
+      <!-- Collage decoration -->
+      <img class="bg-hero-collage" src="assets/Ativo_7.svg" alt="">
+
       <div class="bg-hero">
         <div class="bg-hero-meta">
           <span class="bg-meta-line">—</span>
@@ -3078,7 +3133,8 @@ async function pgBriefing(el){
   el.innerHTML=`
     <button class="bg-back" onclick="nav('qc')">Voltar ao Brand Guardian</button>
 
-    <div class="ag-hero">
+    <div class="ag-hero ag-hero-briefing">
+      <img class="ag-hero-collage" src="assets/Ativo_1.svg" alt="">
       <div class="ag-hero-meta">
         <span class="line">—</span>
         <span class="mono">agente 01 · validador de briefing</span>
@@ -3358,7 +3414,8 @@ async function pgArte(el){
   el.innerHTML=`
     <button class="bg-back" onclick="nav('qc')">Voltar ao Brand Guardian</button>
 
-    <div class="ag-hero">
+    <div class="ag-hero ag-hero-arte">
+      <img class="ag-hero-collage" src="assets/Ativo_6.svg" alt="">
       <div class="ag-hero-meta">
         <span class="line">—</span>
         <span class="mono">agente 02 · feedback de arte</span>
