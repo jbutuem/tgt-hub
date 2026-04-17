@@ -1488,7 +1488,6 @@ async function exportBudgetPDF(reqId){
   const bgt=S.av_budgets?.find(b=>b.request_id===reqId);
   const acc=S.members.find(x=>x.id===r.requested_by);
   const price=bgt?Number(bgt.client_price):0;
-  const taxAmt=price*(bgt?Number(bgt.tax_rate):0.18);
   // Build PDF using jsPDF
   if(!window.jspdf){
     const s=document.createElement('script');
@@ -1498,44 +1497,115 @@ async function exportBudgetPDF(reqId){
   }
   const{jsPDF}=window.jspdf;
   const doc=new jsPDF();
-  let y=20;
-  const addLine=(text,opts={})=>{
-    doc.setFontSize(opts.size||11);doc.setFont('helvetica',opts.bold?'bold':'normal');
-    if(opts.color)doc.setTextColor(...opts.color);else doc.setTextColor(40,40,40);
-    doc.text(text,opts.x||20,y);y+=opts.gap||7;
-  };
-  // Header
-  doc.setFillColor(35,31,32);doc.rect(0,0,210,45,'F');
-  doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(237,28,36);
-  doc.text('TGT',20,28);
-  doc.setFontSize(9);doc.setTextColor(255,255,255);doc.text('A AGÊNCIA ALÉM DO MARKETING',52,25);
-  doc.setFontSize(14);doc.setTextColor(255,255,255);doc.text('Proposta de Produção Audiovisual',20,40);
-  y=58;
-  addLine('FICHA TÉCNICA',{size:14,bold:true,color:[237,28,36],gap:10});
-  addLine(`Projeto: ${r.title}`,{bold:true,size:12,gap:8});
-  addLine(`Cliente: ${c?.name||'—'}`,{gap:6});
-  addLine(`Tipo: ${r.prod_type==='fee_prod'?'Fee':'Extra'}`,{gap:6});
-  if(r.objective){addLine(`Objetivo: ${r.objective}`,{gap:6})}
-  if(r.video_type){addLine(`Tipo de vídeo: ${r.video_type}`,{gap:6})}
-  addLine(`Entregáveis: ${r.quantity_deliverables||1}`,{gap:6});
-  if(r.formats){addLine(`Formatos: ${r.formats}`,{gap:6})}
-  if(bgt?.suggested_capture_date){addLine(`Data captação: ${fD(bgt.suggested_capture_date)}`,{gap:6})}
-  if(bgt?.suggested_delivery_date){addLine(`Data entrega: ${fD(bgt.suggested_delivery_date)}`,{gap:6})}
+
+  // ─── HEADER ────────────────────────────────────────
+  doc.setFillColor(23,23,23);doc.rect(0,0,210,50,'F');
+  doc.setFontSize(34);doc.setFont('helvetica','bold');doc.setTextColor(237,28,36);
+  doc.text('TGT',20,30);
+  doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(200,200,200);
+  doc.text('A AGÊNCIA ALÉM DO MARKETING',55,27);
+  doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
+  doc.text('Proposta de Produção Audiovisual',20,42);
+
+  // ─── CLIENTE / DATA ──────────────────────────────
+  let y=62;
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);
+  doc.text(`Para: ${c?.name||'—'}`,20,y);
+  doc.text(`Emitido em: ${new Date().toLocaleDateString('pt-BR')}`,130,y);
+  y+=10;
+
+  // ─── TITULO DO PROJETO ───────────────────────────
+  doc.setDrawColor(237,28,36);doc.setLineWidth(0.5);doc.line(20,y,190,y);y+=8;
+  doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(23,23,23);
+  doc.text(r.title||'Produção Audiovisual',20,y);y+=10;
+
+  // ─── DESCRIÇÃO ──────────────────────────────────
+  if(r.objective){
+    doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(60,60,60);
+    const lines=doc.splitTextToSize(r.objective,170);
+    lines.forEach(ln=>{doc.text(ln,20,y);y+=5});
+    y+=4;
+  }
+
+  // ─── O QUE ESTÁ INCLUSO ──────────────────────────
+  doc.setFillColor(245,245,245);doc.rect(15,y,180,8,'F');
+  doc.setFontSize(11);doc.setFont('helvetica','bold');doc.setTextColor(237,28,36);
+  doc.text('O QUE ESTÁ INCLUSO',20,y+5.5);y+=14;
+
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(40,40,40);
+  const items=[];
+  items.push({l:'Entregáveis',v:`${r.quantity_deliverables||1} vídeo${(r.quantity_deliverables||1)>1?'s':''} finalizado${(r.quantity_deliverables||1)>1?'s':''}`});
+  if(r.video_type){
+    const vt={event:'Event / Cobertura',making_of:'Making Of',commercial:'Comercial',institutional:'Institucional',social:'Social Media',interview:'Entrevista',tutorial:'Tutorial'};
+    const labels=r.video_type.split(',').map(v=>vt[v.trim()]||v.trim()).join(', ');
+    items.push({l:'Tipo de vídeo',v:labels});
+  }
+  if(r.formats){
+    const ft={'16_9':'16:9 Horizontal (YouTube/Site)','9_16':'9:16 Vertical (Reels/Stories/TikTok)','1_1':'1:1 Quadrado (Feed)','still':'Foto Still (do set)'};
+    const labels=r.formats.split(',').map(f=>ft[f.trim()]||f.trim()).join(' • ');
+    items.push({l:'Formatos',v:labels});
+  }
+  if(bgt?.suggested_capture_date)items.push({l:'Data de captação',v:fD(bgt.suggested_capture_date)});
+  if(bgt?.suggested_delivery_date)items.push({l:'Data de entrega',v:fD(bgt.suggested_delivery_date)});
+
+  items.forEach(it=>{
+    doc.setFont('helvetica','bold');doc.setTextColor(100,100,100);
+    doc.text(it.l.toUpperCase(),20,y);
+    doc.setFont('helvetica','normal');doc.setTextColor(30,30,30);
+    const vlines=doc.splitTextToSize(it.v,115);
+    vlines.forEach((ln,i)=>{doc.text(ln,70,y+(i*5))});
+    y+=Math.max(6,vlines.length*5+1);
+  });
+
+  y+=4;
+
+  // ─── SERVIÇOS INCLUSOS ───────────────────────────
+  doc.setFontSize(10);doc.setFont('helvetica','bold');doc.setTextColor(60,60,60);
+  doc.text('Serviços inclusos na produção:',20,y);y+=6;
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(60,60,60);
+  const servicos=[
+    '✓ Direção e equipe técnica em campo',
+    '✓ Equipamentos profissionais (câmera, áudio e iluminação)',
+    '✓ Pós-produção (edição, correção de cor e mixagem de áudio)',
+    '✓ Revisões e ajustes conforme alinhamento',
+    '✓ Entrega nos formatos definidos, prontos para publicação'
+  ];
+  servicos.forEach(s=>{doc.text(s,22,y);y+=5});
   y+=6;
-  doc.setDrawColor(237,28,36);doc.line(20,y,190,y);y+=10;
-  addLine('INVESTIMENTO',{size:14,bold:true,color:[237,28,36],gap:10});
-  addLine(`Valor total: R$ ${price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,{size:16,bold:true,gap:8});
-  addLine(`Impostos inclusos: ${((bgt?Number(bgt.tax_rate):0.18)*100).toFixed(0)}%`,{gap:6});
-  y+=6;
-  addLine('Condições: Pagamento conforme acordo contratual.',{size:9,color:[120,120,120],gap:5});
-  addLine('Valores válidos por 30 dias a partir da data de emissão.',{size:9,color:[120,120,120],gap:5});
-  y+=8;
-  addLine(`Emitido por: ${acc?.name||'TGT Studio'}`,{size:9,color:[100,100,100],gap:5});
-  addLine(`Data: ${new Date().toLocaleDateString('pt-BR')}`,{size:9,color:[100,100,100]});
-  // Footer
-  doc.setFillColor(35,31,32);doc.rect(0,280,210,17,'F');
-  doc.setFontSize(8);doc.setTextColor(150,150,150);doc.text('TGT Studio — A Agência Além do Marketing | tgtstudio.com.br',20,288);
-  doc.save(`TGT_Proposta_${r.title.replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+
+  // ─── INVESTIMENTO ────────────────────────────────
+  doc.setFillColor(23,23,23);doc.rect(15,y,180,32,'F');
+  doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(200,200,200);
+  doc.text('INVESTIMENTO TOTAL',20,y+9);
+  doc.setFontSize(26);doc.setFont('helvetica','bold');doc.setTextColor(237,28,36);
+  doc.text(`R$ ${price.toLocaleString('pt-BR',{minimumFractionDigits:2})}`,20,y+24);
+  doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(180,180,180);
+  doc.text('Impostos inclusos',150,y+24);
+  y+=40;
+
+  // ─── CONDIÇÕES ───────────────────────────────────
+  doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(100,100,100);
+  doc.text('CONDIÇÕES COMERCIAIS',20,y);y+=5;
+  doc.setFont('helvetica','normal');doc.setTextColor(90,90,90);
+  doc.text('• Pagamento conforme acordo contratual vigente.',20,y);y+=4;
+  doc.text('• Proposta válida por 30 dias a partir da data de emissão.',20,y);y+=4;
+  doc.text('• Alterações de escopo podem implicar em ajustes no valor.',20,y);y+=4;
+
+  // ─── ASSINATURA ──────────────────────────────────
+  y=255;
+  doc.setDrawColor(200,200,200);doc.line(20,y,90,y);
+  doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);
+  doc.text(acc?.name||'TGT Studio',20,y+5);
+  doc.text('TGT Studio',20,y+10);
+
+  // ─── FOOTER ──────────────────────────────────────
+  doc.setFillColor(23,23,23);doc.rect(0,280,210,17,'F');
+  doc.setFontSize(8);doc.setTextColor(180,180,180);
+  doc.text('TGT Studio — A Agência Além do Marketing',20,288);
+  doc.setTextColor(237,28,36);
+  doc.text('tgtstudio.com.br',155,288);
+
+  doc.save(`TGT_Proposta_${(r.title||'producao').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
   toast('PDF gerado');
 }
 
