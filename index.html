@@ -354,7 +354,7 @@ tr:hover td{background:var(--bg3)}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes cardRise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 
-.bg-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:56px}
+.bg-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:56px}
 .bg-card{position:relative;padding:28px 24px 24px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:transform .25s,border-color .2s,background .2s;display:flex;flex-direction:column;min-height:280px;overflow:hidden;animation:cardRise .6s both}
 .bg-card:nth-child(1){animation-delay:.15s}
 .bg-card:nth-child(2){animation-delay:.25s}
