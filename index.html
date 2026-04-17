@@ -40,8 +40,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt);font-size:14p
 .app.active{display:block}
 .main{margin-left:240px;height:100vh;display:flex;flex-direction:column;width:calc(100% - 240px)}
 .sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100;transition:transform .3s}
-.sb-logo{padding:20px 20px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
-.sb-logo svg{width:80px;height:auto}
+.sb-logo{padding:20px 20px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;transition:background .15s}
+.sb-logo:hover{background:var(--bg3)}
+.sb-logo-svg{width:56px;height:auto;display:block;transition:transform .2s}
+.sb-logo:hover .sb-logo-svg{transform:scale(1.05)}
 .sb-logo .hub-badge{font-size:10px;font-weight:700;background:var(--red);color:var(--white);padding:2px 8px;border-radius:3px;letter-spacing:1px}
 .sb-nav{flex:1;overflow-y:auto;padding:8px 0}
 .sb-section{padding:16px 20px 6px;font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1.5px}
@@ -344,7 +346,9 @@ tr:hover td{background:var(--bg3)}
 /* ═══════════════════════════════════════════════
    BRAND GUARDIAN DASHBOARD UNIFICADO
    ═══════════════════════════════════════════════ */
-.bg-hero{margin-bottom:40px;animation:fadeIn .6s .1s both}
+.bg-hero-wrap{display:grid;grid-template-columns:1fr auto;gap:32px;align-items:end;margin-bottom:40px}
+.bg-hero-wrap .bg-hero{margin-bottom:0}
+.bg-hero{margin-bottom:40px;animation:fadeIn .6s .1s both;min-width:0}
 .bg-hero-meta{display:flex;align-items:center;gap:10px;margin-bottom:18px}
 .bg-meta-line{color:var(--red);font-size:18px;font-weight:900;line-height:1}
 .bg-meta-mono{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--txt2)}
@@ -352,6 +356,34 @@ tr:hover td{background:var(--bg3)}
 .bg-hero-title .bg-hl{background:var(--red);color:var(--white);padding:0 10px;display:inline-block}
 .bg-hero-title .bg-ast{color:var(--red);font-size:.9em}
 .bg-hero-sub{color:var(--txt2);font-size:15px;max-width:620px;line-height:1.55}
+
+/* TIMER WIDGET */
+.bg-timer-widget{width:340px;flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;position:relative;overflow:hidden;animation:fadeIn .6s .2s both}
+.bg-timer-widget::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--border2);transition:background .3s}
+.bg-timer-widget.is-running::before{background:var(--red)}
+.bg-timer-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em}
+.bg-timer-eyebrow{display:inline-flex;align-items:center;gap:6px;color:var(--txt2)}
+.bg-timer-eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--txt3)}
+.bg-timer-eyebrow .dot.on{background:var(--red);box-shadow:0 0 0 3px rgba(237,28,36,.2);animation:pulse 2s infinite}
+.bg-timer-today{color:var(--txt3)}
+.bg-timer-today b{color:var(--white);font-weight:600}
+.bg-timer-clock{font-family:var(--mono);font-weight:700;font-size:36px;letter-spacing:1px;color:var(--white);margin-bottom:10px;line-height:1;font-variant-numeric:tabular-nums}
+.bg-timer-widget.is-running .bg-timer-clock{color:var(--red)}
+.bg-timer-desc{color:var(--txt);font-size:13px;font-weight:500;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bg-timer-meta{color:var(--txt3);font-size:11px;font-family:var(--mono);margin-bottom:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bg-timer-actions{display:flex;gap:8px}
+.bg-timer-btn{flex:1;padding:8px 12px;border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--txt);font-family:var(--font);text-transform:lowercase;letter-spacing:.02em;transition:.15s}
+.bg-timer-btn:hover{border-color:var(--border2);color:var(--white)}
+.bg-timer-btn-start{background:var(--red);color:var(--white);border-color:var(--red)}
+.bg-timer-btn-start:hover{background:var(--red2);border-color:var(--red2);color:var(--white)}
+.bg-timer-btn-stop{background:var(--bg);color:var(--red);border-color:var(--red)}
+.bg-timer-btn-stop:hover{background:var(--red);color:var(--white)}
+.bg-timer-btn-ghost{background:transparent;border-color:var(--border)}
+
+@media(max-width:900px){
+.bg-hero-wrap{grid-template-columns:1fr;gap:20px}
+.bg-timer-widget{width:100%}
+}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes cardRise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 
@@ -432,8 +464,11 @@ tr:hover td{background:var(--bg3)}
 
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
-<div class="sb-logo">
-<svg viewBox="0 0 130 40" xmlns="http://www.w3.org/2000/svg"><text x="0" y="32" fill="#ED1C24" font-family="'IBM Plex Sans',sans-serif" font-weight="800" font-size="36">TGT</text></svg>
+<div class="sb-logo" onclick="logoClick()" style="cursor:pointer" title="Ir ao Brand Guardian">
+<svg class="sb-logo-svg" viewBox="0 0 696.66 299.25" xmlns="http://www.w3.org/2000/svg" aria-label="TGT">
+<path fill="#ED1C24" d="M82.97,52.64v246.52h68.95V52.51h83.4v-31.49c12.87,13.69,26.41,24.26,41.78,32.44,15.28,8.13,31.57,13.32,48.54,16.68-2.21.79-4.32,1.19-6.43,1.59-103.71,19.64-158.04,129.65-115.74,223.43,1.36,3.02,3.07,4.11,6.42,4.08,21.31-.16,42.63-.07,63.94-.09,1.09,0,2.17-.2,3.81-.36-1.2-1.68-2.02-2.88-2.89-4.05-33.32-44.46-28.77-105.37,10.77-144.3,36.45-35.88,95.51-34.43,129.93,3.49,6.42,7.07,11.63,15.23,17.54,23.06,16.71-10.72,33.77-21.66,50.81-32.58-19.27-35.85-60.47-63.07-113.36-74.39,36.59-6.08,66.23-22.36,90.93-50.26v32.97h83.32v246.3h68.9V52.43h83.06V.21c-1.28-.08-2.24-.2-3.21-.2-96.58,0-193.16-.02-289.74.06-1.82,0-3.92.73-5.42,1.79-30.52,21.63-67.6,21.93-98.5.88-2.28-1.55-5.41-2.62-8.14-2.63C196.24-.02,100.83,0,5.41,0c-1.77,0-3.55,0-5.41,0v52.64h82.97ZM323.35,202.1c.42,1.17.59,1.81.87,2.38,8.5,17.31,17.08,34.57,25.44,51.94,1.38,2.88,3.31,3.13,5.96,3.13,24.64-.05,49.27-.03,73.91-.03,1.96,0,3.93,0,6.56,0-3.36,14.78-9.88,27.28-19.08,39.35,2.33.12,3.93.28,5.52.28,20.31.02,40.62-.09,60.93.1,3.8.04,5.51-1.33,6.96-4.71,8.11-18.87,12.52-38.57,13.11-59.02.32-11.06-.57-22.15-.92-33.42h-179.24Z"/>
+<path fill="#ED1C24" d="M323.35,202.1h179.24c.35,11.27,1.25,22.37.92,33.42-.59,20.45-5,40.16-13.11,59.02-1.45,3.38-3.16,4.75-6.96,4.71-20.31-.19-40.62-.09-60.93-.1-1.6,0-3.19-.16-5.52-.28,9.2-12.07,15.72-24.57,19.08-39.35-2.63,0-4.59,0-6.56,0-24.64,0-49.27-.02-73.91.03-2.64,0-4.57-.25-5.96-3.13-8.36-17.37-16.94-34.64-25.44-51.94-.28-.58-.45-1.21-.87-2.38Z"/>
+</svg>
 <span class="hub-badge">HUB</span>
 <span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.13.1</span>
 </div>
@@ -599,6 +634,7 @@ async function initApp(){
   await loadData();
   // Redirect based on role
   if(isCli()) nav('d-client-view');
+  else if(isQC()) nav('qc');
   else nav('timer');
   if(!isCli()) startTick();
   // Check running timer
@@ -767,6 +803,13 @@ function nav(page){
   renderPage();
 }
 
+function logoClick(){
+  // Logo clicked → go to Brand Guardian if has access, otherwise to default landing
+  if(isQC()) nav('qc');
+  else if(isCli()) nav('d-client-view');
+  else nav('timer');
+}
+
 async function renderPage(){
   const el=$('pg');
   el.innerHTML='<div class="loading"><div class="spin"></div> Carregando...</div>';
@@ -808,7 +851,7 @@ async function reloadPage(){await loadEntries();renderPage()}
 // TIMER
 // ═══════════════════════════════════════════════
 function startTick(){clearInterval(timerInt);timerInt=setInterval(()=>{if(timerStart){timerSec=(Date.now()-timerStart.getTime())/1000;updClock()}},1000)}
-function updClock(){const el=$('tclock');if(!el)return;if(!running||!timerStart){el.textContent='00:00:00';el.className='timer-display';return}timerSec=(Date.now()-timerStart.getTime())/1000;const h=Math.floor(timerSec/3600),m=Math.floor((timerSec%3600)/60),s=Math.floor(timerSec%60);el.textContent=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;el.className='timer-display running'}
+function updClock(){const el=$('tclock');if(!el)return;if(!running||!timerStart){el.textContent='00:00:00';el.classList.remove('running');return}timerSec=(Date.now()-timerStart.getTime())/1000;const h=Math.floor(timerSec/3600),m=Math.floor((timerSec%3600)/60),s=Math.floor(timerSec%60);el.textContent=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;el.classList.add('running')}
 
 async function pgTimer(el){
   // Re-check running state from loaded entries
@@ -894,7 +937,10 @@ async function stopTimer(){
     // Sync with Monday — stop timers directly via API
     MONDAY_TIMER_BOARDS.forEach(b=>mondayStopTimers(b.board_id,b.timer_col));
     
-    await loadEntries();toast('Timer parado');buildNav();nav('timer');
+    await loadEntries();toast('Timer parado');buildNav();
+    // Re-render current page (stay on Brand Guardian if there, else go to timer)
+    if(curPage==='qc') renderPage();
+    else nav('timer');
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
@@ -2766,19 +2812,51 @@ async function pgQC(el){
   // Lead Designer section only for admin, account, prod_leader
   const canSeeLeadDesigner = isA() || isAcc() || isPL();
   
+  // Check if user can use timer (not client)
+  const canUseTimer = !isCli();
+  
+  // Timer widget state
+  const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+  if(re&&!running){running=true;timerStart=new Date(re.started_at);activeEntryId=re.id}
+  else if(!re&&running){running=false;timerStart=null;activeEntryId=null;timerSec=0}
+  const myEntries=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running);
+  const todayH=myEntries.filter(e=>e.started_at&&e.started_at.substring(0,10)===new Date().toISOString().substring(0,10)).reduce((s,e)=>s+(e.hours||0),0);
+  
+  const timerWidget = canUseTimer ? `
+    <aside class="bg-timer-widget ${running?'is-running':''}">
+      <div class="bg-timer-head">
+        <span class="bg-timer-eyebrow"><span class="dot ${running?'on':''}"></span>${running?'timer rodando':'timer parado'}</span>
+        <span class="bg-timer-today">hoje · <b>${fH(todayH)}</b></span>
+      </div>
+      <div class="bg-timer-clock" id="tclock">00:00:00</div>
+      <div class="bg-timer-desc">${running&&re?(re.description||'Sem descrição'):'Nenhuma atividade ativa'}</div>
+      <div class="bg-timer-meta">${running&&re?(()=>{const c=S.clients.find(cl=>cl.id===re.client_id);return(c?c.name:'—')+(re.action?' · '+re.action:'')})():'—'}</div>
+      <div class="bg-timer-actions">
+        ${running
+          ? `<button class="bg-timer-btn bg-timer-btn-stop" onclick="stopTimer()">■ parar</button>`
+          : `<button class="bg-timer-btn bg-timer-btn-start" onclick="nav('timer')">▶ iniciar</button>`
+        }
+        <button class="bg-timer-btn bg-timer-btn-ghost" onclick="nav('timer')">abrir timer →</button>
+      </div>
+    </aside>
+  ` : '';
+  
   el.innerHTML=`
     <!-- HERO -->
-    <div class="bg-hero">
-      <div class="bg-hero-meta">
-        <span class="bg-meta-line">—</span>
-        <span class="bg-meta-mono">01 / agentes disponíveis</span>
+    <div class="bg-hero-wrap">
+      <div class="bg-hero">
+        <div class="bg-hero-meta">
+          <span class="bg-meta-line">—</span>
+          <span class="bg-meta-mono">01 / agentes disponíveis</span>
+        </div>
+        <h1 class="bg-hero-title">
+          O que vamos <span class="bg-hl">criar</span> hoje<span class="bg-ast">*</span>
+        </h1>
+        <p class="bg-hero-sub">
+          Escolha um agente para começar. Todos respeitam os guias de marca cadastrados por cliente.
+        </p>
       </div>
-      <h1 class="bg-hero-title">
-        O que vamos <span class="bg-hl">criar</span> hoje<span class="bg-ast">*</span>
-      </h1>
-      <p class="bg-hero-sub">
-        Escolha um agente para começar. Todos respeitam os guias de marca cadastrados por cliente.
-      </p>
+      ${timerWidget}
     </div>
 
     <!-- AGENTS CARDS -->
