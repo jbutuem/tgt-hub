@@ -469,6 +469,12 @@ tr:hover td{background:var(--bg3)}
 .bg-timer-widget.is-running .bg-timer-clock{color:var(--red)}
 .bg-timer-desc{color:var(--txt);font-size:13px;font-weight:500;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bg-timer-meta{color:var(--txt3);font-size:11px;font-family:var(--mono);margin-bottom:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bg-timer-coworkers{display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:8px 10px;background:var(--bg3);border-radius:var(--radius-sm);border-left:2px solid var(--red)}
+.bg-timer-avatars{display:flex;gap:-4px}
+.bg-timer-avatar{width:24px;height:24px;border-radius:50%;background:var(--red);color:var(--white);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid var(--bg2);margin-left:-6px;flex-shrink:0}
+.bg-timer-avatar:first-child{margin-left:0}
+.bg-timer-avatar-more{background:var(--bg);color:var(--txt2);font-size:9px}
+.bg-timer-coworkers-label{font-size:11px;color:var(--txt2);line-height:1.3}
 .bg-timer-actions{display:flex;gap:8px}
 .bg-timer-btn{flex:1;padding:8px 12px;border-radius:var(--radius-sm);font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--txt);font-family:var(--font);text-transform:lowercase;letter-spacing:.02em;transition:.15s}
 .bg-timer-btn:hover{border-color:var(--border2);color:var(--white)}
@@ -671,7 +677,36 @@ const isPL=()=>S.user&&S.user.access_level==='prod_leader';
 const isAcc=()=>S.user&&S.user.access_level==='account';
 const isCli=()=>S.user&&S.user.access_level==='client';
 const isUser=()=>S.user&&S.user.access_level==='user';
-const isQC=()=>S.user&&(S.user.access_level==='admin'||S.user.access_level==='account'||S.user.qc_reviewer===true);
+
+// ───── PERMISSION MATRIX ─────
+// Todos exceto client usam timer e agentes do Brand Guardian
+const canUseTimer=()=>!!S.user&&!isCli();
+const canUseBG=()=>!!S.user&&!isCli();
+// Avaliação de Lead Designer: admin, account, prod_leader ou user com qc_reviewer checkado
+const canReviewBG=()=>!!S.user&&(isA()||isAcc()||isPL()||S.user.qc_reviewer===true);
+// Dashboards de time/cliente: admin vê tudo, account/prod_leader veem o próprio escopo
+const canSeeTeamData=()=>isA()||isAcc()||isPL();
+// Produção AV: admin e prod_leader têm acesso completo de gestão; account pode ver os do próprio time
+const canManageProdAV=()=>isA()||isPL();
+const canSeeProdAV=()=>isA()||isPL()||isAcc();
+// Aprovação final de orçamento Prod AV: só admin
+const canApproveBudget=()=>isA();
+// Legado — manter por compat até remover usos antigos
+const isQC=canReviewBG;
+
+// Helper: clientes visíveis pro usuário (account/prod_leader filtra por time)
+function visibleClientIds(){
+  if(isA()) return null; // null = todos
+  if(isAcc()||isPL()){
+    const myTeam=S.user.team;
+    return S.clients.filter(c=>c.team===myTeam).map(c=>c.id);
+  }
+  return []; // user comum/client não tem escopo de time
+}
+function canSeeClient(clientId){
+  const ids=visibleClientIds();
+  return ids===null||ids.includes(clientId);
+}
 
 function getDateRange(){
   const now=new Date(),y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
@@ -770,10 +805,9 @@ async function initApp(){
   $('cur-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   buildNav();
   await loadData();
-  // Redirect based on role
+  // Landing page por role
   if(isCli()) nav('d-client-view');
-  else if(isQC()) nav('qc');
-  else nav('timer');
+  else nav('qc'); // Todos os demais caem no Brand Guardian (pode ir pro Timer pela UI)
   if(!isCli()) startTick();
   // Check running timer
   if(!isCli()){
@@ -888,13 +922,25 @@ function buildNav(){
     h+=`<div class="sb-item" data-p="d-finance" onclick="nav('d-finance')">${ICONS.money} Financeiro</div>`;
   }
   
-  // PROD section — admin, account, prod_leader only
-  if(isA()||isAcc()||isPL()){
+  // PROD section — admin, account, prod_leader
+  if(canSeeProdAV()){
     h+=`<div class="sb-section">Produção AV</div>`;
-    const pendingApproval=S.av_requests.filter(r=>r.status==='budget_sent'&&(isAcc()?S.clients.filter(c=>c.team===S.user.team).map(c=>c.id).includes(r.client_id)||r.requested_by===S.user.id:true));
-    const badgeHtml=pendingApproval.length?`<span class="sb-badge">${pendingApproval.length}</span>`:'';
+    // Badge: cada role vê o que precisa agir
+    // Admin → aprovar orçamentos (budget_sent)
+    // prod_leader → analisar solicitações novas e configurar aprovadas
+    // account → ver suas solicitações rejeitadas (precisa ajustar)
+    let pendingCount=0;
+    if(isA()){
+      pendingCount=S.av_requests.filter(r=>r.status==='budget_sent').length;
+    }else if(isPL()){
+      pendingCount=S.av_requests.filter(r=>['pending_leader_review','leader_reviewing','account_approved'].includes(r.status)).length;
+    }else if(isAcc()){
+      const myClientIds=S.clients.filter(c=>c.team===S.user.team).map(c=>c.id);
+      pendingCount=S.av_requests.filter(r=>r.status==='account_rejected'&&(myClientIds.includes(r.client_id)||r.requested_by===S.user.id)).length;
+    }
+    const badgeHtml=pendingCount?`<span class="sb-badge">${pendingCount}</span>`:'';
     h+=`<div class="sb-item" data-p="p-requests" onclick="nav('p-requests')">${ICONS.prod} Solicitações ${badgeHtml}</div>`;
-    if(isA()||isPL()){
+    if(canManageProdAV()){
       h+=`<div class="sb-item" data-p="p-calendar" onclick="nav('p-calendar')">${ICONS.cal} Calendário</div>`;
       h+=`<div class="sb-item" data-p="p-equip" onclick="nav('p-equip')">${ICONS.box} Equipamentos</div>`;
       h+=`<div class="sb-item" data-p="p-config" onclick="nav('p-config')">${ICONS.gear} Config Prod</div>`;
@@ -908,9 +954,9 @@ function buildNav(){
     h+=`<div class="sb-item" data-p="extras-hist" onclick="nav('extras-hist')">${ICONS.entries} Meus Extras</div>`;
   }
   
-  // BRAND GUARDIAN / PAINEL QC — admin, account, or qc_reviewer
-  if(isQC()){
-    const qcPending=S.qc_requests.filter(r=>r.qc_status==='pending').length;
+  // BRAND GUARDIAN — todos exceto cliente
+  if(canUseBG()){
+    const qcPending=canReviewBG()?S.qc_requests.filter(r=>r.qc_status==='pending').length:0;
     const qcBadge=qcPending?` <span class="sb-badge">${qcPending}</span>`:'';
     h+=`<div class="sb-section">Brand Guardian</div>`;
     h+=`<div class="sb-item" data-p="qc" onclick="nav('qc')">${ICONS.qc} Brand Guardian${qcBadge}</div>`;
@@ -942,10 +988,8 @@ function nav(page){
 }
 
 function logoClick(){
-  // Logo clicked → go to Brand Guardian if has access, otherwise to default landing
-  if(isQC()) nav('qc');
-  else if(isCli()) nav('d-client-view');
-  else nav('timer');
+  if(isCli()) nav('d-client-view');
+  else nav('qc'); // Brand Guardian é o landing dos não-clientes
 }
 
 async function renderPage(){
@@ -1000,12 +1044,24 @@ async function pgTimer(el){
   const myEntries=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running);
   const todayH=myEntries.filter(e=>e.started_at&&e.started_at.substring(0,10)===new Date().toISOString().substring(0,10)).reduce((s,e)=>s+(e.hours||0),0);
   
+  // Coworkers on same Monday item
+  let coworkersHtml='';
+  if(running&&re&&re.monday_item_id){
+    const coworkers=S.entries.filter(e=>e.is_running&&e.monday_item_id===re.monday_item_id&&e.member_id!==S.user.id);
+    if(coworkers.length){
+      const names=coworkers.slice(0,5).map(e=>{const m=S.members.find(mm=>mm.id===e.member_id);return m?m.name.split(' ')[0]:'alguém'});
+      const label=coworkers.length===1?`${names[0]} também está trabalhando neste item`:`${names.join(', ')}${coworkers.length>5?` +${coworkers.length-5}`:''} também estão trabalhando neste item`;
+      coworkersHtml=`<div style="max-width:500px;margin:12px auto 0;padding:10px 14px;background:var(--bg3);border-left:3px solid var(--red);border-radius:var(--radius-sm);font-size:13px;color:var(--txt)">👥 ${label}</div>`;
+    }
+  }
+  
   el.innerHTML=`
     <div class="cards" style="max-width:600px;margin:0 auto">
       <div class="card"><div class="cl">Hoje</div><div class="cv">${fH(todayH)}</div></div>
       <div class="card card-blue"><div class="cl">Timer</div><div class="cv" style="font-size:16px">${running?'Rodando':'Parado'}</div></div>
     </div>
     <div id="tclock" class="timer-display ${running?'running':''}">00:00:00</div>
+    ${coworkersHtml}
     <div style="max-width:500px;margin:0 auto">
       <div class="f-field"><label class="f-label">Descrição</label><input class="f-input" id="t-desc" placeholder="O que você está fazendo?" value="${running&&re?re.description||'':''}"></div>
       <div class="f-row">
@@ -1068,15 +1124,42 @@ async function stopTimer(){
   if(!activeEntryId)return;
   try{
     const ended=new Date().toISOString();
-    const entry=S.entries.find(e=>e.id===activeEntryId);
+    const myEntry=S.entries.find(e=>e.id===activeEntryId);
+    const mondayItemId=myEntry?.monday_item_id;
+    const mondayBoardId=myEntry?.monday_board_id;
+    
+    // Close my entry in Supabase
     await sbPatch('tt_time_entries',`id=eq.${activeEntryId}`,{is_running:false,ended_at:ended});
     running=false;timerStart=null;activeEntryId=null;timerSec=0;
     
-    // Sync with Monday — stop timers directly via API
-    MONDAY_TIMER_BOARDS.forEach(b=>mondayStopTimers(b.board_id,b.timer_col));
+    // Reload entries to check who else is still running
+    await loadEntries();
     
-    await loadEntries();toast('Timer parado');buildNav();
-    // Re-render current page (stay on Brand Guardian if there, else go to timer)
+    // Monday sync — only if this entry had a monday_item_id
+    if(mondayItemId&&mondayBoardId){
+      // Count OTHER people still running on the same Monday item
+      const othersRunning=S.entries.filter(e=>e.is_running&&e.monday_item_id===mondayItemId&&e.member_id!==S.user.id);
+      
+      if(othersRunning.length===0){
+        // I was the last one → set Monday to "Parado"
+        const board=MONDAY_TIMER_BOARDS.find(b=>b.board_id===mondayBoardId);
+        if(board){
+          try{
+            const mutQ=`mutation{change_simple_column_value(board_id:${board.board_id},item_id:${mondayItemId},column_id:"${board.timer_col}",value:"Parado"){id}}`;
+            await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
+          }catch(e){console.error('Monday sync failed:',e)}
+        }
+        toast('Timer parado');
+      }else{
+        // Others still running → keep Monday as "Rodando", educate the user
+        const names=othersRunning.map(e=>{const m=S.members.find(mm=>mm.id===e.member_id);return m?m.name.split(' ')[0]:'alguém'});
+        toast(`Você parou, mas ${names.join(', ')} ${names.length>1?'ainda estão':'ainda está'} rodando neste item`,'success');
+      }
+    }else{
+      toast('Timer parado');
+    }
+    
+    buildNav();
     if(curPage==='qc') renderPage();
     else nav('timer');
   }catch(e){toast('Erro: '+e.message,'error')}
@@ -1162,7 +1245,7 @@ async function pgDashMy(el){
   
   // Brand Guardian shortcuts — for anyone with access
   let guardianHtml='';
-  if(isQC()){
+  if(canUseBG()){
     guardianHtml=`
       <div style="margin:20px 0 24px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -1306,7 +1389,9 @@ async function pgDashAdm(el){
 }
 
 async function pgDashClient(el){
-  const entries=isA()?S.entries.filter(e=>!e.is_running):S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running);
+  if(!canSeeTeamData()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  const ids=visibleClientIds();
+  const entries=S.entries.filter(e=>!e.is_running&&(ids===null||ids.includes(e.client_id)));
   const byClient={};
   entries.forEach(e=>{
     const c=S.clients.find(cl=>cl.id===e.client_id);if(!c)return;
@@ -1314,24 +1399,28 @@ async function pgDashClient(el){
     byClient[c.id].hours+=(e.hours||0);
   });
   const cls=Object.values(byClient).sort((a,b)=>b.hours-a.hours);
+  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Escopo do time ${S.user.team}</div>`:'';
   
-  el.innerHTML=datePillsHTML()+`
+  el.innerHTML=datePillsHTML()+scopeNote+`
     <div class="tbl"><div class="tbl-h"><h3>Consumo por Cliente</h3></div>
     <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta</th><th class="rt">Consumido</th><th class="rt">%</th><th style="width:200px">Progresso</th></tr></thead>
-    <tbody>${cls.map(c=>{const pct=c.target>0?c.hours/c.target*100:0;const color=pct>100?'pbar-red':pct>80?'pbar-amber':'pbar-green';return`<tr><td style="font-weight:600">${c.name}</td><td><span class="bg ${TBC(c.team)}">${TB(c.team)}</span></td><td class="rt">${c.target?fH(c.target):'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(c.hours)}</td><td class="rt" style="font-weight:700;color:${pct>100?'var(--red)':pct>80?'var(--pack)':'var(--prod)'}">${pct.toFixed(0)}%</td><td><div class="pbar"><div class="pbar-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div></td></tr>`}).join('')}</tbody></table></div></div>`;
+    <tbody>${cls.map(c=>{const pct=c.target>0?c.hours/c.target*100:0;const color=pct>100?'pbar-red':pct>80?'pbar-amber':'pbar-green';return`<tr><td style="font-weight:600">${c.name}</td><td><span class="bg ${TBC(c.team)}">${TB(c.team)}</span></td><td class="rt">${c.target?fH(c.target):'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(c.hours)}</td><td class="rt" style="font-weight:700;color:${pct>100?'var(--red)':pct>80?'var(--pack)':'var(--prod)'}">${pct.toFixed(0)}%</td><td><div class="pbar"><div class="pbar-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div></td></tr>`}).join('')||'<tr><td colspan="6" class="empty">Sem dados</td></tr>'}</tbody></table></div></div>`;
 }
 
 async function pgDashTeam(el){
-  if(!isA()&&!isAcc()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
-  const teams=['T1','T3','T4','T5','PROD','ADM'];
+  if(!canSeeTeamData()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  const allTeams=['T1','T3','T4','T5','PROD','ADM'];
+  // Admin vê todos os times; account/prod_leader vê só o próprio
+  const teams=isA()?allTeams:[S.user.team];
   const teamData=teams.map(t=>{
     const ms=S.members.filter(m=>m.team===t);
     const cap=ms.reduce((s,m)=>s+(m.capacity_hours||140),0);
     const hrs=S.entries.filter(e=>!e.is_running&&ms.find(m=>m.id===e.member_id)).reduce((s,e)=>s+(e.hours||0),0);
     return{team:t,members:ms.length,cap,hrs,pct:cap>0?hrs/cap*100:0};
   }).filter(t=>t.members>0);
+  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seu time: ${S.user.team}</div>`:'';
   
-  el.innerHTML=datePillsHTML()+`
+  el.innerHTML=datePillsHTML()+scopeNote+`
     <div class="cards">${teamData.map(t=>`<div class="card"><div class="cl">${TB(t.team)}</div><div class="cv">${fH(t.hrs)}</div><div class="pbar"><div class="pbar-fill ${t.pct>100?'pbar-red':t.pct>70?'pbar-amber':'pbar-blue'}" style="width:${Math.min(t.pct,100)}%"></div></div><div class="cs">${t.pct.toFixed(0)}% · ${t.members} pessoas · ${t.cap}h cap</div></div>`).join('')}</div>
     <div class="tbl"><div class="tbl-h"><h3>Detalhamento por Time</h3></div>
     <div class="tbl-r"><table><thead><tr><th>Time</th><th class="rt">Membros</th><th class="rt">Capacidade</th><th class="rt">Consumido</th><th class="rt">Utilização</th></tr></thead>
@@ -1339,15 +1428,18 @@ async function pgDashTeam(el){
 }
 
 async function pgDashPerson(el){
-  if(!isA()&&!isAcc()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
-  const personData=S.members.filter(m=>m.team!=='ADM'||m.access_level==='admin').map(m=>{
+  if(!canSeeTeamData()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  // Admin vê todo mundo; account/prod_leader só o próprio time
+  const membersScope=isA()?S.members:S.members.filter(m=>m.team===S.user.team);
+  const personData=membersScope.filter(m=>m.team!=='ADM'||m.access_level==='admin').map(m=>{
     const hrs=S.entries.filter(e=>!e.is_running&&e.member_id===m.id).reduce((s,e)=>s+(e.hours||0),0);
     const cap=m.capacity_hours||140;
     const isRunning=S.entries.find(e=>e.is_running&&e.member_id===m.id);
     return{...m,hrs,cap,pct:cap>0?hrs/cap*100:0,isRunning:!!isRunning};
   }).sort((a,b)=>b.pct-a.pct);
+  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seu time: ${S.user.team}</div>`:'';
 
-  el.innerHTML=datePillsHTML()+`
+  el.innerHTML=datePillsHTML()+scopeNote+`
     <div class="tbl"><div class="tbl-h"><h3>Utilização Individual</h3></div>
     <div class="tbl-r"><table><thead><tr><th>Pessoa</th><th>Time</th><th>Função</th><th class="rt">Cap</th><th class="rt">Horas</th><th class="rt">%</th><th style="width:140px">Status</th></tr></thead>
     <tbody>${personData.map(p=>{const color=p.pct>100?'var(--red)':p.pct>70?'var(--pack)':p.pct>30?'var(--prod)':'var(--txt3)';const alert=p.pct>100?'bg-red':p.pct<30?'bg-amber':'';return`<tr><td style="font-weight:600">${p.name.split(' ').slice(0,2).join(' ')}${p.isRunning?' <span style="color:var(--red);font-size:10px">● ATIVO</span>':''}</td><td><span class="bg ${TBC(p.team)}">${TB(p.team)}</span></td><td style="font-size:12px;color:var(--txt2)">${p.job_title||'—'}</td><td class="rt">${p.cap}h</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(p.hrs)}</td><td class="rt" style="font-weight:700;color:${color}">${p.pct.toFixed(0)}%</td><td><div class="pbar"><div class="pbar-fill" style="width:${Math.min(p.pct,100)}%;background:${color}"></div></div></td></tr>`}).join('')}</tbody></table></div></div>`;
@@ -1438,7 +1530,7 @@ function renderProdReqRows(reqs,filter){
   if(!filtered.length)return'<tr><td colspan="6" class="empty">Nenhuma solicitação neste filtro</td></tr>';
   return filtered.map(r=>{
     const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);
-    const isAction=(['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status)&&(isA()||isPL()))||(r.status==='budget_sent'&&(isAcc()||isA()))||(r.status==='account_approved'&&(isA()||isPL()));
+    const isAction=(['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status)&&canManageProdAV())||(r.status==='budget_sent'&&canApproveBudget())||(r.status==='account_approved'&&canManageProdAV());
     const hl=isAction?'background:rgba(237,28,36,.04);border-left:3px solid var(--red);':'';
     const icon=r.status==='account_rejected'?'🔄':r.status==='budget_sent'?'⚠️':r.status==='account_approved'?'✅':'';
     return`<tr style="cursor:pointer;${hl}" onclick="showRequestDetail('${r.id}')"><td style="font-weight:600">${icon} ${r.title}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join('');
@@ -2928,7 +3020,7 @@ let qcClientFilter='all';
 let qcCurrentId=null;
 
 async function pgQC(el){
-  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito ao Brand Guardian</div>';return}
+  if(!canUseBG()){el.innerHTML='<div class="empty">Acesso restrito ao Brand Guardian</div>';return}
   
   // Refresh from Supabase to get latest
   try{S.qc_requests=await sbGet('qc_requests','order=submitted_at.desc')}catch(e){}
@@ -2947,11 +3039,11 @@ async function pgQC(el){
   const clientIds=[...new Set(S.qc_requests.map(r=>r.client_id).filter(Boolean))];
   const clientOpts=clientIds.map(cid=>{const c=S.clients.find(cl=>cl.id===cid);return{id:cid,name:c?c.name:cid.substring(0,8)}});
   
-  // Lead Designer section only for admin, account, prod_leader
-  const canSeeLeadDesigner = isA() || isAcc() || isPL();
+  // Avaliação Lead Designer — admin, account, prod_leader ou user com qc_reviewer
+  const canSeeLeadDesigner=canReviewBG();
   
-  // Check if user can use timer (not client)
-  const canUseTimer = !isCli();
+  // Timer widget — todos exceto client
+  const canShowTimer=canUseTimer();
   
   // Timer widget state
   const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
@@ -2960,7 +3052,24 @@ async function pgQC(el){
   const myEntries=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running);
   const todayH=myEntries.filter(e=>e.started_at&&e.started_at.substring(0,10)===new Date().toISOString().substring(0,10)).reduce((s,e)=>s+(e.hours||0),0);
   
-  const timerWidget = canUseTimer ? `
+  // Coworkers working on the same Monday item (if I have timer running)
+  let coworkersHtml='';
+  if(running&&re&&re.monday_item_id){
+    const coworkers=S.entries.filter(e=>e.is_running&&e.monday_item_id===re.monday_item_id&&e.member_id!==S.user.id);
+    if(coworkers.length){
+      const avatars=coworkers.slice(0,3).map(e=>{
+        const m=S.members.find(mm=>mm.id===e.member_id);
+        const initial=m?m.name.charAt(0).toUpperCase():'?';
+        const fullName=m?m.name:'alguém';
+        return `<span class="bg-timer-avatar" title="${fullName} está trabalhando neste item agora">${initial}</span>`;
+      }).join('');
+      const extra=coworkers.length>3?`<span class="bg-timer-avatar bg-timer-avatar-more">+${coworkers.length-3}</span>`:'';
+      const label=coworkers.length===1?`${S.members.find(mm=>mm.id===coworkers[0].member_id)?.name.split(' ')[0]||'alguém'} também está neste item`:`${coworkers.length} colegas também aqui`;
+      coworkersHtml=`<div class="bg-timer-coworkers"><div class="bg-timer-avatars">${avatars}${extra}</div><span class="bg-timer-coworkers-label">${label}</span></div>`;
+    }
+  }
+  
+  const timerWidget = canShowTimer ? `
     <aside class="bg-timer-widget ${running?'is-running':''}">
       <div class="bg-timer-head">
         <span class="bg-timer-eyebrow"><span class="dot ${running?'on':''}"></span>${running?'timer rodando':'timer parado'}</span>
@@ -2969,6 +3078,7 @@ async function pgQC(el){
       <div class="bg-timer-clock" id="tclock">00:00:00</div>
       <div class="bg-timer-desc">${running&&re?(re.description||'Sem descrição'):'Nenhuma atividade ativa'}</div>
       <div class="bg-timer-meta">${running&&re?(()=>{const c=S.clients.find(cl=>cl.id===re.client_id);return(c?c.name:'—')+(re.action?' · '+re.action:'')})():'—'}</div>
+      ${coworkersHtml}
       <div class="bg-timer-actions">
         ${running
           ? `<button class="bg-timer-btn bg-timer-btn-stop" onclick="stopTimer()">■ parar</button>`
@@ -3216,7 +3326,7 @@ async function qcAct(newStatus){
 // ═══════════════════════════════════════════════
 
 async function pgBriefing(el){
-  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  if(!canUseBG()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   if(!window.CLIENTES){el.innerHTML='<div class="empty">Base de clientes não carregou. Recarregue a página.</div>';return}
   el.innerHTML=`
     <button class="bg-back" onclick="nav('qc')">Voltar ao Brand Guardian</button>
@@ -3497,7 +3607,7 @@ let artePecas=[],arteCtr=0;
 const ARTE_MAX=5,ARTE_MAX_BYTES=20*1024*1024,ARTE_MAX_SIDE=1200,ARTE_JPEG_Q=.85,ARTE_PDF_MAX=5;
 
 async function pgArte(el){
-  if(!isQC()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  if(!canUseBG()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   if(!window.CLIENTES){el.innerHTML='<div class="empty">Base de clientes não carregou. Recarregue a página.</div>';return}
   el.innerHTML=`
     <button class="bg-back" onclick="nav('qc')">Voltar ao Brand Guardian</button>
