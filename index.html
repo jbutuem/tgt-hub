@@ -78,6 +78,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt);font-size:14p
 .sb-logo-svg{width:56px;height:auto;display:block;transition:transform .2s}
 .sb-logo:hover .sb-logo-svg{transform:scale(1.05)}
 .sb-logo .hub-badge{font-size:10px;font-weight:700;background:var(--red);color:var(--white);padding:2px 8px;border-radius:3px;letter-spacing:1px}
+.ver-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;background:linear-gradient(135deg,var(--red),#c0161d);color:#fff;padding:3px 9px;border-radius:12px;letter-spacing:.5px;font-family:var(--mono,monospace);box-shadow:0 2px 6px rgba(237,28,36,.35);text-transform:uppercase}
+.ver-badge::before{content:'';width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 6px #fff;animation:verPulse 2s ease-in-out infinite}
+@keyframes verPulse{0%,100%{opacity:1}50%{opacity:.3}}
+.ver-badge-sidebar{margin-left:auto}
+.ver-badge-topbar{}
+@media(max-width:480px){.ver-badge{font-size:10px;padding:2px 7px}}
 .sb-nav{flex:1;overflow-y:auto;padding:8px 0}
 .sb-section{padding:16px 20px 6px;font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1.5px}
 .sb-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--txt2);cursor:pointer;font-size:13px;transition:.15s;border-left:3px solid transparent}
@@ -230,6 +236,30 @@ tr:hover td{background:var(--bg3)}
 .toast-item{padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;animation:fadeIn .3s}
 .toast-item.success{border-left:3px solid var(--prod)}.toast-item.error{border-left:3px solid var(--red)}
 @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* INACTIVITY / CONFIRM MODAL (centro da tela, anti-fraude + confirmações) */
+.imod-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeInFast .2s;backdrop-filter:blur(4px)}
+.imod-card{background:var(--bg2);border:2px solid var(--red);border-radius:14px;padding:36px 32px;max-width:460px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:popIn .3s cubic-bezier(.34,1.56,.64,1)}
+.imod-icon{font-size:56px;margin-bottom:18px;line-height:1}
+.imod-title{font-size:24px;font-weight:800;margin:0 0 14px;color:var(--txt);font-family:var(--font-cond,'Barlow Condensed',system-ui);letter-spacing:-.5px}
+.imod-desc{font-size:15px;color:var(--txt2);line-height:1.5;margin:0 0 28px}
+.imod-desc b{color:var(--txt);font-weight:700}
+.imod-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.imod-btn{padding:12px 22px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:none;min-width:140px;transition:transform .1s,opacity .15s;font-family:inherit}
+.imod-btn:hover{transform:translateY(-1px)}
+.imod-btn:active{transform:translateY(0)}
+.imod-btn-keep,.imod-btn-ok{background:var(--red);color:#fff}
+.imod-btn-keep:hover,.imod-btn-ok:hover{opacity:.9}
+.imod-btn-stop,.imod-btn-cancel{background:var(--bg3);color:var(--txt2);border:1px solid var(--border)}
+.imod-btn-stop:hover,.imod-btn-cancel:hover{background:var(--bg)}
+@keyframes fadeInFast{from{opacity:0}to{opacity:1}}
+@keyframes popIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@media(max-width:480px){
+  .imod-card{padding:26px 20px}
+  .imod-title{font-size:20px}
+  .imod-desc{font-size:14px}
+  .imod-btn{min-width:unset;flex:1;padding:12px 16px;font-size:13px}
+}
 
 /* MOBILE */
 @media(max-width:768px){
@@ -594,7 +624,7 @@ tr:hover td{background:var(--bg3)}
 <path fill="#ED1C24" d="M323.35,202.1h179.24c.35,11.27,1.25,22.37.92,33.42-.59,20.45-5,40.16-13.11,59.02-1.45,3.38-3.16,4.75-6.96,4.71-20.31-.19-40.62-.09-60.93-.1-1.6,0-3.19-.16-5.52-.28,9.2-12.07,15.72-24.57,19.08-39.35-2.63,0-4.59,0-6.56,0-24.64,0-49.27-.02-73.91.03-2.64,0-4.57-.25-5.96-3.13-8.36-17.37-16.94-34.64-25.44-51.94-.28-.58-.45-1.21-.87-2.38Z"/>
 </svg>
 <span class="hub-badge">HUB</span>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono);letter-spacing:.5px;margin-left:auto">v0.13.1</span>
+<span class="ver-badge ver-badge-sidebar" id="ver-badge-sb">v—</span>
 </div>
 <nav class="sb-nav" id="sb-nav"></nav>
 <div class="sb-user" style="cursor:pointer" onclick="nav('profile')" title="Meu Perfil">
@@ -617,7 +647,7 @@ tr:hover td{background:var(--bg3)}
 </button>
 <span id="pg-title">Timer</span>
 </div>
-<span style="font-size:9px;font-weight:700;color:var(--txt3);font-family:var(--mono)">v0.13.1</span>
+<span class="ver-badge ver-badge-topbar" id="ver-badge-tb">v—</span>
 <span class="topbar-date" id="cur-date"></span>
 </div>
 <div class="content" id="pg"></div>
@@ -654,6 +684,11 @@ const HDR_R={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 const ACTIONS=['Análise Estratégica','Reunião','Digital Comm','Design Gráfico','Webdesign','Apresentação','Embalagem','Branding','Campanha/Tráfego','Produção AV','Evento','Brand Review','ADM'];
 const PROD_TYPES={fee_prod:'Fee Prod',extra_prod:'Extra Prod',single_project:'Single Project',package:'Pacote'};
 const AV_STATUSES={draft:'Rascunho',pending_leader_review:'Aguardando Líder',leader_reviewing:'Líder Analisando',budget_sent:'Orçamento Enviado',account_approved:'Aprovado',account_rejected:'Rejeitado',scheduled:'Agendado',in_capture:'Em Captação',in_edit:'Em Edição',in_review:'Em Revisão',delivered:'Entregue',cancelled:'Cancelado'};
+
+// ═══════════════════════════════════════════════
+// VERSÃO
+// ═══════════════════════════════════════════════
+const HUB_VERSION='0.15';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -799,6 +834,10 @@ async function doLogout(){
 // ═══════════════════════════════════════════════
 async function initApp(){
   $('auth-screen').style.display='none';$('app').style.display='block';
+  // Injeta versão nos badges de topo
+  const vLabel='v'+HUB_VERSION;
+  const vSb=$('ver-badge-sb');if(vSb)vSb.textContent=vLabel;
+  const vTb=$('ver-badge-tb');if(vTb)vTb.textContent=vLabel;
   $('u-name').textContent=S.user.name.split(' ')[0];
   $('u-role').textContent=S.user.job_title||S.user.access_level;
   $('u-av').textContent=S.user.name.charAt(0);
@@ -812,7 +851,7 @@ async function initApp(){
   // Check running timer
   if(!isCli()){
     const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
-    if(re){running=true;timerStart=new Date(re.started_at);activeEntryId=re.id}
+    if(re){running=true;timerStart=new Date(re.started_at);activeEntryId=re.id;startActivityTracking()}
   }
 }
 
@@ -921,6 +960,10 @@ function buildNav(){
   if(isA()){
     h+=`<div class="sb-item" data-p="d-finance" onclick="nav('d-finance')">${ICONS.money} Financeiro</div>`;
   }
+  if(isA()||isAcc()){
+    const autoCount=S.entries.filter(e=>e.auto_closed).length;
+    h+=`<div class="sb-item" data-p="d-audit" onclick="nav('d-audit')">${ICONS.members} Auditoria${autoCount?` <span class="sb-badge">${autoCount}</span>`:''}</div>`;
+  }
   
   // PROD section — admin, account, prod_leader
   if(canSeeProdAV()){
@@ -977,7 +1020,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-audit':'Auditoria','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM',members:'Membros',clients:'Clientes',profile:'Meu Perfil'};
 
 function nav(page){
   curPage=page;
@@ -998,7 +1041,7 @@ async function renderPage(){
   try{
     const pages={
       timer:pgTimer,entries:pgEntries,
-      'd-my':pgDashMy,'d-adm':pgDashAdm,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,
+      'd-my':pgDashMy,'d-adm':pgDashAdm,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,'d-audit':pgAudit,
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
       extras:pgExtras,'extras-hist':pgExtrasHist,
@@ -1081,14 +1124,192 @@ async function pgTimer(el){
   if(running&&timerStart)updClock();
 }
 
+// ═══════════════════════════════════════════════
+// TIMER ANTI-FRAUDE + 1-POR-PESSOA
+// ═══════════════════════════════════════════════
+let lastActivityLocal=Date.now();
+let activityInterval=null;
+let autoStopTimeout=null;
+let warningModalOpen=false;
+const ACTIVITY_EVENTS=['mousemove','mousedown','keydown','scroll','touchstart'];
+const INACTIVITY_WARN_MS=50*60*1000;   // 50 min → mostra aviso
+const WARN_RESPONSE_MS=3*60*1000;       // 3 min pra responder
+const MAX_ENTRY_MS=90*60*1000;          // 1h30 — limite absoluto se deixar rodando após o aviso
+
+function onUserActivity(){
+  lastActivityLocal=Date.now();
+  // Se aviso tava aberto, fecha (usuário voltou)
+  if(warningModalOpen){
+    closeInactivityWarning();
+    // Ping server
+    if(activeEntryId){
+      sbPatch('tt_time_entries',`id=eq.${activeEntryId}`,{last_activity_at:new Date().toISOString()}).catch(()=>{});
+    }
+  }
+}
+
+function startActivityTracking(){
+  stopActivityTracking();
+  lastActivityLocal=Date.now();
+  ACTIVITY_EVENTS.forEach(ev=>window.addEventListener(ev,onUserActivity,{passive:true}));
+  // Check every 60s if inactivity crossed threshold
+  activityInterval=setInterval(checkInactivity,60*1000);
+}
+
+function stopActivityTracking(){
+  if(activityInterval){clearInterval(activityInterval);activityInterval=null}
+  if(autoStopTimeout){clearTimeout(autoStopTimeout);autoStopTimeout=null}
+  ACTIVITY_EVENTS.forEach(ev=>window.removeEventListener(ev,onUserActivity));
+  closeInactivityWarning();
+}
+
+function checkInactivity(){
+  if(!running||!activeEntryId)return;
+  const idleMs=Date.now()-lastActivityLocal;
+  if(idleMs>=INACTIVITY_WARN_MS&&!warningModalOpen){
+    showInactivityWarning();
+  }
+}
+
+function showInactivityWarning(){
+  warningModalOpen=true;
+  const el=document.createElement('div');
+  el.id='inactivity-modal';
+  el.className='imod-backdrop';
+  el.innerHTML=`
+    <div class="imod-card">
+      <div class="imod-icon">⏱</div>
+      <h2 class="imod-title">Ainda está trabalhando?</h2>
+      <p class="imod-desc">Seu timer está rodando há muito tempo sem atividade no computador.<br><br>Se você não responder em <b>3 minutos</b>, o timer vai parar automaticamente.</p>
+      <div class="imod-actions">
+        <button class="imod-btn imod-btn-stop" onclick="inactivityStopNow()">Parar agora</button>
+        <button class="imod-btn imod-btn-keep" onclick="inactivityKeepGoing()">Sim, continuar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(el);
+  // Auto-stop after 3 min if no response
+  autoStopTimeout=setTimeout(()=>autoCloseTimer('inactivity_1h'),WARN_RESPONSE_MS);
+}
+
+function closeInactivityWarning(){
+  warningModalOpen=false;
+  if(autoStopTimeout){clearTimeout(autoStopTimeout);autoStopTimeout=null}
+  const el=document.getElementById('inactivity-modal');
+  if(el)el.remove();
+}
+
+async function inactivityKeepGoing(){
+  lastActivityLocal=Date.now();
+  closeInactivityWarning();
+  if(activeEntryId){
+    try{await sbPatch('tt_time_entries',`id=eq.${activeEntryId}`,{last_activity_at:new Date().toISOString()})}catch(e){}
+  }
+  toast('Ok, continuando!');
+}
+
+async function inactivityStopNow(){
+  closeInactivityWarning();
+  await stopTimer();
+}
+
+async function autoCloseTimer(reason){
+  if(!activeEntryId)return;
+  try{
+    const entry=S.entries.find(e=>e.id===activeEntryId);
+    // Grava ended_at = started_at + 30 minutos (conforme definido pelo João)
+    let endedAt=new Date();
+    if(entry&&entry.started_at){
+      endedAt=new Date(new Date(entry.started_at).getTime()+30*60*1000);
+    }
+    const mondayItemId=entry?.monday_item_id;
+    const mondayBoardId=entry?.monday_board_id;
+    
+    await sbPatch('tt_time_entries',`id=eq.${activeEntryId}`,{
+      is_running:false,
+      ended_at:endedAt.toISOString(),
+      auto_closed:true,
+      auto_close_reason:reason
+    });
+    running=false;timerStart=null;activeEntryId=null;timerSec=0;
+    stopActivityTracking();
+    closeInactivityWarning();
+    await loadEntries();
+    
+    // Monday sync
+    if(mondayItemId&&mondayBoardId){
+      const othersRunning=S.entries.filter(e=>e.is_running&&e.monday_item_id===mondayItemId);
+      if(othersRunning.length===0){
+        const board=MONDAY_TIMER_BOARDS.find(b=>b.board_id===mondayBoardId);
+        if(board){
+          try{
+            const mutQ=`mutation{change_simple_column_value(board_id:${board.board_id},item_id:${mondayItemId},column_id:"${board.timer_col}",value:"Parado"){id}}`;
+            await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
+          }catch(e){}
+        }
+      }
+    }
+    
+    // Mostra aviso permanente ao usuário
+    alert('⏱ Seu timer foi parado automaticamente por inatividade.\n\nForam registrados 30 minutos nesta sessão.\n\nSe você estava trabalhando, lembre-se de clicar em "Sim, continuar" quando aparecer o aviso.');
+    buildNav();
+    if(curPage==='timer'||curPage==='qc')nav(curPage);
+  }catch(e){console.error('autoClose failed:',e)}
+}
+
+// confirmDialog helper — promise-based modal
+function confirmDialog(title,html,okText,cancelText){
+  return new Promise(resolve=>{
+    const el=document.createElement('div');
+    el.className='imod-backdrop';
+    el.innerHTML=`
+      <div class="imod-card">
+        <h2 class="imod-title">${title}</h2>
+        <p class="imod-desc">${html}</p>
+        <div class="imod-actions">
+          <button class="imod-btn imod-btn-cancel" id="cd-cancel">${cancelText||'Cancelar'}</button>
+          <button class="imod-btn imod-btn-ok" id="cd-ok">${okText||'Confirmar'}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(el);
+    el.querySelector('#cd-ok').onclick=()=>{el.remove();resolve(true)};
+    el.querySelector('#cd-cancel').onclick=()=>{el.remove();resolve(false)};
+  });
+}
+
 async function startTimer(){
   const client=$('t-client')?.value,action=$('t-action')?.value,desc=$('t-desc')?.value||'';
   if(!client){toast('Selecione um cliente','error');return}
+  
+  // PONTO 2: Check if user already has a running timer
+  const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+  if(existing){
+    const cli=S.clients.find(c=>c.id===existing.client_id);
+    const cliName=cli?cli.name:'outro projeto';
+    const mins=Math.floor((Date.now()-new Date(existing.started_at).getTime())/60000);
+    const hrs=Math.floor(mins/60);const mn=mins%60;
+    const duration=hrs>0?`${hrs}h${String(mn).padStart(2,'0')}`:`${mn} min`;
+    const confirmed=await confirmDialog(
+      'Timer já ativo',
+      `Você já está rodando no projeto <b>${cliName}</b> há <b>${duration}</b>.<br><br>Deseja parar aquele e iniciar este novo?`,
+      'Sim, trocar',
+      'Cancelar'
+    );
+    if(!confirmed)return;
+    // Stop the previous one before starting new
+    activeEntryId=existing.id;
+    await stopTimer(true); // silent mode
+  }
+  
   try{
-    const data={member_id:S.user.id,client_id:client,action:action||null,description:desc,started_at:new Date().toISOString(),is_running:true};
+    const now=new Date().toISOString();
+    const data={member_id:S.user.id,client_id:client,action:action||null,description:desc,started_at:now,is_running:true,last_activity_at:now};
     const res=await sbPost('tt_time_entries',data);
     activeEntryId=res[0].id;timerStart=new Date();running=true;timerSec=0;
+    lastActivityLocal=Date.now();
     toast('Timer iniciado');nav('timer');
+    startActivityTracking();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
@@ -1120,7 +1341,7 @@ async function mondayStopTimers(boardId,timerCol){
   }catch(e){}
 }
 
-async function stopTimer(){
+async function stopTimer(silent){
   if(!activeEntryId)return;
   try{
     const ended=new Date().toISOString();
@@ -1131,6 +1352,7 @@ async function stopTimer(){
     // Close my entry in Supabase
     await sbPatch('tt_time_entries',`id=eq.${activeEntryId}`,{is_running:false,ended_at:ended});
     running=false;timerStart=null;activeEntryId=null;timerSec=0;
+    stopActivityTracking();
     
     // Reload entries to check who else is still running
     await loadEntries();
@@ -1149,19 +1371,21 @@ async function stopTimer(){
             await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
           }catch(e){console.error('Monday sync failed:',e)}
         }
-        toast('Timer parado');
+        if(!silent)toast('Timer parado');
       }else{
         // Others still running → keep Monday as "Rodando", educate the user
         const names=othersRunning.map(e=>{const m=S.members.find(mm=>mm.id===e.member_id);return m?m.name.split(' ')[0]:'alguém'});
-        toast(`Você parou, mas ${names.join(', ')} ${names.length>1?'ainda estão':'ainda está'} rodando neste item`,'success');
+        if(!silent)toast(`Você parou, mas ${names.join(', ')} ${names.length>1?'ainda estão':'ainda está'} rodando neste item`,'success');
       }
     }else{
-      toast('Timer parado');
+      if(!silent)toast('Timer parado');
     }
     
     buildNav();
-    if(curPage==='qc') renderPage();
-    else nav('timer');
+    if(!silent){
+      if(curPage==='qc') renderPage();
+      else nav('timer');
+    }
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
@@ -1467,6 +1691,117 @@ async function pgDashFinance(el){
     <tbody>${cls.map(c=>{const m=c.fee-c.cost,mp=c.fee>0?(m/c.fee)*100:(c.cost>0?-100:0);return`<tr><td style="font-weight:600">${c.name}</td><td><span class="bg ${TBC(c.team)}">${TB(c.team)}</span></td><td class="rt">${c.fee>0?fMoney(c.fee):'—'}</td><td class="rt" style="font-family:var(--mono)">${fH(c.hours)}</td><td class="rt">${fMoney(c.cost)}</td><td class="rt" style="font-weight:700;color:${m>=0?'var(--prod)':'var(--red)'}">${fMoney(m)}</td><td class="rt" style="color:${mp>=0?'var(--prod)':'var(--red)'}">${mp.toFixed(0)}%</td></tr>`}).join('')}
     <tr style="font-weight:800;background:var(--bg3)"><td colspan="2">TOTAL</td><td class="rt">${fMoney(tRev)}</td><td class="rt">${fH(tHrs)}</td><td class="rt">${fMoney(tCost)}</td><td class="rt" style="color:${tMar>=0?'var(--prod)':'var(--red)'}">${fMoney(tMar)}</td><td class="rt">${tRev>0?(tMar/tRev*100).toFixed(0):0}%</td></tr>
     </tbody></table></div></div>`;
+}
+
+// ═══════════════════════════════════════════════
+// AUDITORIA — Timers auto-fechados + suspeitos
+// ═══════════════════════════════════════════════
+async function pgAudit(el){
+  if(!(isA()||isAcc())){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  
+  // Carrega entries auto-fechados dos últimos 30 dias
+  const since=new Date(Date.now()-30*86400000).toISOString();
+  let autoClosed=[];
+  try{
+    autoClosed=await sbGet('tt_time_entries',`auto_closed=eq.true&started_at=gte.${since}&order=started_at.desc`);
+  }catch(e){autoClosed=[]}
+  
+  // Agrupa por membro
+  const byMember={};
+  autoClosed.forEach(e=>{
+    const mid=e.member_id;
+    if(!byMember[mid])byMember[mid]={member_id:mid,entries:[],totalHours:0};
+    byMember[mid].entries.push(e);
+    byMember[mid].totalHours+=Number(e.hours||0);
+  });
+  
+  // Filtra por time se account
+  let memberIds=Object.keys(byMember);
+  if(isAcc()&&!isA()){
+    memberIds=memberIds.filter(mid=>{
+      const m=S.members.find(mm=>mm.id===mid);
+      return m&&m.team===S.user.team;
+    });
+  }
+  
+  const ranking=memberIds.map(mid=>{
+    const m=S.members.find(mm=>mm.id===mid);
+    return{
+      member_id:mid,
+      name:m?m.name:'—',
+      team:m?m.team:'',
+      count:byMember[mid].entries.length,
+      hours:byMember[mid].totalHours,
+      entries:byMember[mid].entries
+    };
+  }).sort((a,b)=>b.count-a.count);
+  
+  const totalCount=ranking.reduce((s,r)=>s+r.count,0);
+  const totalHours=ranking.reduce((s,r)=>s+r.hours,0);
+  const uniqueUsers=ranking.length;
+  
+  // Entries recentes (tabela)
+  const recent=autoClosed.filter(e=>{
+    if(isA())return true;
+    const m=S.members.find(mm=>mm.id===e.member_id);
+    return m&&m.team===S.user.team;
+  }).slice(0,50);
+  
+  el.innerHTML=`
+    <div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.25);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
+      <div style="font-size:22px">⚠️</div>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:var(--red)">Timers parados automaticamente por inatividade</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:2px">O sistema pergunta "ainda está trabalhando?" após 50min sem atividade no computador. Se a pessoa não responder em 3min, o timer é parado e registra 30min na sessão. Esta página mostra quem teve timers parados assim nos últimos 30 dias.</div>
+      </div>
+    </div>
+    
+    <div class="cards">
+      <div class="card"><div class="cl">Total de Auto-stops (30d)</div><div class="cv">${totalCount}</div></div>
+      <div class="card card-blue"><div class="cl">Pessoas Afetadas</div><div class="cv">${uniqueUsers}</div></div>
+      <div class="card" style="--c:var(--red)"><div class="cl">Horas Registradas</div><div class="cv">${fH(totalHours)}</div><div class="cs">soma dos 30min gravados por auto-stop</div></div>
+    </div>
+    
+    ${ranking.length?`
+    <div class="tbl"><div class="tbl-h"><h3>Ranking por Pessoa</h3><span class="bg-section-sub">Quantas vezes cada pessoa teve auto-stop nos últimos 30 dias</span></div>
+    <div class="tbl-r"><table><thead><tr><th>Pessoa</th><th>Time</th><th class="rt">Ocorrências</th><th class="rt">Horas auto-fechadas</th><th>Risco</th></tr></thead>
+    <tbody>
+    ${ranking.map(r=>{
+      const risk=r.count>=5?{label:'ALTO',color:'var(--red)'}:r.count>=2?{label:'MÉDIO',color:'var(--pack)'}:{label:'BAIXO',color:'var(--prod)'};
+      return`<tr>
+        <td style="font-weight:600">${r.name}</td>
+        <td>${r.team?`<span class="bg ${TBC(r.team)}">${TB(r.team)}</span>`:'—'}</td>
+        <td class="rt" style="font-weight:700;font-family:var(--mono);color:${risk.color}">${r.count}</td>
+        <td class="rt" style="font-family:var(--mono)">${fH(r.hours)}</td>
+        <td><span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;background:${risk.color}22;color:${risk.color}">${risk.label}</span></td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div></div>
+    `:'<div class="empty">Nenhum timer auto-fechado nos últimos 30 dias 🎉</div>'}
+    
+    ${recent.length?`
+    <div class="tbl" style="margin-top:24px"><div class="tbl-h"><h3>Ocorrências Recentes</h3><span class="bg-section-sub">${recent.length} últimas (de ${autoClosed.length} totais)</span></div>
+    <div class="tbl-r"><table><thead><tr><th>Data/Hora</th><th>Pessoa</th><th>Cliente</th><th>Descrição</th><th class="rt">Duração</th><th>Motivo</th></tr></thead>
+    <tbody>
+    ${recent.map(e=>{
+      const m=S.members.find(mm=>mm.id===e.member_id);
+      const c=S.clients.find(cc=>cc.id===e.client_id);
+      const startedAt=new Date(e.started_at);
+      const dateStr=startedAt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+startedAt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+      const reasonMap={'inactivity_1h':'Sem atividade 50min+3min'};
+      const reasonLabel=reasonMap[e.auto_close_reason]||e.auto_close_reason||'—';
+      return`<tr>
+        <td style="font-family:var(--mono);font-size:11px">${dateStr}</td>
+        <td style="font-weight:600">${m?m.name:'—'}</td>
+        <td>${c?c.name:'—'}</td>
+        <td style="color:var(--txt2);font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'—'}</td>
+        <td class="rt" style="font-family:var(--mono)">${fH(e.hours||0.5)}</td>
+        <td style="font-size:11px;color:var(--txt2)">${reasonLabel}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div></div>
+    `:''}
+  `;
 }
 
 // ═══════════════════════════════════════════════
