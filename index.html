@@ -688,7 +688,7 @@ const AV_STATUSES={draft:'Rascunho',pending_leader_review:'Aguardando Líder',le
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.20';
+const HUB_VERSION='0.21';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -1134,9 +1134,9 @@ let activityInterval=null;
 let autoStopTimeout=null;
 let warningModalOpen=false;
 const ACTIVITY_EVENTS=['mousemove','mousedown','keydown','scroll','touchstart'];
-const INACTIVITY_WARN_MS=50*60*1000;   // 50 min → mostra aviso
-const WARN_RESPONSE_MS=3*60*1000;       // 3 min pra responder
-const MAX_ENTRY_MS=90*60*1000;          // 1h30 — limite absoluto se deixar rodando após o aviso
+const INACTIVITY_WARN_MS=15*60*1000;   // 15 min sem atividade → mostra aviso
+const WARN_RESPONSE_MS=2*60*1000;       // 2 min pra responder → senão fecha
+const MAX_ENTRY_MS=4*60*60*1000;        // 4h — teto absoluto por entry (anti-esquecimento/fraude)
 
 function onUserActivity(){
   lastActivityLocal=Date.now();
@@ -1167,6 +1167,15 @@ function stopActivityTracking(){
 
 function checkInactivity(){
   if(!running||!activeEntryId)return;
+  // Teto absoluto: se entry passou de MAX_ENTRY_MS, fecha sem aviso
+  const entry=S.entries.find(e=>e.id===activeEntryId);
+  if(entry&&entry.started_at){
+    const entryAgeMs=Date.now()-new Date(entry.started_at).getTime();
+    if(entryAgeMs>=MAX_ENTRY_MS){
+      autoCloseTimer('max_duration_4h');
+      return;
+    }
+  }
   const idleMs=Date.now()-lastActivityLocal;
   if(idleMs>=INACTIVITY_WARN_MS&&!warningModalOpen){
     showInactivityWarning();
@@ -1182,7 +1191,7 @@ function showInactivityWarning(){
     <div class="imod-card">
       <div class="imod-icon">⏱</div>
       <h2 class="imod-title">Ainda está trabalhando?</h2>
-      <p class="imod-desc">Seu timer está rodando há muito tempo sem atividade no computador.<br><br>Se você não responder em <b>3 minutos</b>, o timer vai parar automaticamente.</p>
+      <p class="imod-desc">Seu timer está rodando há mais de 15 min sem atividade no computador.<br><br>Se você não responder em <b>2 minutos</b>, o timer vai parar automaticamente e <b>só será contado o tempo até a última atividade detectada</b>.</p>
       <div class="imod-actions">
         <button class="imod-btn imod-btn-stop" onclick="inactivityStopNow()">Parar agora</button>
         <button class="imod-btn imod-btn-keep" onclick="inactivityKeepGoing()">Sim, continuar</button>
@@ -1219,11 +1228,22 @@ async function autoCloseTimer(reason){
   if(!activeEntryId)return;
   try{
     const entry=S.entries.find(e=>e.id===activeEntryId);
-    // Grava ended_at = started_at + 30 minutos (conforme definido pelo João)
-    let endedAt=new Date();
-    if(entry&&entry.started_at){
-      endedAt=new Date(new Date(entry.started_at).getTime()+30*60*1000);
+    const startMs=entry?.started_at?new Date(entry.started_at).getTime():Date.now();
+    let endedAt;
+    
+    if(reason==='max_duration_4h'){
+      // Teto absoluto atingido — registra até MAX_ENTRY_MS após o início
+      endedAt=new Date(startMs+MAX_ENTRY_MS);
+    }else{
+      // Inatividade — registra apenas até a última atividade detectada
+      // lastActivityLocal está em ms (Date.now base)
+      endedAt=new Date(lastActivityLocal);
+      // Salvaguarda: se algum erro, no mínimo 1 minuto
+      if(endedAt.getTime()<startMs+60000){
+        endedAt=new Date(startMs+60000);
+      }
     }
+    
     const mondayItemId=entry?.monday_item_id;
     const mondayBoardId=entry?.monday_board_id;
     
@@ -1247,7 +1267,11 @@ async function autoCloseTimer(reason){
     }
     
     // Mostra aviso permanente ao usuário
-    alert('⏱ Seu timer foi parado automaticamente por inatividade.\n\nForam registrados 30 minutos nesta sessão.\n\nSe você estava trabalhando, lembre-se de clicar em "Sim, continuar" quando aparecer o aviso.');
+    const minutosContados=Math.round((endedAt.getTime()-startMs)/60000);
+    const motivoTxt=reason==='max_duration_4h'
+      ?`limite máximo de 4h por entry atingido. Foram registradas ${minutosContados} min.`
+      :`inatividade. Foram registrados ${minutosContados} min até a última atividade detectada.`;
+    alert('⏱ Seu timer foi parado automaticamente: '+motivoTxt+'\n\nSe você estava trabalhando ativamente, lembre-se de responder ao aviso "Ainda está trabalhando?" quando ele aparecer.');
     buildNav();
     if(curPage==='timer'||curPage==='qc')nav(curPage);
   }catch(e){console.error('autoClose failed:',e)}
@@ -1444,12 +1468,104 @@ async function pgEntries(el){
   el.innerHTML=datePillsHTML()+`
     <div class="tbl"><div class="tbl-h"><h3>Lançamentos (${myE.length})</h3><button class="btn btn-r btn-sm" onclick="showManualEntry()">${ICONS.plus} Lançar</button></div>
     <div class="tbl-r"><table><thead><tr>${isA()?'<th>Pessoa</th>':''}<th>Descrição</th><th>Cliente</th><th>Ação</th><th class="rt">Horas</th><th>Data</th><th></th></tr></thead>
-    <tbody>${myE.map(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const m=S.members.find(mm=>mm.id===e.member_id);return`<tr>${isA()?`<td style="font-weight:600">${m?m.name.split(' ')[0]:'—'}</td>`:''}<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${e.description||'—'}</td><td>${c?c.name:'—'}</td><td>${e.action||'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${e.hours?fH(e.hours):'—'}</td><td>${fD(e.started_at?.substring(0,10))}</td><td><button class="btn-icon btn-del" onclick="delEntry('${e.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento no período</td></tr>'}</tbody></table></div></div>`;
+    <tbody>${myE.map(e=>{
+      const c=S.clients.find(cl=>cl.id===e.client_id);
+      const m=S.members.find(mm=>mm.id===e.member_id);
+      const autoBadge=e.auto_closed?` <span title="Encerrado automaticamente: ${e.auto_close_reason||'inatividade'}" style="display:inline-block;padding:2px 6px;border-radius:4px;background:rgba(237,28,36,.12);color:var(--red);font-size:10px;font-weight:700;font-family:var(--mono);vertical-align:middle">AUTO</span>`:'';
+      const editBtn=isA()?`<button class="btn-icon" title="Editar" onclick="editEntry('${e.id}')" style="margin-right:4px;color:var(--txt2)"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`:'';
+      return`<tr>${isA()?`<td style="font-weight:600">${m?m.name.split(' ')[0]:'—'}</td>`:''}<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${e.description||'—'}${autoBadge}</td><td>${c?c.name:'—'}</td><td>${e.action||'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${e.hours?fH(e.hours):'—'}</td><td>${fD(e.started_at?.substring(0,10))}</td><td style="white-space:nowrap">${editBtn}<button class="btn-icon btn-del" title="Excluir" onclick="delEntry('${e.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></td></tr>`;
+    }).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento no período</td></tr>'}</tbody></table></div></div>`;
 }
 
 async function delEntry(id){
   if(!confirm('Excluir este lançamento?'))return;
   try{await sbDel('tt_time_entries',`id=eq.${id}`);await loadEntries();toast('Excluído');renderPage()}catch(e){toast('Erro','error')}
+}
+
+// ═══════════════════════════════════════════════
+// EDIÇÃO DE ENTRY (admin only) — ajuste retroativo
+// ═══════════════════════════════════════════════
+let editingEntryId=null;
+function editEntry(id){
+  if(!isA()){toast('Apenas admin pode editar lançamentos','error');return}
+  const e=S.entries.find(x=>x.id===id);
+  if(!e){toast('Lançamento não encontrado','error');return}
+  editingEntryId=id;
+  const startISO=e.started_at?new Date(e.started_at):new Date();
+  const endISO=e.ended_at?new Date(e.ended_at):new Date();
+  // Local datetime (YYYY-MM-DDTHH:mm) sem timezone
+  const toLocal=d=>{
+    const off=d.getTimezoneOffset()*60000;
+    return new Date(d.getTime()-off).toISOString().slice(0,16);
+  };
+  $('m-entry-title').textContent='Editar Lançamento';
+  $('m-entry-body').innerHTML=`
+    <div style="background:rgba(237,28,36,.06);border:1px solid rgba(237,28,36,.2);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--txt2)">
+      <b style="color:var(--red)">Modo administrador</b> — você está editando um lançamento existente. Toda alteração fica registrada.
+    </div>
+    <div class="f-field"><label class="f-label">Descrição</label><input class="f-input" id="ee-desc" value="${(e.description||'').replace(/"/g,'&quot;')}"></div>
+    <div class="f-row">
+      <div class="f-field"><label class="f-label">Cliente</label><select class="f-sel" id="ee-client">${S.clients.map(c=>`<option value="${c.id}" ${c.id===e.client_id?'selected':''}>${c.name}</option>`).join('')}</select></div>
+      <div class="f-field"><label class="f-label">Ação</label><select class="f-sel" id="ee-action"><option value="">—</option>${ACTIONS.map(a=>`<option value="${a}" ${a===e.action?'selected':''}>${a}</option>`).join('')}</select></div>
+    </div>
+    <div class="f-field"><label class="f-label">Pessoa</label><select class="f-sel" id="ee-member">${S.members.map(m=>`<option value="${m.id}" ${m.id===e.member_id?'selected':''}>${m.name}</option>`).join('')}</select></div>
+    <div class="f-row">
+      <div class="f-field"><label class="f-label">Início</label><input class="f-input" type="datetime-local" id="ee-start" value="${toLocal(startISO)}" oninput="recalcEditHours()"></div>
+      <div class="f-field"><label class="f-label">Fim</label><input class="f-input" type="datetime-local" id="ee-end" value="${toLocal(endISO)}" oninput="recalcEditHours()"></div>
+    </div>
+    <div class="f-row">
+      <div class="f-field"><label class="f-label">Horas <span style="font-size:10px;color:var(--txt3);font-weight:400">(calculado automaticamente, mas editável)</span></label><input class="f-input" type="number" id="ee-hours" step="any" min="0" value="${e.hours||0}"></div>
+      <div class="f-field"><label class="f-label">Data <span style="font-size:10px;color:var(--txt3);font-weight:400">(do lançamento)</span></label><input class="f-input" type="date" id="ee-date" value="${e.date||(e.started_at||'').substring(0,10)}"></div>
+    </div>
+    ${e.auto_closed?`<div style="font-size:11px;color:var(--txt3);margin-top:6px">Marcado como AUTO (motivo: ${e.auto_close_reason||'—'}). Editar valores não remove a marcação automática.</div>`:''}
+  `;
+  $('m-entry-save').onclick=saveEditEntry;
+  openM('m-entry');
+}
+
+// Ao mudar início/fim, recalcula automaticamente o campo horas
+function recalcEditHours(){
+  const s=$('ee-start')?.value, e=$('ee-end')?.value;
+  if(!s||!e)return;
+  const ms=new Date(e).getTime()-new Date(s).getTime();
+  if(ms<=0||isNaN(ms))return;
+  const h=ms/3600000;
+  const fld=$('ee-hours');
+  if(fld) fld.value=Math.round(h*100)/100;
+}
+
+async function saveEditEntry(){
+  if(!editingEntryId)return;
+  const desc=$('ee-desc')?.value||'';
+  const client=$('ee-client')?.value;
+  const action=$('ee-action')?.value||null;
+  const memberId=$('ee-member')?.value;
+  const startStr=$('ee-start')?.value;
+  const endStr=$('ee-end')?.value;
+  const hours=parseFloat($('ee-hours')?.value);
+  const date=$('ee-date')?.value;
+  if(!startStr||!endStr||!client||!memberId){toast('Início, fim, cliente e pessoa são obrigatórios','error');return}
+  const start=new Date(startStr), end=new Date(endStr);
+  if(end<=start){toast('O horário de fim precisa ser depois do início','error');return}
+  if(isNaN(hours)||hours<=0){toast('Horas inválidas','error');return}
+  try{
+    await sbPatch('tt_time_entries',`id=eq.${editingEntryId}`,{
+      description:desc,
+      client_id:client,
+      action:action,
+      member_id:memberId,
+      started_at:start.toISOString(),
+      ended_at:end.toISOString(),
+      hours:hours,
+      duration_minutes:Math.round(hours*60),
+      date:date||start.toISOString().substring(0,10)
+    });
+    closeM('m-entry');
+    editingEntryId=null;
+    await loadEntries();
+    toast('Lançamento atualizado');
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
 }
 
 // ═══════════════════════════════════════════════
