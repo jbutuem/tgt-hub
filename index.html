@@ -688,7 +688,7 @@ const AV_STATUSES={draft:'Rascunho',pending_leader_review:'Aguardando Líder',le
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.17';
+const HUB_VERSION='0.18';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -1079,9 +1079,7 @@ function startTick(){clearInterval(timerInt);timerInt=setInterval(()=>{if(timerS
 function updClock(){const el=$('tclock');if(!el)return;if(!running||!timerStart){el.textContent='00:00:00';el.classList.remove('running');return}timerSec=(Date.now()-timerStart.getTime())/1000;const h=Math.floor(timerSec/3600),m=Math.floor((timerSec%3600)/60),s=Math.floor(timerSec%60);el.textContent=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;el.classList.add('running')}
 
 async function pgTimer(el){
-  // Kick reconcile Monday cards on timer page load + start interval
-  reconcileMondayTimers();
-  startReconcileLoop();
+  // (v0.18) reconcileMondayTimers removido — sync agora é feito direto pelo endpoint /api/monday-timer via webhook People column
   
   // Re-check running state from loaded entries
   const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
@@ -1240,17 +1238,11 @@ async function autoCloseTimer(reason){
     closeInactivityWarning();
     await loadEntries();
     
-    // Monday sync
+    // Monday sync v0.18 — remove o nome do user da People column
     if(mondayItemId&&mondayBoardId){
       const othersRunning=S.entries.filter(e=>e.is_running&&e.monday_item_id===mondayItemId);
       if(othersRunning.length===0){
-        const board=MONDAY_TIMER_BOARDS.find(b=>b.board_id===mondayBoardId);
-        if(board){
-          try{
-            const mutQ=`mutation{change_simple_column_value(board_id:${board.board_id},item_id:${mondayItemId},column_id:"${board.timer_col}",value:"Parado"){id}}`;
-            await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:mutQ})});
-          }catch(e){}
-        }
+        try{await hubTimerAction('stop',mondayBoardId,mondayItemId)}catch(e){}
       }
     }
     
@@ -1314,21 +1306,25 @@ async function startTimer(){
     lastActivityLocal=Date.now();
     toast('Timer iniciado');nav('timer');
     startActivityTracking();
-    // Dá tempo do Make processar (se houver), depois reconcilia Monday
-    setTimeout(()=>reconcileMondayTimers(),3000);
+    // (v0.18) reconcile removido — o sync Monday é via /api/monday-timer com People column
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
-// Board → Timer column mapping for Monday sync
-const MONDAY_TIMER_BOARDS=[
-  {board_id:'18401417952', timer_col:'color_mm2b5g4d', name:'NONO'},
-  {board_id:'4911397036', timer_col:'color_mm2cvezy', name:'LESAFFRE'},
-  {board_id:'5845978306', timer_col:'color_mm2c9c2f', name:'CELERA'},
-  {board_id:'18309098296', timer_col:'color_mm2asg65', name:'NOVONESIS'},
-  {board_id:'4911421503', timer_col:'color_mm2bn208', name:'BAPTISTELLA'},
-  {board_id:'8067947432', timer_col:'color_mm2bz077', name:'NOU'},
-  {board_id:'7033792227', timer_col:'color_mm2bc3be', name:'KERRY_RH'},
+// ═══════════════════════════════════════════════
+// MONDAY SYNC v0.18 — People column "Executando"
+// O Hub apenas chama o endpoint /api/hub-timer-action
+// que sincroniza a coluna People do card no Monday.
+// ═══════════════════════════════════════════════
+const MONDAY_BOARDS_PEOPLE=[
+  {board_id:'18401417952', exec_col:'multiple_person_mm31gyg0', name:'NONO'},
+  {board_id:'4911397036',  exec_col:'multiple_person_mm31vpmm', name:'LESAFFRE'},
+  {board_id:'5845978306',  exec_col:'multiple_person_mm31q5mx', name:'CELERA'},
+  {board_id:'18309098296', exec_col:'multiple_person_mm31e586', name:'NOVONESIS'},
+  {board_id:'4911421503',  exec_col:'multiple_person_mm31xq3y', name:'BAPTISTELLA'},
+  {board_id:'8067947432',  exec_col:'multiple_person_mm31syka', name:'NOU'},
+  {board_id:'7033792227',  exec_col:'multiple_person_mm318epv', name:'KERRY_RH'},
 ];
+
 // Board → Design Check column for QC (Painel Brand Guardian)
 const QC_BOARDS=[
   {board_id:'8067947432', dc_col:'color_mm2gh178', name:'NOU', client_id:'cf8d9c05-3778-4e2e-8da3-3ce58bddd8ff'},
@@ -1338,111 +1334,22 @@ const QC_BOARDS=[
 ];
 const MONDAY_API_TOKEN='eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzODU1NzY3OCwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwiaWFkIjoiMjAyNi0wMy0yN1QwOTo1Mzo0Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY4NjczMjAsInJnbiI6InVzZTEifQ.Rcm5SgNkiGizjRY_z1ECf7jCEGC2j_UGqtX2h_NkTAw';
 
-// Helper robusto pra mudar status do Timer no Monday com retry + check response
-async function mondaySetTimerStatus(boardId,itemId,timerCol,label,maxRetries=3){
-  const mutQ=`mutation{change_simple_column_value(board_id:${boardId},item_id:${itemId},column_id:"${timerCol}",value:"${label}"){id}}`;
-  for(let attempt=1;attempt<=maxRetries;attempt++){
-    try{
-      const r=await fetch('https://api.monday.com/v2',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},
-        body:JSON.stringify({query:mutQ})
-      });
-      const d=await r.json();
-      // Monday retorna 200 mesmo com erro — checar d.errors e d.error_code
-      if(d?.data?.change_simple_column_value?.id){
-        return true; // sucesso
-      }
-      // Rate limit ou erro temporário → retry
-      const errMsg=d?.errors?.[0]?.message||d?.error_message||'unknown';
-      const isRateLimit=d?.error_code==='ComplexityException'||errMsg.toLowerCase().includes('rate')||errMsg.toLowerCase().includes('complexity');
-      console.warn(`[Monday sync] Tentativa ${attempt}/${maxRetries} falhou pra item ${itemId}:`,errMsg);
-      if(attempt<maxRetries){
-        // Backoff: 400ms, 800ms, 1600ms (ou mais se rate limit)
-        await new Promise(res=>setTimeout(res,isRateLimit?1500*attempt:400*attempt));
-      }else{
-        console.error(`[Monday sync] Item ${itemId} falhou após ${maxRetries} tentativas`);
-        return false;
-      }
-    }catch(e){
-      console.warn(`[Monday sync] Tentativa ${attempt} erro de rede:`,e);
-      if(attempt<maxRetries){await new Promise(res=>setTimeout(res,400*attempt))}
-      else return false;
-    }
-  }
-  return false;
-}
-
-async function mondayStopTimers(boardId,timerCol){
+// Chama o endpoint Vercel pra sincronizar People column do Monday.
+// action: 'start' | 'stop'
+async function hubTimerAction(action,mondayBoardId,mondayItemId){
+  if(!mondayBoardId||!mondayItemId)return false;
+  const userMondayId=S.user?.monday_user_id;
+  if(!userMondayId){console.warn('[hubTimerAction] sem monday_user_id');return false}
   try{
-    const searchQ=`{items_page_by_column_values(board_id:${boardId},limit:50,columns:[{column_id:"${timerCol}",column_values:["Rodando"]}]){items{id name}}}`;
-    const searchR=await fetch('https://api.monday.com/v2',{method:'POST',headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},body:JSON.stringify({query:searchQ})});
-    const searchD=await searchR.json();
-    const items=searchD?.data?.items_page_by_column_values?.items||[];
-    for(const item of items){
-      await mondaySetTimerStatus(boardId,item.id,timerCol,'Parado');
-    }
-  }catch(e){}
-}
-
-// ═══════════════════════════════════════════════
-// RECONCILIAÇÃO MONDAY ↔ SUPABASE
-// Varre todos os 7 boards e desarma cards "Rodando" que não têm entry aberta no Supabase.
-// Roda ao entrar na página Timer, a cada 30s enquanto nela, e após startTimer().
-// ═══════════════════════════════════════════════
-let reconcileInt=null;
-let reconcileRunning=false;
-async function reconcileMondayTimers(){
-  if(reconcileRunning)return; // evita paralelismo
-  reconcileRunning=true;
-  try{
-    // 1. Pega TODOS os monday_item_id de entries atualmente rodando no Supabase
-    const runData=await sbGet('tt_time_entries','is_running=eq.true&monday_item_id=not.is.null&select=monday_item_id');
-    const activeIds=new Set((runData||[]).map(e=>String(e.monday_item_id)));
-    
-    // 2. Pra cada board configurado, busca os items Monday marcados como "Rodando"
-    //    Se o item não está em activeIds → desarma (Parado)
-    // GRACE PERIOD: só desarma cards que estão Rodando há >= 15s, pra evitar race
-    // com Make webhook que leva 1-2s pra criar a entry no Supabase.
-    const now=Date.now();
-    const GRACE_MS=15000;
-    await Promise.all(MONDAY_TIMER_BOARDS.map(async board=>{
-      try{
-        const searchQ=`{items_page_by_column_values(board_id:${board.board_id},limit:100,columns:[{column_id:"${board.timer_col}",column_values:["Rodando"]}]){items{id name column_values(ids:["${board.timer_col}"]){...on StatusValue{updated_at}}}}}`;
-        const r=await fetch('https://api.monday.com/v2',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','Authorization':MONDAY_API_TOKEN,'API-Version':'2024-10'},
-          body:JSON.stringify({query:searchQ})
-        });
-        const d=await r.json();
-        const items=d?.data?.items_page_by_column_values?.items||[];
-        const phantoms=items.filter(it=>{
-          if(activeIds.has(String(it.id)))return false; // tem entry → não é fantasma
-          const upd=it.column_values?.[0]?.updated_at;
-          if(!upd)return true; // sem timestamp → considera fantasma
-          const ageMs=now-new Date(upd).getTime();
-          return ageMs>=GRACE_MS; // só se passou grace period
-        });
-        for(const ph of phantoms){
-          console.log(`[reconcile] Desarmando card fantasma ${board.name}/${ph.name} (${ph.id})`);
-          await mondaySetTimerStatus(board.board_id,ph.id,board.timer_col,'Parado');
-        }
-      }catch(e){console.warn(`[reconcile] Board ${board.name} falhou:`,e)}
-    }));
-  }catch(e){
-    console.warn('[reconcile] erro:',e);
-  }finally{
-    reconcileRunning=false;
-  }
-}
-function startReconcileLoop(){
-  if(reconcileInt)return;
-  reconcileInt=setInterval(()=>{
-    if(curPage==='timer')reconcileMondayTimers();
-  },30000);
-}
-function stopReconcileLoop(){
-  if(reconcileInt){clearInterval(reconcileInt);reconcileInt=null}
+    const r=await fetch('/api/hub-timer-action',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action,monday_user_id:userMondayId,monday_board_id:mondayBoardId,monday_item_id:mondayItemId})
+    });
+    const d=await r.json();
+    if(!d?.ok){console.warn('[hubTimerAction] falhou:',d);return false}
+    return true;
+  }catch(e){console.warn('[hubTimerAction] erro:',e);return false}
 }
 
 async function stopTimer(silent){
@@ -1461,23 +1368,19 @@ async function stopTimer(silent){
     // Reload entries to check who else is still running
     await loadEntries();
     
-    // Monday sync — only if this entry had a monday_item_id
+    // Monday sync v0.18 — remove o nome do user da People column "Executando"
+    // (o endpoint /api/hub-timer-action mantém os outros usuários intactos)
     if(mondayItemId&&mondayBoardId){
-      // Count OTHER people still running on the same Monday item
-      const othersRunning=S.entries.filter(e=>e.is_running&&e.monday_item_id===mondayItemId&&e.member_id!==S.user.id);
+      const ok=await hubTimerAction('stop',mondayBoardId,mondayItemId);
       
-      if(othersRunning.length===0){
-        // I was the last one → set Monday to "Parado"
-        const board=MONDAY_TIMER_BOARDS.find(b=>b.board_id===mondayBoardId);
-        if(board){
-          const ok=await mondaySetTimerStatus(board.board_id,mondayItemId,board.timer_col,'Parado');
-          if(!ok&&!silent)toast('Timer parado no Hub, mas Monday não atualizou. Tente recarregar.','error');
-        }
-        if(!silent)toast('Timer parado');
-      }else{
-        // Others still running → keep Monday as "Rodando", educate the user
+      // Mensagens contextuais pra educar o usuário
+      const othersRunning=S.entries.filter(e=>e.is_running&&e.monday_item_id===mondayItemId&&e.member_id!==S.user.id);
+      if(othersRunning.length>0){
         const names=othersRunning.map(e=>{const m=S.members.find(mm=>mm.id===e.member_id);return m?m.name.split(' ')[0]:'alguém'});
         if(!silent)toast(`Você parou, mas ${names.join(', ')} ${names.length>1?'ainda estão':'ainda está'} rodando neste item`,'success');
+      }else{
+        if(!ok&&!silent)toast('Timer parado no Hub, mas Monday não atualizou. Tente recarregar.','error');
+        else if(!silent)toast('Timer parado');
       }
     }else{
       if(!silent)toast('Timer parado');
