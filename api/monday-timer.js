@@ -29,7 +29,7 @@ const BOARDS = {
   '5845978306':  { client_id: 'c8e04923-5dd6-47d6-a127-a8612d5168db', project: 'CELERA',           exec_col: 'multiple_person_mm31q5mx' },
   '18309098296': { client_id: '9e31fc4a-add1-435e-a5f4-dd38fcff8883', project: 'NOVONESIS',        exec_col: 'multiple_person_mm31e586' },
   '4911421503':  { client_id: 'd9145d77-cfea-4541-b0aa-578aae80b333', project: 'BAPTISTELLA',      exec_col: 'multiple_person_mm31xq3y' },
-  '7033792227':  { client_id: '97fdfab4-f2ac-4047-b0e0-77e819d3c842', project: 'KERRY_RH',         exec_col: 'multiple_person_mm318epv' },
+  '7033792227':  { client_id: 'cfbd966d-1251-4b03-a945-3361db21c804', project: 'KERRY_RH',         exec_col: 'multiple_person_mm318epv' },
   '4530656213':  { client_id: '97fdfab4-f2ac-4047-b0e0-77e819d3c842', project: 'KERRY_INST',       exec_col: 'multiple_person_mm31fa0a' },
   '4711581849':  { client_id: 'ab5288fe-aa84-45ec-9d25-c8f919c1f760', project: 'KERRY_BRANDS',     exec_col: 'multiple_person_mm319y9p' },
   '18395709707': { client_id: '75e66248-90db-4bda-9892-3bcd94fe7198', project: 'KERRY_HT',         exec_col: 'multiple_person_mm31q6g7' },
