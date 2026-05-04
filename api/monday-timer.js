@@ -44,6 +44,7 @@ const BOARDS = {
   '5382264448':  { client_id: 'd57a6097-0b2d-40af-a315-baffd933108d', project: 'PAO_DO_CAMBUI',    exec_col: 'multiple_person_mm31kfa4' },
   '9356397361':  { client_id: 'a2b750a1-c641-487d-94fa-52d7527393b9', project: 'UV_LINE',          exec_col: 'multiple_person_mm31yx0p' },
   '18395931952': { client_id: '48af097c-8487-4403-b0cb-49ae90488c7e', project: 'GAROA_PACKAGING',  exec_col: 'multiple_person_mm312gh7' },
+  '18411508578': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'ADM_TGT',          exec_col: 'multiple_person_mm31hm2w' },
 };
 
 const SB_HEADERS = {
