@@ -28,6 +28,20 @@ const BOARDS = {
   '18309098296': { exec_col: 'multiple_person_mm31e586' }, // NOVONESIS
   '4911421503':  { exec_col: 'multiple_person_mm31xq3y' }, // BAPTISTELLA
   '7033792227':  { exec_col: 'multiple_person_mm318epv' }, // KERRY RH
+  '4530656213':  { exec_col: 'multiple_person_mm31fa0a' }, // KERRY INST
+  '4711581849':  { exec_col: 'multiple_person_mm319y9p' }, // KERRY BRANDS
+  '18395709707': { exec_col: 'multiple_person_mm31q6g7' }, // KERRY H&T
+  '8824474984':  { exec_col: 'multiple_person_mm31b038' }, // KERRY PACKAGING
+  '6594719717':  { exec_col: 'multiple_person_mm31vjt7' }, // LESAFFRE PACKAGING
+  '18399575558': { exec_col: 'multiple_person_mm31sbfg' }, // ADM NUTRITION
+  '9356404232':  { exec_col: 'multiple_person_mm31cd11' }, // LLEV
+  '18387416550': { exec_col: 'multiple_person_mm312ny4' }, // DE MARCHI USA
+  '8938781105':  { exec_col: 'multiple_person_mm316v6q' }, // DE MARCHI BR
+  '4911473212':  { exec_col: 'multiple_person_mm31mjfe' }, // PRONUTRITION
+  '5378150325':  { exec_col: 'multiple_person_mm312c20' }, // GAMER HUT
+  '5382264448':  { exec_col: 'multiple_person_mm31kfa4' }, // PÃO DO CAMBUÍ
+  '9356397361':  { exec_col: 'multiple_person_mm31yx0p' }, // UV-LINE
+  '18395931952': { exec_col: 'multiple_person_mm312gh7' }, // GAROA PACKAGING
 };
 
 const MONDAY_HEADERS = {
