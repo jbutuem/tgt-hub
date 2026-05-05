@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
 --bg:#0a0a0a;--bg2:#141414;--bg3:#1e1e1e;--bg4:#282828;
@@ -716,7 +717,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.23';
+const HUB_VERSION='0.24';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -853,6 +854,7 @@ function togglePass(){
 }
 
 async function doLogout(){
+  stopRealtime();
   S.user=null;localStorage.removeItem('tgt_hub_user');
   $('app').style.display='none';$('auth-screen').style.display='flex';
 }
@@ -881,6 +883,8 @@ async function initApp(){
     const re=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
     if(re){running=true;timerStart=new Date(re.started_at);activeEntryId=re.id;startActivityTracking()}
   }
+  // Inicia Realtime — auto-refresh dos painéis sem precisar de F5
+  startRealtime();
 }
 
 async function loadData(){
@@ -934,6 +938,77 @@ async function loadEntries(){
       runningEntries.forEach(r=>{if(!S.entries.find(e=>e.id===r.id))S.entries.push(r)});
     }catch(e){}
   }
+}
+
+// ═══════════════════════════════════════════════
+// SUPABASE REALTIME — auto-refresh sem F5
+// Quando alguém inicia/para timer, edita ou apaga lançamento,
+// o Hub recebe via WebSocket e re-renderiza em <1s
+// ═══════════════════════════════════════════════
+let _rtClient=null;
+let _rtChannel=null;
+let _rtDebounce=null;
+
+function startRealtime(){
+  if(_rtChannel)return; // já ativo
+  if(typeof supabase==='undefined'||!supabase.createClient){
+    console.warn('[realtime] SDK Supabase não carregou');
+    return;
+  }
+  try{
+    _rtClient=supabase.createClient(
+      'https://opqivuzvyvvvajokutvc.supabase.co',
+      SB_KEY,
+      {realtime:{params:{eventsPerSecond:5}}}
+    );
+    _rtChannel=_rtClient.channel('tt_time_entries_changes')
+      .on('postgres_changes',{event:'*',schema:'public',table:'tt_time_entries'},(payload)=>{
+        handleRealtimeChange(payload);
+      })
+      .subscribe((status)=>{
+        if(status==='SUBSCRIBED')console.log('[realtime] ✓ conectado');
+        else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')console.warn('[realtime] erro:',status);
+      });
+  }catch(e){console.error('[realtime] erro setup:',e)}
+}
+
+function stopRealtime(){
+  if(_rtChannel){try{_rtChannel.unsubscribe()}catch(e){}_rtChannel=null}
+  if(_rtClient){try{_rtClient.removeAllChannels()}catch(e){}_rtClient=null}
+}
+
+function handleRealtimeChange(payload){
+  // payload: { eventType: 'INSERT'|'UPDATE'|'DELETE', new: {...}, old: {...} }
+  const ev=payload.eventType;
+  const row=payload.new||payload.old;
+  if(!row)return;
+  
+  // Filtro de escopo: usuário só recebe atualizações que ele tem permissão de ver
+  if(isCli()){
+    if(row.client_id!==S.user.client_id)return;
+  }else if(!isA()&&!isPL()&&!isAcc()){
+    // user comum: só vê o próprio
+    if(row.member_id!==S.user.id)return;
+  }
+  
+  // Atualiza S.entries em memória
+  if(ev==='INSERT'){
+    if(!S.entries.find(e=>e.id===row.id))S.entries.unshift(row);
+  }else if(ev==='UPDATE'){
+    const idx=S.entries.findIndex(e=>e.id===row.id);
+    if(idx>=0)S.entries[idx]=row;else S.entries.unshift(row);
+  }else if(ev==='DELETE'){
+    S.entries=S.entries.filter(e=>e.id!==row.id);
+  }
+  
+  // Debounce: várias mudanças em sequência → 1 render só
+  if(_rtDebounce)clearTimeout(_rtDebounce);
+  _rtDebounce=setTimeout(()=>{
+    // Não interrompe modal aberto
+    const modalOpen=document.querySelector('.modal.open');
+    if(modalOpen)return;
+    try{renderPage()}catch(e){console.error('[realtime] render:',e)}
+  },300);
 }
 
 // ═══════════════════════════════════════════════
