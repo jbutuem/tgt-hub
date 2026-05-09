@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{
 --bg:#0a0a0a;--bg2:#141414;--bg3:#1e1e1e;--bg4:#282828;
@@ -717,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.25';
+const HUB_VERSION='0.26';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -2091,29 +2092,29 @@ async function pgDashClient(el){
     </div>`:'';
   
   el.innerHTML=datePillsHTML()+scopeNote+activityHTML+`
-    <div class="tbl"><div class="tbl-h"><h3>Consumo por Cliente</h3></div>
+    <div class="tbl"><div class="tbl-h"><h3>Consumo por Cliente</h3><span style="font-size:11px;color:var(--txt3);font-weight:600">Clique numa linha para detalhar →</span></div>
     <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta</th><th class="rt">Consumido</th><th class="rt">%</th><th style="width:200px">Progresso</th></tr></thead>
-    <tbody>${cls.map(c=>{const pct=c.target>0?c.hours/c.target*100:0;const color=pct>100?'pbar-red':pct>80?'pbar-amber':'pbar-green';return`<tr><td style="font-weight:600">${c.name}</td><td><span class="bg ${TBC(c.team)}">${TB(c.team)}</span></td><td class="rt">${c.target?fH(c.target):'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(c.hours)}</td><td class="rt" style="font-weight:700;color:${pct>100?'var(--red)':pct>80?'var(--pack)':'var(--prod)'}">${pct.toFixed(0)}%</td><td><div class="pbar"><div class="pbar-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div></td></tr>`}).join('')||'<tr><td colspan="6" class="empty">Sem dados</td></tr>'}</tbody></table></div></div>`;
+    <tbody>${cls.map(c=>{
+      const pct=c.target>0?c.hours/c.target*100:0;
+      const color=pct>100?'pbar-red':pct>80?'pbar-amber':'pbar-green';
+      const colorTxt=pct>100?'var(--red)':pct>80?'var(--pack)':'var(--prod)';
+      const isExpanded=_expandedClient===c.id;
+      const rows=[`<tr onclick="toggleClient('${c.id}')" style="cursor:pointer;${isExpanded?'background:rgba(237,28,36,.08)':''}" onmouseover="if(!${isExpanded})this.style.background='rgba(237,28,36,.04)'" onmouseout="if(!${isExpanded})this.style.background=''">
+        <td style="font-weight:600"><span style="display:inline-block;margin-right:8px;color:var(--red);transform:${isExpanded?'rotate(90deg)':'rotate(0)'};transition:transform .15s">▶</span>${c.name}</td>
+        <td><span class="bg ${TBC(c.team)}">${TB(c.team)}</span></td>
+        <td class="rt">${c.target?fH(c.target):'—'}</td>
+        <td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(c.hours)}</td>
+        <td class="rt" style="font-weight:700;color:${colorTxt}">${pct.toFixed(0)}%</td>
+        <td><div class="pbar"><div class="pbar-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div></td>
+      </tr>`];
+      if(isExpanded)rows.push(renderClientDetail(c.id));
+      return rows.join('');
+    }).join('')||'<tr><td colspan="6" class="empty">Sem dados</td></tr>'}</tbody></table></div></div>`;
 }
 
-async function pgDashTeam(el){
-  if(!canSeeTeamData()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
-  const allTeams=['T1','T3','T4','T5','PROD','ADM'];
-  // Admin vê todos os times; account/prod_leader vê só o próprio
-  const teams=isA()?allTeams:[S.user.team];
-  const teamData=teams.map(t=>{
-    const ms=S.members.filter(m=>m.team===t);
-    const cap=ms.reduce((s,m)=>s+(m.capacity_hours||140),0);
-    const hrs=S.entries.filter(e=>!e.is_running&&ms.find(m=>m.id===e.member_id)).reduce((s,e)=>s+(e.hours||0),0);
-    return{team:t,members:ms.length,cap,hrs,pct:cap>0?hrs/cap*100:0};
-  }).filter(t=>t.members>0);
-  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seu time: ${S.user.team}</div>`:'';
-  
-  el.innerHTML=datePillsHTML()+scopeNote+`
-    <div class="cards">${teamData.map(t=>`<div class="card"><div class="cl">${TB(t.team)}</div><div class="cv">${fH(t.hrs)}</div><div class="pbar"><div class="pbar-fill ${t.pct>100?'pbar-red':t.pct>70?'pbar-amber':'pbar-blue'}" style="width:${Math.min(t.pct,100)}%"></div></div><div class="cs">${t.pct.toFixed(0)}% · ${t.members} pessoas · ${t.cap}h cap</div></div>`).join('')}</div>
-    <div class="tbl"><div class="tbl-h"><h3>Detalhamento por Time</h3></div>
-    <div class="tbl-r"><table><thead><tr><th>Time</th><th class="rt">Membros</th><th class="rt">Capacidade</th><th class="rt">Consumido</th><th class="rt">Utilização</th></tr></thead>
-    <tbody>${teamData.map(t=>`<tr><td style="font-weight:600"><span class="bg ${TBC(t.team)}">${TB(t.team)}</span></td><td class="rt">${t.members}</td><td class="rt">${fH(t.cap)}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(t.hrs)}</td><td class="rt" style="font-weight:700;color:${t.pct>100?'var(--red)':t.pct>70?'var(--pack)':'var(--prod)'}">${t.pct.toFixed(0)}%</td></tr>`).join('')}</tbody></table></div></div>`;
+// pgDashTeam antiga removida - agora está em bloco posterior, próximo aos detalhadores
+async function _pgDashTeam_OLD_REMOVED(el){
+  el.innerHTML='';return;
 }
 
 async function pgDashPerson(el){
@@ -2134,7 +2135,7 @@ async function pgDashPerson(el){
   const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seu time: ${S.user.team}</div>`:'';
 
   el.innerHTML=datePillsHTML()+scopeNote+`
-    <div class="tbl"><div class="tbl-h"><h3>Utilização Individual</h3></div>
+    <div class="tbl"><div class="tbl-h"><h3>Utilização Individual</h3><span style="font-size:11px;color:var(--txt3);font-weight:600">Clique numa linha para detalhar →</span></div>
     <div class="tbl-r"><table><thead><tr><th>Pessoa</th><th>Time</th><th>Trabalhando agora em</th><th class="rt">Cap</th><th class="rt">Horas</th><th class="rt">%</th><th style="width:140px">Status</th></tr></thead>
     <tbody>${personData.map(p=>{
       const color=p.pct>100?'var(--red)':p.pct>70?'var(--pack)':p.pct>30?'var(--prod)':'var(--txt3)';
@@ -2148,7 +2149,19 @@ async function pgDashPerson(el){
           :`<span style="display:inline-block;padding:1px 5px;border-radius:3px;background:rgba(157,157,156,.2);color:var(--txt2);font-size:9px;font-weight:700;margin-right:4px">HUB</span>`;
         workingCell=`<div style="font-size:12px;line-height:1.3"><div style="color:var(--txt3);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px">${c?c.name:'?'} · <span style="color:${elapsed>4?'var(--red)':'var(--prod)'};font-family:var(--mono)">${elapsed.toFixed(1)}h</span></div><div>${sourceBadge}${w.label}</div></div>`;
       }
-      return`<tr style="${p.isRunning?'background:rgba(237,28,36,.04)':''}"><td style="font-weight:600">${p.name.split(' ').slice(0,2).join(' ')}${p.isRunning?' <span style="color:var(--red);font-size:10px;display:inline-flex;align-items:center;gap:3px">●</span>':''}<div style="font-size:10px;color:var(--txt3)">${p.job_title||''}</div></td><td><span class="bg ${TBC(p.team)}">${TB(p.team)}</span></td><td style="max-width:280px;overflow:hidden">${workingCell}</td><td class="rt">${p.cap}h</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(p.hrs)}</td><td class="rt" style="font-weight:700;color:${color}">${p.pct.toFixed(0)}%</td><td><div class="pbar"><div class="pbar-fill" style="width:${Math.min(p.pct,100)}%;background:${color}"></div></div></td></tr>`;
+      const isExpanded=_expandedPerson===p.id;
+      const rowBg=isExpanded?'rgba(237,28,36,.08)':(p.isRunning?'rgba(237,28,36,.04)':'');
+      const rows=[`<tr onclick="togglePerson('${p.id}')" style="cursor:pointer;background:${rowBg}" onmouseover="if(!${isExpanded}&&!${p.isRunning})this.style.background='rgba(237,28,36,.04)'" onmouseout="if(!${isExpanded}&&!${p.isRunning})this.style.background=''">
+        <td style="font-weight:600"><span style="display:inline-block;margin-right:8px;color:var(--red);transform:${isExpanded?'rotate(90deg)':'rotate(0)'};transition:transform .15s">▶</span>${p.name.split(' ').slice(0,2).join(' ')}${p.isRunning?' <span style="color:var(--red);font-size:10px">●</span>':''}<div style="font-size:10px;color:var(--txt3);margin-left:14px">${p.job_title||''}</div></td>
+        <td><span class="bg ${TBC(p.team)}">${TB(p.team)}</span></td>
+        <td style="max-width:280px;overflow:hidden">${workingCell}</td>
+        <td class="rt">${p.cap}h</td>
+        <td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(p.hrs)}</td>
+        <td class="rt" style="font-weight:700;color:${color}">${p.pct.toFixed(0)}%</td>
+        <td><div class="pbar"><div class="pbar-fill" style="width:${Math.min(p.pct,100)}%;background:${color}"></div></div></td>
+      </tr>`];
+      if(isExpanded)rows.push(renderPersonDetail(p.id));
+      return rows.join('');
     }).join('')}</tbody></table></div></div>`;
 }
 
@@ -5505,6 +5518,440 @@ function getVisibleAnnouncementMembersCount(a){
   if(a.audience_type==='accounts')return S.members.filter(m=>m.access_level==='admin'||m.access_level==='account').length;
   if(a.audience_type==='admins')return S.members.filter(m=>m.access_level==='admin').length;
   return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DASHBOARDS DETALHADOS — drill-down inline com Chart.js
+// Por Pessoa, Por Cliente, Por Time
+// ═══════════════════════════════════════════════════════════════
+
+// Estado de qual linha está expandida
+let _expandedPerson=null;
+let _expandedClient=null;
+let _expandedTeam=null;
+
+// Cores TGT pra gráficos (paleta com fallback se passar dos 8)
+const CHART_COLORS=['#ED1C24','#455E6E','#9D9D9C','#E2DBCE','#F59E0B','#00C864','#A855F7','#EC4899','#06B6D4','#84CC16','#FB923C','#94A3B8'];
+
+function chartColor(i){return CHART_COLORS[i%CHART_COLORS.length]}
+
+// Configuração comum dos gráficos com tema TGT escuro
+function chartTheme(){
+  return {
+    color:'#E2DBCE',
+    grid:{color:'rgba(157,157,156,.15)'},
+    ticks:{color:'#9D9D9C',font:{family:'IBM Plex Mono, monospace',size:10}}
+  };
+}
+
+// Cleanup: destruir charts existentes antes de recriar
+const _activeCharts={};
+function destroyChart(id){
+  if(_activeCharts[id]){
+    try{_activeCharts[id].destroy()}catch(e){}
+    delete _activeCharts[id];
+  }
+}
+function destroyAllCharts(){
+  Object.keys(_activeCharts).forEach(destroyChart);
+}
+
+// ───────────────────────────────────────────────────────────
+// Helper: filtra entries por escopo (permissões)
+// ───────────────────────────────────────────────────────────
+function entriesInScope(){
+  // Admin/PL veem tudo; account vê só do próprio time; user só dele; client só do próprio
+  if(isA()||isPL())return S.entries.filter(e=>!e.is_running);
+  if(isAcc()){
+    const myTeamIds=S.clients.filter(c=>c.team===S.user.team).map(c=>c.id);
+    const myTeamMemberIds=S.members.filter(m=>m.team===S.user.team).map(m=>m.id);
+    return S.entries.filter(e=>!e.is_running&&(myTeamIds.includes(e.client_id)||myTeamMemberIds.includes(e.member_id)));
+  }
+  if(isCli()){
+    return S.entries.filter(e=>!e.is_running&&e.client_id===S.user.client_id);
+  }
+  // user
+  return S.entries.filter(e=>!e.is_running&&e.member_id===S.user.id);
+}
+
+// ───────────────────────────────────────────────────────────
+// HTML genérico de big numbers
+// ───────────────────────────────────────────────────────────
+function bigNumbers(items){
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px">
+    ${items.map(it=>`<div style="background:var(--bg3);border-left:3px solid ${it.color||'var(--red)'};border-radius:var(--radius-sm);padding:12px 14px">
+      <div style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">${it.label}</div>
+      <div style="font-size:22px;font-weight:800;color:${it.color||'var(--txt)'};line-height:1.1;font-family:var(--mono)">${it.value}</div>
+      ${it.sub?`<div style="font-size:10px;color:var(--txt3);margin-top:3px">${it.sub}</div>`:''}
+    </div>`).join('')}
+  </div>`;
+}
+
+// ───────────────────────────────────────────────────────────
+// Expandir / fechar Pessoa
+// ───────────────────────────────────────────────────────────
+function togglePerson(personId){
+  destroyAllCharts();
+  _expandedPerson=(_expandedPerson===personId)?null:personId;
+  renderPage();
+}
+
+// Renderiza o detalhe inline de uma pessoa
+function renderPersonDetail(personId){
+  const p=S.members.find(m=>m.id===personId);
+  if(!p)return'<div style="padding:20px;color:var(--txt3)">Pessoa não encontrada</div>';
+  const myE=entriesInScope().filter(e=>e.member_id===personId);
+  const totalH=myE.reduce((s,e)=>s+(e.hours||0),0);
+  const cap=p.capacity_hours||140;
+  const pct=cap>0?totalH/cap*100:0;
+  const clientesCount=new Set(myE.map(e=>e.client_id)).size;
+  const dias=new Set(myE.map(e=>(e.started_at||'').substring(0,10))).size;
+  const media=dias>0?totalH/dias:0;
+  
+  // Por cliente
+  const byClient={};myE.forEach(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const n=c?c.name:'?';byClient[n]=(byClient[n]||0)+(e.hours||0)});
+  // Por ação
+  const byAction={};myE.forEach(e=>{const a=e.action||'Sem ação';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  // Por dia (últimos 30)
+  const byDay={};myE.forEach(e=>{const d=(e.started_at||'').substring(0,10);byDay[d]=(byDay[d]||0)+(e.hours||0)});
+  const dayKeys=Object.keys(byDay).sort();
+  
+  const detailId='person-detail-'+personId;
+  setTimeout(()=>{
+    // Chart por dia
+    if($('chart-pday-'+personId)){
+      destroyChart('chart-pday-'+personId);
+      _activeCharts['chart-pday-'+personId]=new Chart($('chart-pday-'+personId),{
+        type:'bar',
+        data:{labels:dayKeys.map(k=>k.substring(5).replace('-','/')),datasets:[{label:'Horas',data:dayKeys.map(k=>byDay[k]),backgroundColor:'#ED1C24',borderRadius:4}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:chartTheme().grid,ticks:chartTheme().ticks},x:{grid:{display:false},ticks:chartTheme().ticks}}}
+      });
+    }
+    // Chart por cliente
+    if($('chart-pclient-'+personId)){
+      destroyChart('chart-pclient-'+personId);
+      const clEntries=Object.entries(byClient).sort((a,b)=>b[1]-a[1]);
+      _activeCharts['chart-pclient-'+personId]=new Chart($('chart-pclient-'+personId),{
+        type:'doughnut',
+        data:{labels:clEntries.map(e=>e[0]),datasets:[{data:clEntries.map(e=>e[1]),backgroundColor:clEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
+      });
+    }
+    // Chart por ação
+    if($('chart-paction-'+personId)){
+      destroyChart('chart-paction-'+personId);
+      const acEntries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
+      _activeCharts['chart-paction-'+personId]=new Chart($('chart-paction-'+personId),{
+        type:'doughnut',
+        data:{labels:acEntries.map(e=>e[0]),datasets:[{data:acEntries.map(e=>e[1]),backgroundColor:acEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
+      });
+    }
+  },50);
+  
+  return `<tr><td colspan="100" style="padding:0;background:var(--bg2)">
+    <div style="padding:20px;border-top:2px solid var(--red);border-bottom:1px solid var(--bg3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div>
+          <div style="font-size:11px;color:var(--red);font-weight:800;letter-spacing:1.2px">DETALHAMENTO</div>
+          <div style="font-size:18px;font-weight:800;margin-top:2px">${p.name}</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px">${p.job_title||''} · ${p.team||''}</div>
+        </div>
+        <button class="btn btn-sm" onclick="togglePerson('${personId}')" style="font-size:11px">✕ Fechar</button>
+      </div>
+      ${bigNumbers([
+        {label:'Horas no período',value:fH(totalH),color:'#ED1C24',sub:`${pct.toFixed(0)}% de ${cap}h`},
+        {label:'Lançamentos',value:myE.length,color:'#455E6E'},
+        {label:'Clientes únicos',value:clientesCount,color:'#9D9D9C'},
+        {label:'Dias trabalhados',value:dias,color:'#E2DBCE'},
+        {label:'Média/dia',value:fH(media),color:'#F59E0B'}
+      ])}
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">HORAS POR DIA</div>
+          <div style="height:180px"><canvas id="chart-pday-${personId}"></canvas></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR CLIENTE</div>
+          <div style="height:200px"><canvas id="chart-pclient-${personId}"></canvas></div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR AÇÃO</div>
+          <div style="height:200px"><canvas id="chart-paction-${personId}"></canvas></div>
+        </div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+        <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">LANÇAMENTOS (${myE.length})</div>
+        <div style="max-height:280px;overflow-y:auto"><table style="width:100%;font-size:12px"><thead><tr style="border-bottom:1px solid var(--bg2)"><th style="text-align:left;padding:6px;color:var(--txt3)">Trabalho</th><th style="text-align:left;padding:6px;color:var(--txt3)">Cliente</th><th style="text-align:left;padding:6px;color:var(--txt3)">Ação</th><th style="text-align:right;padding:6px;color:var(--txt3)">Horas</th><th style="text-align:left;padding:6px;color:var(--txt3)">Data</th></tr></thead>
+        <tbody>${myE.slice(0,80).map(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const w=getWorkingOn(e);return`<tr style="border-bottom:1px solid var(--bg2)"><td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.label}</td><td style="padding:6px">${c?c.name:'—'}</td><td style="padding:6px;color:var(--txt2)">${e.action||'—'}</td><td style="padding:6px;text-align:right;font-weight:700;font-family:var(--mono)">${fH(e.hours||0)}</td><td style="padding:6px;color:var(--txt3)">${fD((e.started_at||'').substring(0,10))}</td></tr>`}).join('')||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--txt3)">Sem lançamentos</td></tr>'}</tbody></table></div>
+      </div>
+    </div>
+  </td></tr>`;
+}
+
+// ───────────────────────────────────────────────────────────
+// Expandir / fechar Cliente
+// ───────────────────────────────────────────────────────────
+function toggleClient(clientId){
+  destroyAllCharts();
+  _expandedClient=(_expandedClient===clientId)?null:clientId;
+  renderPage();
+}
+
+function renderClientDetail(clientId){
+  const c=S.clients.find(cl=>cl.id===clientId);
+  if(!c)return'<div style="padding:20px">Cliente não encontrado</div>';
+  const myE=entriesInScope().filter(e=>e.client_id===clientId);
+  const totalH=myE.reduce((s,e)=>s+(e.hours||0),0);
+  const target=Number(c.target_hours_month)||0;
+  const pct=target>0?totalH/target*100:0;
+  const peopleCount=new Set(myE.map(e=>e.member_id)).size;
+  const dias=new Set(myE.map(e=>(e.started_at||'').substring(0,10))).size;
+  
+  // Por pessoa
+  const byPerson={};myE.forEach(e=>{const m=S.members.find(mm=>mm.id===e.member_id);const n=m?m.name.split(' ')[0]:'?';byPerson[n]=(byPerson[n]||0)+(e.hours||0)});
+  // Por ação
+  const byAction={};myE.forEach(e=>{const a=e.action||'Sem ação';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  // Por dia
+  const byDay={};myE.forEach(e=>{const d=(e.started_at||'').substring(0,10);byDay[d]=(byDay[d]||0)+(e.hours||0)});
+  const dayKeys=Object.keys(byDay).sort();
+  
+  setTimeout(()=>{
+    if($('chart-cday-'+clientId)){
+      destroyChart('chart-cday-'+clientId);
+      _activeCharts['chart-cday-'+clientId]=new Chart($('chart-cday-'+clientId),{
+        type:'bar',
+        data:{labels:dayKeys.map(k=>k.substring(5).replace('-','/')),datasets:[{label:'Horas',data:dayKeys.map(k=>byDay[k]),backgroundColor:'#ED1C24',borderRadius:4}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:chartTheme().grid,ticks:chartTheme().ticks},x:{grid:{display:false},ticks:chartTheme().ticks}}}
+      });
+    }
+    if($('chart-cperson-'+clientId)){
+      destroyChart('chart-cperson-'+clientId);
+      const pEntries=Object.entries(byPerson).sort((a,b)=>b[1]-a[1]);
+      _activeCharts['chart-cperson-'+clientId]=new Chart($('chart-cperson-'+clientId),{
+        type:'doughnut',
+        data:{labels:pEntries.map(e=>e[0]),datasets:[{data:pEntries.map(e=>e[1]),backgroundColor:pEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
+      });
+    }
+    if($('chart-caction-'+clientId)){
+      destroyChart('chart-caction-'+clientId);
+      const aEntries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
+      _activeCharts['chart-caction-'+clientId]=new Chart($('chart-caction-'+clientId),{
+        type:'doughnut',
+        data:{labels:aEntries.map(e=>e[0]),datasets:[{data:aEntries.map(e=>e[1]),backgroundColor:aEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
+      });
+    }
+  },50);
+  
+  const targetColor=pct>100?'#ED1C24':pct>80?'#F59E0B':'#00C864';
+  
+  return `<tr><td colspan="100" style="padding:0;background:var(--bg2)">
+    <div style="padding:20px;border-top:2px solid var(--red);border-bottom:1px solid var(--bg3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div>
+          <div style="font-size:11px;color:var(--red);font-weight:800;letter-spacing:1.2px">DETALHAMENTO</div>
+          <div style="font-size:18px;font-weight:800;margin-top:2px">${c.name}</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px">Time ${c.team||'—'}</div>
+        </div>
+        <button class="btn btn-sm" onclick="toggleClient('${clientId}')" style="font-size:11px">✕ Fechar</button>
+      </div>
+      ${bigNumbers([
+        {label:'Consumido',value:fH(totalH),color:targetColor,sub:target?`${pct.toFixed(0)}% de ${target}h`:'sem meta'},
+        {label:'Meta mensal',value:target?fH(target):'—',color:'#455E6E'},
+        {label:'Pessoas envolvidas',value:peopleCount,color:'#9D9D9C'},
+        {label:'Dias trabalhados',value:dias,color:'#E2DBCE'},
+        {label:'Lançamentos',value:myE.length,color:'#F59E0B'}
+      ])}
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">HORAS POR DIA</div>
+          <div style="height:180px"><canvas id="chart-cday-${clientId}"></canvas></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR PESSOA</div>
+          <div style="height:200px"><canvas id="chart-cperson-${clientId}"></canvas></div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR AÇÃO</div>
+          <div style="height:200px"><canvas id="chart-caction-${clientId}"></canvas></div>
+        </div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+        <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">LANÇAMENTOS (${myE.length})</div>
+        <div style="max-height:280px;overflow-y:auto"><table style="width:100%;font-size:12px"><thead><tr style="border-bottom:1px solid var(--bg2)"><th style="text-align:left;padding:6px;color:var(--txt3)">Pessoa</th><th style="text-align:left;padding:6px;color:var(--txt3)">Trabalho</th><th style="text-align:left;padding:6px;color:var(--txt3)">Ação</th><th style="text-align:right;padding:6px;color:var(--txt3)">Horas</th><th style="text-align:left;padding:6px;color:var(--txt3)">Data</th></tr></thead>
+        <tbody>${myE.slice(0,80).map(e=>{const m=S.members.find(mm=>mm.id===e.member_id);const w=getWorkingOn(e);return`<tr style="border-bottom:1px solid var(--bg2)"><td style="padding:6px">${m?m.name.split(' ')[0]:'—'}</td><td style="padding:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.label}</td><td style="padding:6px;color:var(--txt2)">${e.action||'—'}</td><td style="padding:6px;text-align:right;font-weight:700;font-family:var(--mono)">${fH(e.hours||0)}</td><td style="padding:6px;color:var(--txt3)">${fD((e.started_at||'').substring(0,10))}</td></tr>`}).join('')||'<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--txt3)">Sem lançamentos</td></tr>'}</tbody></table></div>
+      </div>
+    </div>
+  </td></tr>`;
+}
+
+// ───────────────────────────────────────────────────────────
+// Expandir / fechar Time
+// ───────────────────────────────────────────────────────────
+function toggleTeam(team){
+  destroyAllCharts();
+  _expandedTeam=(_expandedTeam===team)?null:team;
+  renderPage();
+}
+
+function renderTeamDetail(team){
+  const teamMembers=S.members.filter(m=>m.team===team&&m.active!==false);
+  const teamMemberIds=teamMembers.map(m=>m.id);
+  const teamClients=S.clients.filter(c=>c.team===team);
+  const teamClientIds=teamClients.map(c=>c.id);
+  const myE=entriesInScope().filter(e=>teamMemberIds.includes(e.member_id)||teamClientIds.includes(e.client_id));
+  const totalH=myE.reduce((s,e)=>s+(e.hours||0),0);
+  const totalCap=teamMembers.reduce((s,m)=>s+(m.capacity_hours||140),0);
+  const pct=totalCap>0?totalH/totalCap*100:0;
+  const ativosNaPeriodo=new Set(myE.map(e=>e.member_id)).size;
+  const clientesAtendidos=new Set(myE.map(e=>e.client_id)).size;
+  
+  // Por pessoa
+  const byPerson={};myE.forEach(e=>{const m=S.members.find(mm=>mm.id===e.member_id);const n=m?m.name.split(' ')[0]:'?';byPerson[n]=(byPerson[n]||0)+(e.hours||0)});
+  // Por cliente
+  const byClient={};myE.forEach(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const n=c?c.name:'?';byClient[n]=(byClient[n]||0)+(e.hours||0)});
+  // Por ação
+  const byAction={};myE.forEach(e=>{const a=e.action||'Sem ação';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  
+  setTimeout(()=>{
+    if($('chart-tperson-'+team)){
+      destroyChart('chart-tperson-'+team);
+      const entries=Object.entries(byPerson).sort((a,b)=>b[1]-a[1]);
+      _activeCharts['chart-tperson-'+team]=new Chart($('chart-tperson-'+team),{
+        type:'bar',
+        data:{labels:entries.map(e=>e[0]),datasets:[{label:'Horas',data:entries.map(e=>e[1]),backgroundColor:entries.map((_,i)=>chartColor(i)),borderRadius:4}]},
+        options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,grid:chartTheme().grid,ticks:chartTheme().ticks},y:{grid:{display:false},ticks:chartTheme().ticks}}}
+      });
+    }
+    if($('chart-tclient-'+team)){
+      destroyChart('chart-tclient-'+team);
+      const entries=Object.entries(byClient).sort((a,b)=>b[1]-a[1]);
+      _activeCharts['chart-tclient-'+team]=new Chart($('chart-tclient-'+team),{
+        type:'doughnut',
+        data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:entries.map((_,i)=>chartColor(i)),borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
+      });
+    }
+    if($('chart-taction-'+team)){
+      destroyChart('chart-taction-'+team);
+      const entries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
+      _activeCharts['chart-taction-'+team]=new Chart($('chart-taction-'+team),{
+        type:'doughnut',
+        data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:entries.map((_,i)=>chartColor(i)),borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
+      });
+    }
+  },50);
+  
+  // Tabela de pessoas do time com utilização
+  const personRows=teamMembers.map(m=>{
+    const h=myE.filter(e=>e.member_id===m.id).reduce((s,e)=>s+(e.hours||0),0);
+    const c=m.capacity_hours||140;
+    const p=c>0?h/c*100:0;
+    return{name:m.name,jt:m.job_title||'',h,c,p};
+  }).sort((a,b)=>b.h-a.h);
+  
+  return `<tr><td colspan="100" style="padding:0;background:var(--bg2)">
+    <div style="padding:20px;border-top:2px solid var(--red);border-bottom:1px solid var(--bg3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div>
+          <div style="font-size:11px;color:var(--red);font-weight:800;letter-spacing:1.2px">DETALHAMENTO</div>
+          <div style="font-size:18px;font-weight:800;margin-top:2px">Time ${team}</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px">${teamMembers.length} pessoas · ${teamClients.length} clientes</div>
+        </div>
+        <button class="btn btn-sm" onclick="toggleTeam('${team}')" style="font-size:11px">✕ Fechar</button>
+      </div>
+      ${bigNumbers([
+        {label:'Horas time',value:fH(totalH),color:'#ED1C24',sub:`${pct.toFixed(0)}% de ${totalCap}h`},
+        {label:'Capacidade total',value:`${totalCap}h`,color:'#455E6E'},
+        {label:'Pessoas ativas',value:`${ativosNaPeriodo}/${teamMembers.length}`,color:'#9D9D9C'},
+        {label:'Clientes atendidos',value:clientesAtendidos,color:'#E2DBCE'},
+        {label:'Lançamentos',value:myE.length,color:'#F59E0B'}
+      ])}
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">HORAS POR PESSOA</div>
+          <div style="height:${Math.max(180,personRows.length*28)}px"><canvas id="chart-tperson-${team}"></canvas></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR CLIENTE</div>
+          <div style="height:220px"><canvas id="chart-tclient-${team}"></canvas></div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+          <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR AÇÃO</div>
+          <div style="height:220px"><canvas id="chart-taction-${team}"></canvas></div>
+        </div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
+        <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">UTILIZAÇÃO POR PESSOA (${personRows.length})</div>
+        <table style="width:100%;font-size:12px"><thead><tr style="border-bottom:1px solid var(--bg2)"><th style="text-align:left;padding:6px;color:var(--txt3)">Pessoa</th><th style="text-align:right;padding:6px;color:var(--txt3)">Cap</th><th style="text-align:right;padding:6px;color:var(--txt3)">Horas</th><th style="text-align:right;padding:6px;color:var(--txt3)">%</th></tr></thead>
+        <tbody>${personRows.map(r=>{const col=r.p>100?'#ED1C24':r.p>70?'#F59E0B':r.p>30?'#00C864':'#9D9D9C';return`<tr style="border-bottom:1px solid var(--bg2)"><td style="padding:6px"><b>${r.name.split(' ').slice(0,2).join(' ')}</b><span style="color:var(--txt3);font-size:10px;margin-left:6px">${r.jt}</span></td><td style="padding:6px;text-align:right;color:var(--txt3)">${r.c}h</td><td style="padding:6px;text-align:right;font-weight:700;font-family:var(--mono)">${fH(r.h)}</td><td style="padding:6px;text-align:right;font-weight:700;color:${col}">${r.p.toFixed(0)}%</td></tr>`}).join('')||'<tr><td colspan="4" style="padding:14px;text-align:center;color:var(--txt3)">Sem dados</td></tr>'}</tbody></table>
+      </div>
+    </div>
+  </td></tr>`;
+}
+
+// ───────────────────────────────────────────────────────────
+// Página: Por Time (NOVA)
+// ───────────────────────────────────────────────────────────
+async function pgDashTeam(el){
+  if(!canSeeTeamData()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  
+  // Determina times visíveis
+  const TEAMS=['T1','T3','T4','T5','PROD','ADM'];
+  const visibleTeams=isA()?TEAMS:[S.user.team];
+  
+  const entries=entriesInScope();
+  
+  const teamData=visibleTeams.map(team=>{
+    const members=S.members.filter(m=>m.team===team&&m.active!==false);
+    const memberIds=members.map(m=>m.id);
+    const clients=S.clients.filter(c=>c.team===team);
+    const clientIds=clients.map(c=>c.id);
+    const teamE=entries.filter(e=>memberIds.includes(e.member_id)||clientIds.includes(e.client_id));
+    const totalH=teamE.reduce((s,e)=>s+(e.hours||0),0);
+    const cap=members.reduce((s,m)=>s+(m.capacity_hours||140),0);
+    const ativos=new Set(teamE.map(e=>e.member_id)).size;
+    return{team,members:members.length,clients:clients.length,totalH,cap,ativos,pct:cap>0?totalH/cap*100:0};
+  }).filter(t=>t.members>0).sort((a,b)=>b.totalH-a.totalH);
+  
+  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seu time: ${S.user.team}</div>`:'';
+  
+  el.innerHTML=datePillsHTML()+scopeNote+`
+    <div class="tbl">
+      <div class="tbl-h">
+        <h3>Times</h3>
+        <span style="font-size:11px;color:var(--txt3);font-weight:600">Clique numa linha para detalhar →</span>
+      </div>
+      <div class="tbl-r">
+        <table>
+          <thead><tr><th>Time</th><th class="rt">Pessoas</th><th class="rt">Clientes</th><th class="rt">Capacidade</th><th class="rt">Horas</th><th class="rt">%</th><th style="width:160px">Utilização</th></tr></thead>
+          <tbody>${teamData.map(t=>{
+            const color=t.pct>100?'var(--red)':t.pct>70?'var(--pack)':t.pct>30?'var(--prod)':'var(--txt3)';
+            const isExpanded=_expandedTeam===t.team;
+            const rows=[`<tr onclick="toggleTeam('${t.team}')" style="cursor:pointer;${isExpanded?'background:rgba(237,28,36,.08)':''}" onmouseover="if(!${isExpanded})this.style.background='rgba(237,28,36,.04)'" onmouseout="if(!${isExpanded})this.style.background=''">
+              <td style="font-weight:700"><span style="display:inline-block;margin-right:8px;color:var(--red);transform:${isExpanded?'rotate(90deg)':''};transition:transform .15s;display:inline-block">▶</span><span class="bg ${TBC(t.team)}">${TB(t.team)}</span></td>
+              <td class="rt">${t.ativos}/${t.members}</td>
+              <td class="rt">${t.clients}</td>
+              <td class="rt" style="color:var(--txt3)">${t.cap}h</td>
+              <td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(t.totalH)}</td>
+              <td class="rt" style="font-weight:700;color:${color}">${t.pct.toFixed(0)}%</td>
+              <td><div class="pbar"><div class="pbar-fill" style="width:${Math.min(t.pct,100)}%;background:${color}"></div></div></td>
+            </tr>`];
+            if(isExpanded)rows.push(renderTeamDetail(t.team));
+            return rows.join('');
+          }).join('')||'<tr><td colspan="7" class="empty">Sem dados de times</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 </script>
 <script src="agents/clientes.js"></script>
