@@ -5296,13 +5296,13 @@ function openAnnouncementView(annId){
   // Marca como lido (background)
   if(!annIsRead(annId))markAnnouncementRead(annId).then(()=>{try{renderPage()}catch(e){}});
   
-  // Cria modal ad-hoc se não existir
+  // Cria modal ad-hoc se não existir (estrutura correta: modal-ov > modal)
   let m=$('m-ann-view');
   if(!m){
     m=document.createElement('div');
     m.id='m-ann-view';
-    m.className='modal';
-    m.innerHTML=`<div class="modal-c" style="max-width:560px"><div class="modal-h"><h3 id="m-ann-view-title">Aviso</h3><button class="modal-x" onclick="closeM('m-ann-view')">✕</button></div><div class="modal-b" id="m-ann-view-body"></div></div>`;
+    m.className='modal-ov';
+    m.innerHTML=`<div class="modal" style="max-width:560px"><div class="modal-h"><h3 id="m-ann-view-title">Aviso</h3><button class="modal-x" onclick="closeM('m-ann-view')">✕</button></div><div class="modal-b" id="m-ann-view-body"></div></div>`;
     document.body.appendChild(m);
   }
   $('m-ann-view-title').innerHTML=`<span style="display:inline-block;padding:3px 8px;background:${lvl.bg};border:1px solid ${lvl.border};border-radius:4px;font-size:10px;font-weight:800;color:${lvl.color};margin-right:8px;letter-spacing:1px">${lvl.icon} ${lvl.label}</span>`;
@@ -5369,13 +5369,13 @@ function openAnnouncementForm(annId){
   const startVal=existing?(existing.start_at||'').substring(0,10):today;
   const endVal=existing?(existing.end_at||'').substring(0,10):'';
   
-  // Cria modal se não existir
+  // Cria modal se não existir (estrutura correta: modal-ov > modal)
   let m=$('m-ann-form');
   if(!m){
     m=document.createElement('div');
     m.id='m-ann-form';
-    m.className='modal';
-    m.innerHTML=`<div class="modal-c" style="max-width:560px"><div class="modal-h"><h3 id="m-ann-form-title">Novo Comunicado</h3><button class="modal-x" onclick="closeM('m-ann-form')">✕</button></div><div class="modal-b" id="m-ann-form-body"></div><div class="modal-f"><button class="btn" onclick="closeM('m-ann-form')">Cancelar</button><button class="btn btn-r" id="m-ann-form-save">Salvar</button></div></div>`;
+    m.className='modal-ov';
+    m.innerHTML=`<div class="modal" style="max-width:560px"><div class="modal-h"><h3 id="m-ann-form-title">Novo Comunicado</h3><button class="modal-x" onclick="closeM('m-ann-form')">✕</button></div><div class="modal-b" id="m-ann-form-body"></div><div class="modal-f"><button class="btn" onclick="closeM('m-ann-form')">Cancelar</button><button class="btn btn-r" id="m-ann-form-save">Salvar</button></div></div>`;
     document.body.appendChild(m);
   }
   $('m-ann-form-title').textContent=existing?'Editar Comunicado':'Novo Comunicado';
@@ -5481,8 +5481,8 @@ async function viewAnnouncementAcks(annId){
   if(!m){
     m=document.createElement('div');
     m.id='m-ann-acks';
-    m.className='modal';
-    m.innerHTML=`<div class="modal-c"><div class="modal-h"><h3>Confirmações de leitura</h3><button class="modal-x" onclick="closeM('m-ann-acks')">✕</button></div><div class="modal-b" id="m-ann-acks-body"></div></div>`;
+    m.className='modal-ov';
+    m.innerHTML=`<div class="modal"><div class="modal-h"><h3>Confirmações de leitura</h3><button class="modal-x" onclick="closeM('m-ann-acks')">✕</button></div><div class="modal-b" id="m-ann-acks-body"></div></div>`;
     document.body.appendChild(m);
   }
   $('m-ann-acks-body').innerHTML=`
