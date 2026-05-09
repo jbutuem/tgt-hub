@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.26';
+const HUB_VERSION='0.27';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -2055,7 +2055,7 @@ async function pgDashClient(el){
   const byClient={};
   entries.forEach(e=>{
     const c=S.clients.find(cl=>cl.id===e.client_id);if(!c)return;
-    if(!byClient[c.id])byClient[c.id]={name:c.name,team:c.team,target:Number(c.target_hours_month)||0,fee:Number(c.fee_monthly)||0,hours:0};
+    if(!byClient[c.id])byClient[c.id]={id:c.id,name:c.name,team:c.team,target:Number(c.target_hours_month)||0,fee:Number(c.fee_monthly)||0,hours:0};
     byClient[c.id].hours+=(e.hours||0);
   });
   const cls=Object.values(byClient).sort((a,b)=>b.hours-a.hours);
@@ -5544,6 +5544,114 @@ function chartTheme(){
   };
 }
 
+// ───────────────────────────────────────────────────────────
+// PLUGIN Chart.js: desenha valores numéricos no centro de cada fatia
+// (acessibilidade: daltônicos ou não, todo mundo lê o número)
+// ───────────────────────────────────────────────────────────
+const sliceLabelsPlugin={
+  id:'sliceLabels',
+  afterDatasetsDraw(chart){
+    const{ctx,data,chartArea}=chart;
+    if(!data.datasets[0])return;
+    const meta=chart.getDatasetMeta(0);
+    const total=data.datasets[0].data.reduce((a,b)=>a+b,0);
+    if(total===0)return;
+    
+    ctx.save();
+    ctx.font='700 11px "IBM Plex Mono", monospace';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    
+    meta.data.forEach((arc,i)=>{
+      const value=data.datasets[0].data[i];
+      const pct=(value/total)*100;
+      // Só mostra label em fatias > 4% (evita poluição)
+      if(pct<4)return;
+      
+      const{x,y,startAngle,endAngle,outerRadius,innerRadius}=arc.getProps(['x','y','startAngle','endAngle','outerRadius','innerRadius'],true);
+      const midAngle=(startAngle+endAngle)/2;
+      const midRadius=(innerRadius+outerRadius)/2;
+      const labelX=x+Math.cos(midAngle)*midRadius;
+      const labelY=y+Math.sin(midAngle)*midRadius;
+      
+      // Texto branco com sombra preta pra contraste em qualquer cor de fundo
+      ctx.shadowColor='rgba(0,0,0,.85)';
+      ctx.shadowBlur=4;
+      ctx.fillStyle='#FFFFFF';
+      ctx.fillText(`${pct.toFixed(0)}%`,labelX,labelY);
+    });
+    ctx.restore();
+  }
+};
+
+// Helper: renderiza um doughnut com tabela lateral de valores
+// labels: array de strings, values: array de números, title: string, canvasId: string
+function renderDoughnutWithTable(canvasId,labels,values,opts){
+  opts=opts||{};
+  const total=values.reduce((a,b)=>a+b,0);
+  destroyChart(canvasId);
+  
+  const ctx=$(canvasId);
+  if(!ctx)return;
+  
+  _activeCharts[canvasId]=new Chart(ctx,{
+    type:'doughnut',
+    data:{
+      labels:labels,
+      datasets:[{
+        data:values,
+        backgroundColor:labels.map((_,i)=>chartColor(i)),
+        borderWidth:2,
+        borderColor:'#1a1a1a'
+      }]
+    },
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false}, // legenda customizada via tabela HTML ao lado
+        tooltip:{
+          backgroundColor:'rgba(0,0,0,.92)',
+          titleColor:'#ED1C24',
+          bodyColor:'#FFFFFF',
+          borderColor:'rgba(237,28,36,.5)',
+          borderWidth:1,
+          padding:10,
+          callbacks:{
+            label:(ctx)=>{
+              const v=ctx.parsed;
+              const pct=total>0?(v/total*100).toFixed(1):0;
+              const valFmt=opts.formatValue?opts.formatValue(v):v.toFixed(1)+'h';
+              return ` ${valFmt} (${pct}%)`;
+            }
+          }
+        }
+      }
+    },
+    plugins:[sliceLabelsPlugin]
+  });
+}
+
+// Helper: gera a tabela HTML lateral pra acompanhar o doughnut
+function legendTableHTML(labels,values,opts){
+  opts=opts||{};
+  const total=values.reduce((a,b)=>a+b,0);
+  const items=labels.map((label,i)=>({label,value:values[i],color:chartColor(i),pct:total>0?values[i]/total*100:0})).sort((a,b)=>b.value-a.value);
+  const fmtVal=opts.formatValue||(v=>fH(v));
+  return `<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.3">
+    ${items.map(it=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid rgba(157,157,156,.12)">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${it.color};flex-shrink:0"></span>
+      <span style="flex:1;color:#E2DBCE;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(it.label)}">${escapeHtml(it.label)}</span>
+      <span style="color:#FFFFFF;font-weight:700;text-align:right;min-width:48px">${fmtVal(it.value)}</span>
+      <span style="color:#9D9D9C;text-align:right;min-width:38px;font-size:10px">${it.pct.toFixed(0)}%</span>
+    </div>`).join('')}
+    <div style="display:flex;justify-content:space-between;padding:6px 0 0 0;margin-top:4px;border-top:1px solid rgba(237,28,36,.3);color:#ED1C24;font-weight:800">
+      <span>TOTAL</span>
+      <span>${fmtVal(total)}</span>
+    </div>
+  </div>`;
+}
+
 // Cleanup: destruir charts existentes antes de recriar
 const _activeCharts={};
 function destroyChart(id){
@@ -5627,25 +5735,21 @@ function renderPersonDetail(personId){
         options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:chartTheme().grid,ticks:chartTheme().ticks},x:{grid:{display:false},ticks:chartTheme().ticks}}}
       });
     }
-    // Chart por cliente
+    // Chart por cliente (com plugin de % nas fatias + tabela lateral)
+    const clEntries=Object.entries(byClient).sort((a,b)=>b[1]-a[1]);
     if($('chart-pclient-'+personId)){
-      destroyChart('chart-pclient-'+personId);
-      const clEntries=Object.entries(byClient).sort((a,b)=>b[1]-a[1]);
-      _activeCharts['chart-pclient-'+personId]=new Chart($('chart-pclient-'+personId),{
-        type:'doughnut',
-        data:{labels:clEntries.map(e=>e[0]),datasets:[{data:clEntries.map(e=>e[1]),backgroundColor:clEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
-      });
+      renderDoughnutWithTable('chart-pclient-'+personId,clEntries.map(e=>e[0]),clEntries.map(e=>e[1]));
     }
-    // Chart por ação
+    if($('table-pclient-'+personId)){
+      $('table-pclient-'+personId).innerHTML=legendTableHTML(clEntries.map(e=>e[0]),clEntries.map(e=>e[1]));
+    }
+    // Chart por ação (idem)
+    const acEntries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
     if($('chart-paction-'+personId)){
-      destroyChart('chart-paction-'+personId);
-      const acEntries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
-      _activeCharts['chart-paction-'+personId]=new Chart($('chart-paction-'+personId),{
-        type:'doughnut',
-        data:{labels:acEntries.map(e=>e[0]),datasets:[{data:acEntries.map(e=>e[1]),backgroundColor:acEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
-      });
+      renderDoughnutWithTable('chart-paction-'+personId,acEntries.map(e=>e[0]),acEntries.map(e=>e[1]));
+    }
+    if($('table-paction-'+personId)){
+      $('table-paction-'+personId).innerHTML=legendTableHTML(acEntries.map(e=>e[0]),acEntries.map(e=>e[1]));
     }
   },50);
   
@@ -5675,11 +5779,17 @@ function renderPersonDetail(personId){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
         <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
           <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR CLIENTE</div>
-          <div style="height:200px"><canvas id="chart-pclient-${personId}"></canvas></div>
+          <div style="display:grid;grid-template-columns:140px 1fr;gap:14px;align-items:center">
+            <div style="height:140px"><canvas id="chart-pclient-${personId}"></canvas></div>
+            <div id="table-pclient-${personId}" style="max-height:200px;overflow-y:auto"></div>
+          </div>
         </div>
         <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
           <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR AÇÃO</div>
-          <div style="height:200px"><canvas id="chart-paction-${personId}"></canvas></div>
+          <div style="display:grid;grid-template-columns:140px 1fr;gap:14px;align-items:center">
+            <div style="height:140px"><canvas id="chart-paction-${personId}"></canvas></div>
+            <div id="table-paction-${personId}" style="max-height:200px;overflow-y:auto"></div>
+          </div>
         </div>
       </div>
       <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
@@ -5727,23 +5837,19 @@ function renderClientDetail(clientId){
         options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:chartTheme().grid,ticks:chartTheme().ticks},x:{grid:{display:false},ticks:chartTheme().ticks}}}
       });
     }
+    const pEntries=Object.entries(byPerson).sort((a,b)=>b[1]-a[1]);
     if($('chart-cperson-'+clientId)){
-      destroyChart('chart-cperson-'+clientId);
-      const pEntries=Object.entries(byPerson).sort((a,b)=>b[1]-a[1]);
-      _activeCharts['chart-cperson-'+clientId]=new Chart($('chart-cperson-'+clientId),{
-        type:'doughnut',
-        data:{labels:pEntries.map(e=>e[0]),datasets:[{data:pEntries.map(e=>e[1]),backgroundColor:pEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
-      });
+      renderDoughnutWithTable('chart-cperson-'+clientId,pEntries.map(e=>e[0]),pEntries.map(e=>e[1]));
     }
+    if($('table-cperson-'+clientId)){
+      $('table-cperson-'+clientId).innerHTML=legendTableHTML(pEntries.map(e=>e[0]),pEntries.map(e=>e[1]));
+    }
+    const aEntries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
     if($('chart-caction-'+clientId)){
-      destroyChart('chart-caction-'+clientId);
-      const aEntries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
-      _activeCharts['chart-caction-'+clientId]=new Chart($('chart-caction-'+clientId),{
-        type:'doughnut',
-        data:{labels:aEntries.map(e=>e[0]),datasets:[{data:aEntries.map(e=>e[1]),backgroundColor:aEntries.map((_,i)=>chartColor(i)),borderWidth:0}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
-      });
+      renderDoughnutWithTable('chart-caction-'+clientId,aEntries.map(e=>e[0]),aEntries.map(e=>e[1]));
+    }
+    if($('table-caction-'+clientId)){
+      $('table-caction-'+clientId).innerHTML=legendTableHTML(aEntries.map(e=>e[0]),aEntries.map(e=>e[1]));
     }
   },50);
   
@@ -5775,11 +5881,17 @@ function renderClientDetail(clientId){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
         <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
           <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR PESSOA</div>
-          <div style="height:200px"><canvas id="chart-cperson-${clientId}"></canvas></div>
+          <div style="display:grid;grid-template-columns:140px 1fr;gap:14px;align-items:center">
+            <div style="height:140px"><canvas id="chart-cperson-${clientId}"></canvas></div>
+            <div id="table-cperson-${clientId}" style="max-height:200px;overflow-y:auto"></div>
+          </div>
         </div>
         <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
           <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR AÇÃO</div>
-          <div style="height:200px"><canvas id="chart-caction-${clientId}"></canvas></div>
+          <div style="display:grid;grid-template-columns:140px 1fr;gap:14px;align-items:center">
+            <div style="height:140px"><canvas id="chart-caction-${clientId}"></canvas></div>
+            <div id="table-caction-${clientId}" style="max-height:200px;overflow-y:auto"></div>
+          </div>
         </div>
       </div>
       <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
@@ -5830,22 +5942,14 @@ function renderTeamDetail(team){
       });
     }
     if($('chart-tclient-'+team)){
-      destroyChart('chart-tclient-'+team);
       const entries=Object.entries(byClient).sort((a,b)=>b[1]-a[1]);
-      _activeCharts['chart-tclient-'+team]=new Chart($('chart-tclient-'+team),{
-        type:'doughnut',
-        data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:entries.map((_,i)=>chartColor(i)),borderWidth:0}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
-      });
+      renderDoughnutWithTable('chart-tclient-'+team,entries.map(e=>e[0]),entries.map(e=>e[1]));
+      if($('table-tclient-'+team))$('table-tclient-'+team).innerHTML=legendTableHTML(entries.map(e=>e[0]),entries.map(e=>e[1]));
     }
     if($('chart-taction-'+team)){
-      destroyChart('chart-taction-'+team);
       const entries=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
-      _activeCharts['chart-taction-'+team]=new Chart($('chart-taction-'+team),{
-        type:'doughnut',
-        data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:entries.map((_,i)=>chartColor(i)),borderWidth:0}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#E2DBCE',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}}}}
-      });
+      renderDoughnutWithTable('chart-taction-'+team,entries.map(e=>e[0]),entries.map(e=>e[1]));
+      if($('table-taction-'+team))$('table-taction-'+team).innerHTML=legendTableHTML(entries.map(e=>e[0]),entries.map(e=>e[1]));
     }
   },50);
   
@@ -5883,11 +5987,17 @@ function renderTeamDetail(team){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
         <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
           <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR CLIENTE</div>
-          <div style="height:220px"><canvas id="chart-tclient-${team}"></canvas></div>
+          <div style="display:grid;grid-template-columns:160px 1fr;gap:14px;align-items:center">
+            <div style="height:160px"><canvas id="chart-tclient-${team}"></canvas></div>
+            <div id="table-tclient-${team}" style="max-height:220px;overflow-y:auto"></div>
+          </div>
         </div>
         <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
           <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">POR AÇÃO</div>
-          <div style="height:220px"><canvas id="chart-taction-${team}"></canvas></div>
+          <div style="display:grid;grid-template-columns:160px 1fr;gap:14px;align-items:center">
+            <div style="height:160px"><canvas id="chart-taction-${team}"></canvas></div>
+            <div id="table-taction-${team}" style="max-height:220px;overflow-y:auto"></div>
+          </div>
         </div>
       </div>
       <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
