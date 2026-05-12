@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.39';
+const HUB_VERSION='0.40';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -3977,8 +3977,8 @@ async function exCancelar(id){
 }
 
 function pgExtrasRerender(){
-  const el=$('page');
-  if(el)pgExtras(el);
+  // Usa o renderPage global - ele já cuida do ID correto (#pg) e estado
+  if(typeof renderPage==='function')renderPage();
 }
 
 async function pgExtras(el){
