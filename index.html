@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.38';
+const HUB_VERSION='0.39';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -3822,50 +3822,63 @@ function getMyEligibility(){
 //   Account vê status atualizado em tempo real
 // ═══════════════════════════════════════════════════════════════
 
-let _exForm={tipo:'extra',valor_bruto:'',imposto_pct:18,nome:'',client_id:'',obs:''};
+let _exForm={tipo:'extra_fee',valor_bruto:'',valor_custo:'',valor_recebido:'',nome:'',client_id:'',obs:''};
 
 function exCalcPreview(){
-  const bruto=parseFloat(_exForm.valor_bruto)||0;
-  const impPct=parseFloat(_exForm.imposto_pct)||0;
-  const imposto=bruto*impPct/100;
-  const liquido=bruto-imposto;
   const elig=getMyEligibility();
-  // BV ganha +10% adicional sobre o score
-  const pct=extrasPct(elig.score,elig.blockStatus,_exForm.tipo); // 0/10/15/20 ou 0/20/25/30 pra BV
-  const valorAccount=liquido*pct/100;
-  const margem=liquido-valorAccount;
-  return{bruto,impPct,imposto,liquido,pctComissao:pct,valorAccount,margem,elig};
+  const tipo=_exForm.tipo;
+  const pct=extrasPct(elig.score,elig.blockStatus,tipo);
+  
+  let baseCalculo=0, info={};
+  if(tipo==='extra_fee'){
+    const nf=parseFloat(_exForm.valor_bruto)||0;
+    const custo=parseFloat(_exForm.valor_custo)||0;
+    baseCalculo=Math.max(0,nf-custo);
+    info={nf,custo};
+  }else{
+    // BV: valor já líquido
+    baseCalculo=parseFloat(_exForm.valor_recebido)||0;
+    info={liquidoRecebido:baseCalculo};
+  }
+  const valorAccount=baseCalculo*pct/100;
+  const margem=baseCalculo-valorAccount;
+  return{tipo,baseCalculo,pctComissao:pct,valorAccount,margem,info,elig};
 }
 
 function exUpdatePreview(){
   const p=exCalcPreview();
   const set=(id,v)=>{const el=$(id);if(el)el.textContent=v};
-  set('exp-bruto',fMoney(p.bruto));
-  set('exp-imposto',`− ${fMoney(p.imposto)} (${p.impPct.toFixed(1)}%)`);
-  set('exp-liquido',fMoney(p.liquido));
-  set('exp-conta-pct',`${p.pctComissao.toFixed(0)}%`);
+  
+  if(p.tipo==='extra_fee'){
+    set('exp-nf',fMoney(p.info.nf||0));
+    set('exp-custo',`− ${fMoney(p.info.custo||0)}`);
+  }
+  set('exp-base',fMoney(p.baseCalculo));
+  set('exp-conta-pct',`${p.pctComissao}%`);
   set('exp-conta',fMoney(p.valorAccount));
   set('exp-margem',fMoney(p.margem));
+  
   // Avisos
   const wEl=$('exp-warn');
   let warn='';
   if(p.pctComissao===0){
     warn=`<div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.25);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--red);margin-top:8px">⚠ Seu score atual (${p.elig.score!==null?p.elig.score.toFixed(1):'—'}) não habilita comissão. Você receberá R$ 0 — toda a margem fica com a TGT.</div>`;
-  }else if(p.pctComissao<15){
-    warn=`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--pack);margin-top:8px">⚠ Score ${p.elig.score!==null?p.elig.score.toFixed(1):'—'} → ${p.pctComissao.toFixed(0)}%. Score 7.5+ destrava 15%.</div>`;
+  }else if(p.pctComissao<15&&p.tipo==='extra_fee'){
+    warn=`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--pack);margin-top:8px">⚠ Score ${p.elig.score!==null?p.elig.score.toFixed(1):'—'} → ${p.pctComissao}%. Score 7.5+ destrava 15%.</div>`;
+  }else if(p.tipo==='extra_fee'&&p.info.custo>0&&p.info.custo>=p.info.nf){
+    warn=`<div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.25);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--red);margin-top:8px">⚠ O custo é maior ou igual ao valor da NF. Não há margem para comissionamento.</div>`;
   }
   if(wEl)wEl.innerHTML=warn;
 }
 
 function exOnTipoChange(t){
   _exForm.tipo=t;
-  if(t==='extra'){_exForm.imposto_pct=18}
   pgExtrasRerender();
 }
 
 function exOnFieldChange(field,value){
   _exForm[field]=value;
-  if(field==='valor_bruto'||field==='imposto_pct'){
+  if(['valor_bruto','valor_custo','valor_recebido'].includes(field)){
     exUpdatePreview();
   }
 }
@@ -3874,14 +3887,24 @@ async function exSalvar(){
   const btn=$('ex-salvar-btn');if(btn)btn.disabled=true;
   try{
     if(!_exForm.nome.trim()){toast('Informe o nome/descrição','error');return}
-    const bruto=parseFloat(_exForm.valor_bruto)||0;
-    if(bruto<=0){toast('Informe um valor maior que zero','error');return}
-    const impPct=parseFloat(_exForm.imposto_pct)||0;
-    if(impPct<0||impPct>100){toast('Imposto deve ser entre 0 e 100%','error');return}
-    // Refresh S.scores antes de salvar (garante valor mais atual mesmo se outra aba editou)
+    
+    // Validação por tipo
+    if(_exForm.tipo==='extra_fee'){
+      const nf=parseFloat(_exForm.valor_bruto)||0;
+      const custo=parseFloat(_exForm.valor_custo)||0;
+      if(nf<=0){toast('Informe o valor da NF cobrada','error');return}
+      if(custo<0){toast('Custo não pode ser negativo','error');return}
+      if(custo>=nf){toast('O custo não pode ser maior ou igual ao valor da NF','error');return}
+    }else{
+      const recebido=parseFloat(_exForm.valor_recebido)||0;
+      if(recebido<=0){toast('Informe o valor a receber','error');return}
+    }
+    
+    // Refresh S.scores antes de salvar
     try{S.scores=await sbGet('score_adm','order=month.desc,account_id')}catch(e){}
     const p=exCalcPreview();
     const client=S.clients.find(c=>c.id===_exForm.client_id);
+    
     const payload={
       account_id:S.user.id,
       account_name:S.user.name,
@@ -3890,16 +3913,27 @@ async function exSalvar(){
       tipo:_exForm.tipo,
       nome:_exForm.nome.trim(),
       obs:_exForm.obs?.trim()||null,
-      valor_bruto:bruto,
-      imposto_pct:impPct,
       score_snapshot:p.elig.score,
       pct_comissao:p.pctComissao,
       status:'pendente'
     };
+    
+    if(_exForm.tipo==='extra_fee'){
+      payload.valor_bruto=parseFloat(_exForm.valor_bruto)||0;
+      payload.valor_custo=parseFloat(_exForm.valor_custo)||0;
+      payload.valor_recebido=0;
+      payload.imposto_pct=0; // não usado
+    }else{
+      payload.valor_bruto=0;
+      payload.valor_custo=0;
+      payload.valor_recebido=parseFloat(_exForm.valor_recebido)||0;
+      payload.imposto_pct=0;
+    }
+    
     await sbPost('tt_extras',payload);
-    toast('Extra lançado com sucesso!','success');
+    toast('Lançado com sucesso!','success');
     // Limpa form
-    _exForm={tipo:'extra',valor_bruto:'',imposto_pct:18,nome:'',client_id:'',obs:''};
+    _exForm={tipo:'extra_fee',valor_bruto:'',valor_custo:'',valor_recebido:'',nome:'',client_id:'',obs:''};
     pgExtrasRerender();
   }catch(e){
     toast('Erro ao salvar: '+e.message,'error');
@@ -3970,14 +4004,24 @@ async function pgExtras(el){
   
   const myClients=isA()?S.clients:S.clients.filter(c=>accountSeesClient(c));
   const isBV=_exForm.tipo==='bv';
-  const pctScore=isBV?pctBV:pctExtra; // % a usar nos cards-resumo
+  const isFee=_exForm.tipo==='extra_fee';
+  const pctScore=isBV?pctBV:pctExtra; // % usado no preview
+  
+  // Preview de valores
+  const previewNF=parseFloat(_exForm.valor_bruto)||0;
+  const previewCusto=parseFloat(_exForm.valor_custo)||0;
+  const previewDiferenca=Math.max(0,previewNF-previewCusto);
+  const previewRecebido=parseFloat(_exForm.valor_recebido)||0;
+  const baseCalc=isFee?previewDiferenca:previewRecebido;
+  const valorConta=baseCalc*pctScore/100;
+  const valorTGT=baseCalc-valorConta;
   
   el.innerHTML=`
     <!-- CARDS RESUMO -->
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
       <div class="card"><div class="cl">Seu Score</div><div class="cv" style="color:${elig.color};font-size:24px">${elig.score!==null?elig.score.toFixed(1):'—'}</div>${elig.scoreMonth&&elig.scoreMonth!==curMonth?`<div style="font-size:9px;color:var(--txt3);margin-top:3px">de ${elig.scoreMonth}</div>`:''}</div>
-      <div class="card"><div class="cl">% Extra</div><div class="cv" style="color:${elig.color};font-size:24px">${pctExtra}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">lançamento normal</div></div>
-      <div class="card" style="border-left:3px solid var(--pack)"><div class="cl">% BV</div><div class="cv" style="color:var(--pack);font-size:24px">${pctBV}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">bônus +10%</div></div>
+      <div class="card"><div class="cl">% Extra Fee</div><div class="cv" style="color:${elig.color};font-size:24px">${pctExtra}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">sobre a diferença NF − custo</div></div>
+      <div class="card" style="border-left:3px solid var(--pack)"><div class="cl">% BV</div><div class="cv" style="color:var(--pack);font-size:24px">${pctBV}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">bônus +10% (até 30%)</div></div>
       <div class="card"><div class="cl">A receber (pendente)</div><div class="cv" style="color:var(--pack);font-size:20px">${fMoney(totalPendente)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pendentes.length} lança${pendentes.length===1?'mento':'mentos'}</div></div>
       <div class="card"><div class="cl">Recebido em ${curMonth.split('-').reverse().join('/')}</div><div class="cv" style="color:var(--prod);font-size:20px">${fMoney(totalPagoMes)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pagosEsteMes.length} pagamento${pagosEsteMes.length===1?'':'s'}</div></div>
     </div>
@@ -3985,17 +4029,17 @@ async function pgExtras(el){
     <!-- FORMULÁRIO -->
     <div class="tbl" style="margin-bottom:20px"><div class="tbl-h"><h3>Novo lançamento</h3></div><div style="padding:16px">
       
-      <!-- Tipo: BV ou Extra -->
+      <!-- Tipo: Extra Fee ou BV -->
       <div style="background:var(--bg3);border-radius:8px;padding:14px;margin-bottom:14px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:10px">Tipo de lançamento</div>
         <div style="display:flex;gap:8px">
-          <button onclick="exOnTipoChange('extra')" style="flex:1;padding:14px;background:${!isBV?'var(--red)':'var(--bg2)'};color:${!isBV?'#fff':'var(--txt2)'};border:1px solid ${!isBV?'var(--red)':'var(--border)'};border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;text-align:left">
-            <div>💼 Lançamento Extra</div>
-            <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">Valor cobrado do cliente · imposto 18% fixo</div>
+          <button onclick="exOnTipoChange('extra_fee')" style="flex:1;padding:14px;background:${isFee?'var(--red)':'var(--bg2)'};color:${isFee?'#fff':'var(--txt2)'};border:1px solid ${isFee?'var(--red)':'var(--border)'};border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;text-align:left">
+            <div>💼 Extra Fee</div>
+            <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">NF cobrada − custo · comissão sobre a diferença</div>
           </button>
           <button onclick="exOnTipoChange('bv')" style="flex:1;padding:14px;background:${isBV?'var(--red)':'var(--bg2)'};color:${isBV?'#fff':'var(--txt2)'};border:1px solid ${isBV?'var(--red)':'var(--border)'};border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;text-align:left">
             <div>🎁 BV — Bônus de Veiculação</div>
-            <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">Valor recebido do fornecedor · imposto do fornecedor</div>
+            <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">Valor já líquido · até 30% pro account</div>
           </button>
         </div>
       </div>
@@ -4004,7 +4048,7 @@ async function pgExtras(el){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
         <div class="f-field" style="grid-column:1/-1">
           <label class="f-label">Descrição *</label>
-          <input class="f-input" id="ex-nome" value="${escapeHtml(_exForm.nome||'')}" placeholder="Ex: ${isBV?'BV Globo — campanha Kerry Q2':'Vídeo institucional De Marchi'}" 
+          <input class="f-input" id="ex-nome" value="${escapeHtml(_exForm.nome||'')}" placeholder="Ex: ${isBV?'BV gráfica X — material Kerry':'Vídeo institucional De Marchi'}" 
             oninput="_exForm.nome=this.value">
         </div>
         <div class="f-field">
@@ -4020,48 +4064,73 @@ async function pgExtras(el){
         </div>
       </div>
       
-      <!-- Valor + imposto -->
+      ${isFee?`
+      <!-- EXTRA FEE: NF + custo -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
         <div class="f-field">
-          <label class="f-label" style="color:${isBV?'var(--pack)':'var(--prod)'}">${isBV?'Valor recebido do fornecedor (R$) *':'Valor cobrado do cliente (R$) *'}</label>
-          <input class="f-input" type="number" id="ex-bruto" min="0" step="any" inputmode="decimal" value="${_exForm.valor_bruto||''}" placeholder="0,00" 
+          <label class="f-label" style="color:var(--prod)">Valor da NF cobrada (R$) *</label>
+          <input class="f-input" type="number" id="ex-nf" min="0" step="any" inputmode="decimal" value="${_exForm.valor_bruto||''}" placeholder="0,00" 
             style="font-size:16px;font-weight:700"
             oninput="exOnFieldChange('valor_bruto',this.value)">
+          <div style="font-size:10px;color:var(--txt3);margin-top:3px">O quanto será cobrado do cliente</div>
         </div>
         <div class="f-field">
-          <label class="f-label">${isBV?'Imposto do fornecedor (%) *':'Imposto (% fixo)'}</label>
-          <input class="f-input" type="number" id="ex-imposto-pct" min="0" max="100" step="any" inputmode="decimal" value="${_exForm.imposto_pct}" 
-            ${!isBV?'disabled style="opacity:.6;cursor:not-allowed"':''}
-            oninput="exOnFieldChange('imposto_pct',this.value)">
-          ${!isBV?'<div style="font-size:10px;color:var(--txt3);margin-top:3px">Travado em 18% para lançamentos extras</div>':'<div style="font-size:10px;color:var(--txt3);margin-top:3px">Informe o imposto que o fornecedor descontou</div>'}
+          <label class="f-label" style="color:var(--pack)">Custo do projeto (R$) *</label>
+          <input class="f-input" type="number" id="ex-custo" min="0" step="any" inputmode="decimal" value="${_exForm.valor_custo||''}" placeholder="0,00" 
+            style="font-size:16px;font-weight:700"
+            oninput="exOnFieldChange('valor_custo',this.value)">
+          <div style="font-size:10px;color:var(--txt3);margin-top:3px">Custo total do projeto (fornecedores, terceiros, etc.)</div>
         </div>
-      </div>
+      </div>`:`
+      <!-- BV: apenas valor líquido recebido -->
+      <div class="f-field" style="margin-bottom:14px">
+        <label class="f-label" style="color:var(--pack)">Valor a receber (R$, já líquido de imposto) *</label>
+        <input class="f-input" type="number" id="ex-recebido" min="0" step="any" inputmode="decimal" value="${_exForm.valor_recebido||''}" placeholder="0,00" 
+          style="font-size:18px;font-weight:700;max-width:300px"
+          oninput="exOnFieldChange('valor_recebido',this.value)">
+        <div style="font-size:10px;color:var(--txt3);margin-top:3px">Valor que a TGT vai efetivamente receber da gráfica/fornecedor (sem impostos)</div>
+      </div>`}
       
       <!-- PREVIEW -->
       <div style="background:var(--bg3);border-radius:8px;padding:16px;margin-bottom:14px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Prévia da distribuição</div>
+        ${isFee?`
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:10px;text-align:center">
           <div>
-            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Valor bruto</div>
-            <div style="font-size:14px;font-weight:700" id="exp-bruto">R$ 0,00</div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">NF cobrada</div>
+            <div style="font-size:14px;font-weight:700" id="exp-nf">${fMoney(previewNF)}</div>
           </div>
           <div>
-            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Imposto</div>
-            <div style="font-size:14px;font-weight:700;color:var(--red)" id="exp-imposto">− R$ 0,00</div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Custo</div>
+            <div style="font-size:14px;font-weight:700;color:var(--red)" id="exp-custo">− ${fMoney(previewCusto)}</div>
           </div>
-          <div>
-            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Líquido</div>
-            <div style="font-size:14px;font-weight:800;color:var(--txt)" id="exp-liquido">R$ 0,00</div>
+          <div style="border-left:1px solid var(--border);padding-left:10px">
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Diferença</div>
+            <div style="font-size:14px;font-weight:800;color:var(--txt)" id="exp-base">${fMoney(previewDiferenca)}</div>
           </div>
           <div style="border-left:1px solid var(--border);padding-left:10px">
             <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Você recebe (<span id="exp-conta-pct">${pctScore}%</span>)</div>
-            <div style="font-size:16px;font-weight:800;color:var(--prod)" id="exp-conta">R$ 0,00</div>
+            <div style="font-size:16px;font-weight:800;color:var(--prod)" id="exp-conta">${fMoney(valorConta)}</div>
           </div>
           <div>
             <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Margem TGT</div>
-            <div style="font-size:14px;font-weight:700;color:var(--t1)" id="exp-margem">R$ 0,00</div>
+            <div style="font-size:14px;font-weight:700;color:var(--t1)" id="exp-margem">${fMoney(valorTGT)}</div>
           </div>
-        </div>
+        </div>`:`
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center">
+          <div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Valor líquido recebido</div>
+            <div style="font-size:18px;font-weight:800" id="exp-base">${fMoney(previewRecebido)}</div>
+          </div>
+          <div style="border-left:1px solid var(--border);padding-left:10px">
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Você recebe (<span id="exp-conta-pct">${pctScore}%</span>)</div>
+            <div style="font-size:20px;font-weight:800;color:var(--prod)" id="exp-conta">${fMoney(valorConta)}</div>
+          </div>
+          <div style="border-left:1px solid var(--border);padding-left:10px">
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Margem TGT</div>
+            <div style="font-size:16px;font-weight:700;color:var(--t1)" id="exp-margem">${fMoney(valorTGT)}</div>
+          </div>
+        </div>`}
         <div id="exp-warn"></div>
       </div>
       
@@ -4076,20 +4145,24 @@ async function pgExtras(el){
     ${myExtras.length===0?'<div class="empty" style="padding:30px;text-align:center;color:var(--txt3)">Nenhum lançamento ainda. Faça o primeiro acima ☝</div>':`
       <table class="t-table"><thead><tr>
         <th>Data</th><th>Descrição</th><th>Cliente</th><th>Tipo</th>
-        <th style="text-align:right">Bruto</th><th style="text-align:right">Líquido</th>
+        <th style="text-align:right">Valor</th><th style="text-align:right">Base cálc.</th>
         <th style="text-align:right">A receber</th><th>Status</th><th></th>
       </tr></thead><tbody>
-      ${myExtras.map(x=>`<tr>
+      ${myExtras.map(x=>{
+        const isXBV=x.tipo==='bv';
+        const valorMostrado=isXBV?(x.valor_recebido||0):(x.valor_bruto||0);
+        const subInfo=isXBV?'líquido':(`custo ${fMoney(x.valor_custo||0)}`);
+        return `<tr>
         <td style="font-size:11px;color:var(--txt2);white-space:nowrap">${new Date(x.created_at).toLocaleDateString('pt-BR')}</td>
         <td><b>${escapeHtml(x.nome)}</b>${x.obs?`<div style="font-size:10px;color:var(--txt3);margin-top:2px">${escapeHtml(x.obs)}</div>`:''}</td>
         <td>${x.client_name?`<span class="bg bg-t1">${escapeHtml(x.client_name)}</span>`:'<span style="color:var(--txt3);font-size:11px">—</span>'}</td>
-        <td>${x.tipo==='bv'?'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack)">🎁 BV</span>':'<span class="bg" style="background:rgba(237,28,36,.15);color:var(--red)">💼 Extra</span>'}</td>
-        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_bruto)}<div style="font-size:9px;color:var(--txt3)">− ${Number(x.imposto_pct).toFixed(1)}%</div></td>
-        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_liquido)}</td>
-        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--prod)">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%</div></td>
+        <td>${isXBV?'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack)">🎁 BV</span>':'<span class="bg" style="background:rgba(237,28,36,.15);color:var(--red)">💼 Fee</span>'}</td>
+        <td style="text-align:right;font-family:var(--mono)">${fMoney(valorMostrado)}<div style="font-size:9px;color:var(--txt3)">${subInfo}</div></td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600">${fMoney(x.base_calculo||0)}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--prod)">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%${isXBV?' BV+10':''}</div></td>
         <td>${x.status==='pago'?`<span class="bg" style="background:rgba(74,222,128,.15);color:var(--prod);font-weight:700">✓ PAGO</span>${x.paid_at?`<div style="font-size:9px;color:var(--txt3);margin-top:2px">${new Date(x.paid_at).toLocaleDateString('pt-BR')}</div>`:''}`:'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack);font-weight:700">⏳ PENDENTE</span>'}</td>
         <td>${x.status==='pendente'?`<button onclick="exCancelar('${x.id}')" title="Cancelar" style="background:transparent;border:none;color:var(--txt3);cursor:pointer;font-size:14px;padding:4px">🗑</button>`:''}</td>
-      </tr>`).join('')}
+      </tr>`}).join('')}
       </tbody></table>
     `}
     </div>`;
@@ -4208,20 +4281,24 @@ async function pgExtrasPagar(el){
       </div>
       <table class="t-table"><thead><tr>
         <th>Data</th><th>Descrição</th><th>Cliente</th><th>Tipo</th>
-        <th style="text-align:right">Bruto</th><th style="text-align:right">Líquido</th>
+        <th style="text-align:right">Valor</th><th style="text-align:right">Base cálc.</th>
         <th style="text-align:right">Pagar</th><th>Status</th><th></th>
       </tr></thead><tbody>
-      ${acc.items.map(x=>`<tr>
+      ${acc.items.map(x=>{
+        const isXBV=x.tipo==='bv';
+        const valorMostrado=isXBV?(x.valor_recebido||0):(x.valor_bruto||0);
+        const subInfo=isXBV?'líquido':`custo ${fMoney(x.valor_custo||0)}`;
+        return `<tr>
         <td style="font-size:11px;color:var(--txt2);white-space:nowrap">${new Date(x.created_at).toLocaleDateString('pt-BR')}</td>
         <td><b>${escapeHtml(x.nome)}</b>${x.obs?`<div style="font-size:10px;color:var(--txt3);margin-top:2px">${escapeHtml(x.obs)}</div>`:''}</td>
         <td>${x.client_name?`<span class="bg bg-t1">${escapeHtml(x.client_name)}</span>`:'<span style="color:var(--txt3);font-size:11px">—</span>'}</td>
-        <td>${x.tipo==='bv'?'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack)">🎁 BV</span>':'<span class="bg" style="background:rgba(237,28,36,.15);color:var(--red)">💼 Extra</span>'}</td>
-        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_bruto)}<div style="font-size:9px;color:var(--txt3)">− ${Number(x.imposto_pct).toFixed(1)}%</div></td>
-        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_liquido)}</td>
-        <td style="text-align:right;font-family:var(--mono);font-weight:800;color:var(--prod);font-size:14px">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%${x.tipo==='bv'?' BV+10':''}</div></td>
+        <td>${isXBV?'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack)">🎁 BV</span>':'<span class="bg" style="background:rgba(237,28,36,.15);color:var(--red)">💼 Fee</span>'}</td>
+        <td style="text-align:right;font-family:var(--mono)">${fMoney(valorMostrado)}<div style="font-size:9px;color:var(--txt3)">${subInfo}</div></td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600">${fMoney(x.base_calculo||0)}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:800;color:var(--prod);font-size:14px">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%${isXBV?' BV+10':''}</div></td>
         <td>${x.status==='pago'?`<span class="bg" style="background:rgba(74,222,128,.15);color:var(--prod);font-weight:700">✓ PAGO</span>${x.paid_at?`<div style="font-size:9px;color:var(--txt3);margin-top:2px">${new Date(x.paid_at).toLocaleDateString('pt-BR')}</div>`:''}`:'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack);font-weight:700">⏳ PENDENTE</span>'}</td>
         <td style="white-space:nowrap">${x.status==='pendente'?`<button onclick="exMarkPago('${x.id}')" class="btn btn-sm btn-r" style="font-size:10px;padding:4px 8px">✓ Pagar</button>`:`<button onclick="exMarkPendente('${x.id}')" title="Voltar pra pendente" style="background:transparent;border:1px solid var(--border);color:var(--txt3);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px">↺ pendente</button>`}</td>
-      </tr>`).join('')}
+      </tr>`}).join('')}
       </tbody></table></div>
     `).join('')}`;
 }
