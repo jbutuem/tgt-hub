@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.34';
+const HUB_VERSION='0.35';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -5282,8 +5282,11 @@ async function planningSave(){
 // Slider component HTML
 function planningSliderHTML(id,value,max,onchange,color){
   const pct=max>0?Math.min(100,value/max*100):0;
+  // onchange dispara só ao SOLTAR o slider — evita flicker e re-render durante drag
+  // oninput atualiza só o display do número adjacente (não chama backend nem rerender)
   return `<input type="range" id="${id}" min="0" max="${max}" step="1" value="${value}" 
-    oninput="${onchange}; document.getElementById('${id}-num').value=this.value"
+    oninput="document.getElementById('${id}-num').value=this.value"
+    onchange="${onchange}"
     style="flex:1;height:6px;-webkit-appearance:none;appearance:none;background:linear-gradient(to right, ${color} 0%, ${color} ${pct}%, var(--bg3) ${pct}%, var(--bg3) 100%);border-radius:3px;outline:none;cursor:pointer">`;
 }
 
