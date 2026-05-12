@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.40';
+const HUB_VERSION='0.41';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -3833,10 +3833,12 @@ function exCalcPreview(){
   if(tipo==='extra_fee'){
     const nf=parseFloat(_exForm.valor_bruto)||0;
     const custo=parseFloat(_exForm.valor_custo)||0;
-    baseCalculo=Math.max(0,nf-custo);
-    info={nf,custo};
+    const diferenca=Math.max(0,nf-custo);
+    const imposto=diferenca*0.18;
+    baseCalculo=diferenca-imposto; // = diferença × 0.82
+    info={nf,custo,diferenca,imposto};
   }else{
-    // BV: valor já líquido
+    // BV: valor já líquido, sem imposto
     baseCalculo=parseFloat(_exForm.valor_recebido)||0;
     info={liquidoRecebido:baseCalculo};
   }
@@ -4011,8 +4013,10 @@ async function pgExtras(el){
   const previewNF=parseFloat(_exForm.valor_bruto)||0;
   const previewCusto=parseFloat(_exForm.valor_custo)||0;
   const previewDiferenca=Math.max(0,previewNF-previewCusto);
+  const previewImposto=previewDiferenca*0.18;
+  const previewBaseFee=previewDiferenca-previewImposto;
   const previewRecebido=parseFloat(_exForm.valor_recebido)||0;
-  const baseCalc=isFee?previewDiferenca:previewRecebido;
+  const baseCalc=isFee?previewBaseFee:previewRecebido;
   const valorConta=baseCalc*pctScore/100;
   const valorTGT=baseCalc-valorConta;
   
@@ -4020,7 +4024,7 @@ async function pgExtras(el){
     <!-- CARDS RESUMO -->
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
       <div class="card"><div class="cl">Seu Score</div><div class="cv" style="color:${elig.color};font-size:24px">${elig.score!==null?elig.score.toFixed(1):'—'}</div>${elig.scoreMonth&&elig.scoreMonth!==curMonth?`<div style="font-size:9px;color:var(--txt3);margin-top:3px">de ${elig.scoreMonth}</div>`:''}</div>
-      <div class="card"><div class="cl">% Extra Fee</div><div class="cv" style="color:${elig.color};font-size:24px">${pctExtra}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">sobre a diferença NF − custo</div></div>
+      <div class="card"><div class="cl">% Extra Fee</div><div class="cv" style="color:${elig.color};font-size:24px">${pctExtra}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">sobre líquido (diferença − 18%)</div></div>
       <div class="card" style="border-left:3px solid var(--pack)"><div class="cl">% BV</div><div class="cv" style="color:var(--pack);font-size:24px">${pctBV}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">bônus +10% (até 30%)</div></div>
       <div class="card"><div class="cl">A receber (pendente)</div><div class="cv" style="color:var(--pack);font-size:20px">${fMoney(totalPendente)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pendentes.length} lança${pendentes.length===1?'mento':'mentos'}</div></div>
       <div class="card"><div class="cl">Recebido em ${curMonth.split('-').reverse().join('/')}</div><div class="cv" style="color:var(--prod);font-size:20px">${fMoney(totalPagoMes)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pagosEsteMes.length} pagamento${pagosEsteMes.length===1?'':'s'}</div></div>
@@ -4095,28 +4099,34 @@ async function pgExtras(el){
       <div style="background:var(--bg3);border-radius:8px;padding:16px;margin-bottom:14px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Prévia da distribuição</div>
         ${isFee?`
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:10px;text-align:center">
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;text-align:center">
           <div>
             <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">NF cobrada</div>
-            <div style="font-size:14px;font-weight:700" id="exp-nf">${fMoney(previewNF)}</div>
+            <div style="font-size:13px;font-weight:700" id="exp-nf">${fMoney(previewNF)}</div>
           </div>
           <div>
             <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Custo</div>
-            <div style="font-size:14px;font-weight:700;color:var(--red)" id="exp-custo">− ${fMoney(previewCusto)}</div>
+            <div style="font-size:13px;font-weight:700;color:var(--red)" id="exp-custo">− ${fMoney(previewCusto)}</div>
           </div>
-          <div style="border-left:1px solid var(--border);padding-left:10px">
+          <div>
             <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Diferença</div>
-            <div style="font-size:14px;font-weight:800;color:var(--txt)" id="exp-base">${fMoney(previewDiferenca)}</div>
+            <div style="font-size:13px;font-weight:700;color:var(--txt2)" id="exp-dif">${fMoney(previewDiferenca)}</div>
           </div>
-          <div style="border-left:1px solid var(--border);padding-left:10px">
-            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Você recebe (<span id="exp-conta-pct">${pctScore}%</span>)</div>
-            <div style="font-size:16px;font-weight:800;color:var(--prod)" id="exp-conta">${fMoney(valorConta)}</div>
+          <div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Imposto 18%</div>
+            <div style="font-size:13px;font-weight:700;color:var(--red)" id="exp-imp">− ${fMoney(previewImposto)}</div>
+          </div>
+          <div style="border-left:1px solid var(--border);padding-left:8px">
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Líquido (você ${pctScore}%)</div>
+            <div style="font-size:11px;color:var(--txt3)" id="exp-base">${fMoney(previewBaseFee)}</div>
+            <div style="font-size:15px;font-weight:800;color:var(--prod)" id="exp-conta">${fMoney(valorConta)}</div>
           </div>
           <div>
             <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Margem TGT</div>
-            <div style="font-size:14px;font-weight:700;color:var(--t1)" id="exp-margem">${fMoney(valorTGT)}</div>
+            <div style="font-size:13px;font-weight:700;color:var(--t1)" id="exp-margem">${fMoney(valorTGT)}</div>
           </div>
-        </div>`:`
+        </div>
+        <div style="margin-top:8px;font-size:10px;color:var(--txt3);text-align:center">Cálculo: (${fMoney(previewNF)} − ${fMoney(previewCusto)}) − 18% imposto = <b style="color:var(--txt2)">${fMoney(previewBaseFee)}</b> · ${pctScore}% pra você = <b style="color:var(--prod)">${fMoney(valorConta)}</b></div>`:`
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center">
           <div>
             <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Valor líquido recebido</div>
