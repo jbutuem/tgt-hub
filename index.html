@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.33';
+const HUB_VERSION='0.34';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -5045,14 +5045,7 @@ function planningLoadState(team,month){
       _plPage.memberHours[c.id][m.id]=mp?Number(mp.allocated_hours):0;
       _plPage.memberLocked[c.id][m.id]=mp?!!mp.is_locked:false;
     });
-    // Total do cliente = soma das pessoas (derivado).
-    // Se não houver member plans ainda, distribui o planned_hours proporcionalmente entre as pessoas (igualmente)
-    const memberSum=planningClientTotal(c.id);
-    if(memberSum===0&&plan&&Number(plan.planned_hours)>0&&teamMembers.length>0){
-      // Distribuir igualmente entre as pessoas do time como ponto de partida
-      const per=Number(plan.planned_hours)/teamMembers.length;
-      teamMembers.forEach(m=>{_plPage.memberHours[c.id][m.id]=Math.round(per*10)/10});
-    }
+    // Total do cliente = soma das pessoas (derivado). Começa zerado se não houver alocações salvas.
     _plPage.clientHours[c.id]=planningClientTotal(c.id);
   });
 }
@@ -5139,8 +5132,9 @@ function planningOnMemberSliderChange(team,clientId,memberId,newValue){
     if(newValue>balance){
       const m=getMembersInTeam(team).find(mm=>mm.id===memberId);
       const nome=m?m.name.split(' ')[0]:'pessoa';
+      const cap_m=m?(m.capacity_in_team||0):0;
       newValue=balance;
-      toast(`Saldo de ${escapeHtml(nome)}: ${fH(balance)}. Marque o cliente como 💰 extras para passar disso.`,'info');
+      toast(`${escapeHtml(nome)} já está alocada em outros clientes. Saldo restante: ${Math.round(balance)}h (cap ${cap_m}h). Marque o cliente como 💰 extras para passar disso.`,'info');
     }
   }
   
