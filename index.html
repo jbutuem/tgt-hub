@@ -718,12 +718,12 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.35';
+const HUB_VERSION='0.36';
 
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
-let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],av_budgets:[],scores:[],commission_rules:[],cost_defaults:[],qc_requests:[],announcements:[],announcement_reads:[],member_teams:[],client_plans:[],client_member_plans:[]};
+let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],av_budgets:[],scores:[],commission_rules:[],cost_defaults:[],qc_requests:[],announcements:[],announcement_reads:[],member_teams:[],client_plans:[],client_member_plans:[],extras:[]};
 let curPage='timer';
 let timerStart=null,timerSec=0,timerInt=null,running=false,activeEntryId=null;
 let dateRange='this_month',customFrom='',customTo='';
@@ -1100,6 +1100,8 @@ async function loadData(){
     // Planejamento mensal
     try{S.client_plans=await sbGet('tt_client_plans','')}catch(e){S.client_plans=[]}
     try{S.client_member_plans=await sbGet('tt_client_member_plans','')}catch(e){S.client_member_plans=[]}
+    // Extras (BV/Lançamento extra)
+    try{S.extras=await sbGet('tt_extras','order=created_at.desc')}catch(e){S.extras=[]}
   }catch(e){console.error('loadData:',e);toast('Erro ao carregar dados','error')}
 }
 
@@ -1321,8 +1323,13 @@ function buildNav(){
   // EXTRAS section — accounts + admin
   if(isA()||isAcc()){
     h+=`<div class="sb-section">Extras & Comissões</div>`;
-    h+=`<div class="sb-item" data-p="extras" onclick="nav('extras')">${ICONS.money} Lançar Extra</div>`;
-    h+=`<div class="sb-item" data-p="extras-hist" onclick="nav('extras-hist')">${ICONS.entries} Meus Extras</div>`;
+    h+=`<div class="sb-item" data-p="extras" onclick="nav('extras')">${ICONS.money} Meus Extras</div>`;
+    if(isA()){
+      // contador de pendências para o admin
+      const pendCount=(S.extras||[]).filter(x=>x.status==='pendente').length;
+      const pendBadge=pendCount?` <span class="sb-badge">${pendCount}</span>`:'';
+      h+=`<div class="sb-item" data-p="extras-pagar" onclick="nav('extras-pagar')">${ICONS.money} Extras a Pagar${pendBadge}</div>`;
+    }
   }
   
   // BRAND GUARDIAN — todos exceto cliente
@@ -1355,7 +1362,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-audit':'Auditoria','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Lançar Extra','extras-hist':'Meus Extras',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM','my-score':'Meu Score',planning:'Planejamento Mensal',members:'Membros',clients:'Clientes',profile:'Meu Perfil',announcements:'Comunicados'};
+const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-audit':'Auditoria','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Meus Extras','extras-hist':'Meus Extras','extras-pagar':'Extras a Pagar',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM','my-score':'Meu Score',planning:'Planejamento Mensal',members:'Membros',clients:'Clientes',profile:'Meu Perfil',announcements:'Comunicados'};
 
 function nav(page){
   curPage=page;
@@ -1379,7 +1386,7 @@ async function renderPage(){
       'd-my':pgDashMy,'d-adm':pgDashAdm,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,'d-audit':pgAudit,
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
-      extras:pgExtras,'extras-hist':pgExtrasHist,
+      extras:pgExtras,'extras-hist':pgExtrasHist,'extras-pagar':pgExtrasPagar,
       qc:pgQC,'ag-briefing':pgBriefing,'ag-arte':pgArte,
       score:pgScore,'my-score':pgMyScore,planning:pgPlanning,members:pgMembers,clients:pgClients,profile:pgProfile,
       announcements:pgAnnouncements
@@ -3776,9 +3783,7 @@ async function saveCostDef(id){
 // ═══════════════════════════════════════════════
 // EXTRAS & COMISSÕES
 // ═══════════════════════════════════════════════
-const MAKE_EXTRAS_WEBHOOK='https://hook.us2.make.com/f8udalcn1tphq9ums02x2aoxgx79r0lm';
-const EXTRAS_TYPES=['Vídeo / Audiovisual','Horas adicionais','Projeto avulso','Bonificação gráfica','Bonificação plataforma','Campanha emergencial','Outro'];
-const EXTRAS_IMPACT=['Alto — venda direta / diretoria','Médio — sustenta presença','Baixo — ajuste / operacional'];
+// (constantes legadas removidas — substituídas por tt_extras no Supabase)
 
 function getMyEligibility(){
   const curMonth=new Date().toISOString().substring(0,7);
@@ -3789,271 +3794,359 @@ function getMyEligibility(){
   return elig;
 }
 
-let extrasMode='budget'; // 'budget' or 'calc'
+// ═══════════════════════════════════════════════════════════════
+// MEUS EXTRAS — BV e Lançamentos extras (simplificado)
+// ═══════════════════════════════════════════════════════════════
+//
+// Tipos:
+//   BV: valor recebido do fornecedor + % imposto do fornecedor (você informa)
+//   Extra: valor cobrado do cliente, imposto fixo 18%
+//
+// Distribuição:
+//   líquido = bruto - (bruto * imposto_pct / 100)
+//   valor_account = líquido * (% comissão do score) / 100
+//   margem_tgt = líquido - valor_account
+//
+// Fluxo:
+//   Account lança → Supabase tt_extras (status='pendente')
+//   Admin marca como pago → Supabase (status='pago', paid_at)
+//   Account vê status atualizado em tempo real
+// ═══════════════════════════════════════════════════════════════
 
-function setExtrasMode(mode){
-  extrasMode=mode;
-  const bEl=$('ex-sec-budget'),cEl=$('ex-sec-calc');
-  const bBtn=$('ex-mode-budget'),cBtn=$('ex-mode-calc');
-  if(mode==='budget'){
-    if(bEl)bEl.style.display='';if(cEl)cEl.style.display='none';
-    if(bBtn)bBtn.classList.add('active');if(cBtn)cBtn.classList.remove('active');
-    calcExtras();
-  }else{
-    if(bEl)bEl.style.display='none';if(cEl)cEl.style.display='';
-    if(bBtn)bBtn.classList.remove('active');if(cBtn)cBtn.classList.add('active');
-    calcExtrasFromReceita();
+let _exForm={tipo:'extra',valor_bruto:'',imposto_pct:18,nome:'',client_id:'',obs:''};
+
+function exCalcPreview(){
+  const bruto=parseFloat(_exForm.valor_bruto)||0;
+  const impPct=parseFloat(_exForm.imposto_pct)||0;
+  const imposto=bruto*impPct/100;
+  const liquido=bruto-imposto;
+  const elig=getMyEligibility();
+  const pct=scorePctDirect(elig.score,elig.blockStatus)*100; // converte 0.15 -> 15
+  const valorAccount=liquido*pct/100;
+  const margem=liquido-valorAccount;
+  return{bruto,impPct,imposto,liquido,pctComissao:pct,valorAccount,margem,elig};
+}
+
+function exUpdatePreview(){
+  const p=exCalcPreview();
+  const set=(id,v)=>{const el=$(id);if(el)el.textContent=v};
+  set('exp-bruto',fMoney(p.bruto));
+  set('exp-imposto',`− ${fMoney(p.imposto)} (${p.impPct.toFixed(1)}%)`);
+  set('exp-liquido',fMoney(p.liquido));
+  set('exp-conta-pct',`${p.pctComissao.toFixed(0)}%`);
+  set('exp-conta',fMoney(p.valorAccount));
+  set('exp-margem',fMoney(p.margem));
+  // Avisos
+  const wEl=$('exp-warn');
+  let warn='';
+  if(p.pctComissao===0){
+    warn=`<div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.25);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--red);margin-top:8px">⚠ Seu score atual (${p.elig.score!==null?p.elig.score.toFixed(1):'—'}) não habilita comissão. Você receberá R$ 0 — toda a margem fica com a TGT.</div>`;
+  }else if(p.pctComissao<15){
+    warn=`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:6px;padding:8px 12px;font-size:11px;color:var(--pack);margin-top:8px">⚠ Score ${p.elig.score!==null?p.elig.score.toFixed(1):'—'} → ${p.pctComissao.toFixed(0)}%. Score 7.5+ destrava 15%.</div>`;
+  }
+  if(wEl)wEl.innerHTML=warn;
+}
+
+function exOnTipoChange(t){
+  _exForm.tipo=t;
+  if(t==='extra'){_exForm.imposto_pct=18}
+  pgExtrasRerender();
+}
+
+function exOnFieldChange(field,value){
+  _exForm[field]=value;
+  if(field==='valor_bruto'||field==='imposto_pct'){
+    exUpdatePreview();
   }
 }
 
-function setMargin(pct){
-  if($('ex-margin-pct'))$('ex-margin-pct').value=pct;
-  document.querySelectorAll('#ex-sec-calc .pill').forEach(p=>p.classList.remove('active'));
-  calcExtrasFromMargin();
-}
-
-function calcExtrasFromReceita(){
-  // Receita desejada → calcula preço
-  const ct=parseFloat($('ex-ctime')?.value)||0;
-  const cd=parseFloat($('ex-cdiv')?.value)||0;
-  const receita=parseFloat($('ex-receita')?.value)||0;
-  const elig=getMyEligibility();
-  const pct=scorePctDirect(elig.score,elig.blockStatus);
-  const ldrPct=pct>0?0.10:0;
-  // Price = (costs + receita) / (1 - taxRate - accPct - ldrPct)
-  const taxRate=0.18;
-  const divisor=1-taxRate-pct-ldrPct;
-  const price=divisor>0?Math.round((ct+cd+receita)/divisor):0;
-  if($('ex-budget'))$('ex-budget').value=price;
-  if($('ex-calc-price'))$('ex-calc-price').textContent=fMoney(price);
-  const imp=price*taxRate;const base=Math.max(0,price-imp-ct-cd);
-  if($('ex-calc-breakdown'))$('ex-calc-breakdown').textContent=`${fMoney(ct+cd)} custos + ${fMoney(Math.round(imp))} impostos + ${fMoney(Math.round(base*pct))} account + ${fMoney(Math.round(base*ldrPct))} líder + ${fMoney(receita)} receita`;
-  // Update margin field
-  if($('ex-margin-pct')&&price>0)$('ex-margin-pct').value=Math.round(receita/price*100);
-  calcExtras();
-}
-
-function calcExtrasFromMargin(){
-  // Margem % → calcula receita → calcula preço
-  const ct=parseFloat($('ex-ctime')?.value)||0;
-  const cd=parseFloat($('ex-cdiv')?.value)||0;
-  const marginPct=parseFloat($('ex-margin-pct')?.value)||0;
-  const elig=getMyEligibility();
-  const pct=scorePctDirect(elig.score,elig.blockStatus);
-  const ldrPct=pct>0?0.10:0;
-  const taxRate=0.18;
-  // Price = costs / (1 - tax - acc - ldr - marginPct/100)
-  const divisor=1-taxRate-pct-ldrPct-(marginPct/100);
-  const price=divisor>0?Math.round((ct+cd)/divisor):0;
-  const receita=Math.round(price*(marginPct/100));
-  if($('ex-receita'))$('ex-receita').value=receita;
-  if($('ex-budget'))$('ex-budget').value=price;
-  if($('ex-calc-price'))$('ex-calc-price').textContent=fMoney(price);
-  const imp=price*taxRate;const base=Math.max(0,price-imp-ct-cd);
-  if($('ex-calc-breakdown'))$('ex-calc-breakdown').textContent=`${fMoney(ct+cd)} custos + ${fMoney(Math.round(imp))} impostos + ${fMoney(Math.round(base*pct))} account + ${fMoney(Math.round(base*ldrPct))} líder + ${fMoney(receita)} receita`;
-  calcExtras();
-}
-
-function scorePctDirect(score,blockStatus){
-  if(blockStatus&&blockStatus!=='none')return 0;
-  if(score===null||score===undefined)return 0;
-  if(score>=9)return 0.20;
-  if(score>=7.5)return 0.15;
-  if(score>=6)return 0.10;
-  return 0;
-}
-
-function calcExtras(){
-  const b=parseFloat($('ex-budget')?.value)||0;
-  const ct=parseFloat($('ex-ctime')?.value)||0;
-  const cd=parseFloat($('ex-cdiv')?.value)||0;
-  const imp=b*0.18;
-  const base=Math.max(0,b-imp-ct-cd);
-  const elig=getMyEligibility();
-  const pct=scorePctDirect(elig.score,elig.blockStatus);
-  const acc=base*pct;
-  const ldr=base*(pct>0?0.10:0); // líder PROD gets 10% when account is eligible
-  const tgt=base-acc-ldr;
-  
-  if($('ex-pv-b'))$('ex-pv-b').textContent=fMoney(b);
-  if($('ex-pv-i'))$('ex-pv-i').textContent='('+fMoney(imp)+')';
-  if($('ex-pv-ct'))$('ex-pv-ct').textContent='('+fMoney(ct)+')';
-  if($('ex-pv-cd'))$('ex-pv-cd').textContent='('+fMoney(cd)+')';
-  if($('ex-pv-base'))$('ex-pv-base').textContent=fMoney(base);
-  if($('ex-pv-acc'))$('ex-pv-acc').textContent=fMoney(acc);
-  if($('ex-pv-acc-s'))$('ex-pv-acc-s').textContent=`${(pct*100).toFixed(0)}% — Score ${elig.score!==null?elig.score.toFixed(1):'—'}`;
-  if($('ex-pv-ldr'))$('ex-pv-ldr').textContent=fMoney(ldr);
-  if($('ex-pv-tgt'))$('ex-pv-tgt').textContent=fMoney(tgt);
-  if($('ex-pv-tgt-s'))$('ex-pv-tgt-s').textContent=b>0?Math.round(tgt/b*100)+'% do budget':'';
-  if($('ex-pv-score')){
-    const s=elig.score;
-    $('ex-pv-score').textContent=s!==null?s.toFixed(1):'—';
-    $('ex-pv-score').style.color=elig.color;
+async function exSalvar(){
+  const btn=$('ex-salvar-btn');if(btn)btn.disabled=true;
+  try{
+    if(!_exForm.nome.trim()){toast('Informe o nome/descrição','error');return}
+    const bruto=parseFloat(_exForm.valor_bruto)||0;
+    if(bruto<=0){toast('Informe um valor maior que zero','error');return}
+    const impPct=parseFloat(_exForm.imposto_pct)||0;
+    if(impPct<0||impPct>100){toast('Imposto deve ser entre 0 e 100%','error');return}
+    const p=exCalcPreview();
+    const client=S.clients.find(c=>c.id===_exForm.client_id);
+    const payload={
+      account_id:S.user.id,
+      account_name:S.user.name,
+      client_id:_exForm.client_id||null,
+      client_name:client?client.name:null,
+      tipo:_exForm.tipo,
+      nome:_exForm.nome.trim(),
+      obs:_exForm.obs?.trim()||null,
+      valor_bruto:bruto,
+      imposto_pct:impPct,
+      score_snapshot:p.elig.score,
+      pct_comissao:p.pctComissao,
+      status:'pendente'
+    };
+    await sbPost('tt_extras',payload);
+    toast('Extra lançado com sucesso!','success');
+    // Limpa form
+    _exForm={tipo:'extra',valor_bruto:'',imposto_pct:18,nome:'',client_id:'',obs:''};
+    pgExtrasRerender();
+  }catch(e){
+    toast('Erro ao salvar: '+e.message,'error');
+  }finally{
+    if(btn)btn.disabled=false;
   }
-  if($('ex-pv-elig'))$('ex-pv-elig').innerHTML=`<span class="bg ${elig.cls}" style="font-size:10px">${elig.label}</span> <span style="font-weight:700;color:${elig.color}">${(pct*100).toFixed(0)}%</span>`;
-  
-  let alert='';
-  if(pct===0&&b>0)alert=`<div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--red)">Score abaixo de 6.0 ou bloqueio ativo — comissão não será aplicada.</div>`;
-  else if(pct===0.10&&b>0)alert=`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--pack)">Score 6.0–7.4 → 10%. Melhore para 7.5+ e suba para 15%.</div>`;
-  if($('ex-alert'))$('ex-alert').innerHTML=alert;
+}
+
+async function exMarkPago(id,nota){
+  if(!isA())return;
+  if(!confirm('Marcar este extra como PAGO?'))return;
+  try{
+    await sbPatch('tt_extras',`id=eq.${id}`,{
+      status:'pago',
+      paid_at:new Date().toISOString(),
+      paid_by:S.user.id,
+      paid_note:nota||null
+    });
+    toast('Marcado como pago','success');
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function exMarkPendente(id){
+  if(!isA())return;
+  if(!confirm('Voltar este extra para PENDENTE?'))return;
+  try{
+    await sbPatch('tt_extras',`id=eq.${id}`,{status:'pendente',paid_at:null,paid_by:null});
+    toast('Voltou para pendente','success');
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function exCancelar(id){
+  if(!confirm('Cancelar este extra? Esta ação some com ele.'))return;
+  try{
+    await sbDel('tt_extras',`id=eq.${id}`);
+    toast('Extra removido','success');
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+function pgExtrasRerender(){
+  const el=$('page');
+  if(el)pgExtras(el);
 }
 
 async function pgExtras(el){
   const elig=getMyEligibility();
-  const myClients=isA()?S.clients:S.clients.filter(c=>c.team===S.user.team);
+  const pctScore=scorePctDirect(elig.score,elig.blockStatus)*100;
+  
+  // Lista os meus extras
+  let myExtras=[];
+  try{
+    myExtras=await sbGet('tt_extras',`account_id=eq.${S.user.id}&order=created_at.desc`);
+  }catch(e){console.error(e)}
+  
+  const pendentes=myExtras.filter(x=>x.status==='pendente');
+  const pagos=myExtras.filter(x=>x.status==='pago');
+  const totalPendente=pendentes.reduce((s,x)=>s+Number(x.valor_account||0),0);
+  const totalPago=pagos.reduce((s,x)=>s+Number(x.valor_account||0),0);
+  
+  const myClients=isA()?S.clients:S.clients.filter(c=>accountSeesClient(c));
+  const isBV=_exForm.tipo==='bv';
+  
   el.innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+    <!-- CARDS RESUMO -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
       <div class="card"><div class="cl">Seu Score</div><div class="cv" style="color:${elig.color}">${elig.score!==null?elig.score.toFixed(1):'—'}</div></div>
-      <div class="card"><div class="cl">Elegibilidade</div><div class="cv"><span class="bg ${elig.cls}">${elig.label}</span></div></div>
-      <div class="card"><div class="cl">% Comissão</div><div class="cv" style="color:${elig.color}">${elig.pct}%</div></div>
+      <div class="card"><div class="cl">% Comissão</div><div class="cv" style="color:${elig.color}">${pctScore.toFixed(0)}%</div></div>
+      <div class="card"><div class="cl">A receber (pendente)</div><div class="cv" style="color:var(--pack)">${fMoney(totalPendente)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pendentes.length} lança${pendentes.length===1?'mento':'mentos'}</div></div>
+      <div class="card"><div class="cl">Já recebido</div><div class="cv" style="color:var(--prod)">${fMoney(totalPago)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pagos.length} pago${pagos.length===1?'':'s'}</div></div>
     </div>
-    <div class="tbl"><div class="tbl-h"><h3>Novo projeto extra</h3></div><div style="padding:16px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-      <div class="f-field" style="grid-column:1/-1"><label class="f-label">Nome do projeto *</label><input class="f-input" id="ex-nome" placeholder="Ex: Kerry — vídeo institucional Q2" oninput="calcExtras()"></div>
-      <div class="f-field"><label class="f-label">Cliente *</label><select class="f-sel" id="ex-cliente" onchange="calcExtras()">${myClients.map(c=>`<option value="${c.name}">${c.name}</option>`).join('')}</select></div>
-      <div class="f-field"><label class="f-label">Tipo *</label><select class="f-sel" id="ex-tipo" onchange="calcExtras()">${EXTRAS_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-      <div class="f-field"><label class="f-label">Impacto *</label><select class="f-sel" id="ex-impacto" onchange="calcExtras()">${EXTRAS_IMPACT.map(i=>`<option>${i}</option>`).join('')}</select></div>
-      <div class="f-field"><label class="f-label">Custo do time (R$)</label><input class="f-input" type="number" id="ex-ctime" placeholder="Horas × taxa interna" oninput="calcExtras()"></div>
-      <div class="f-field"><label class="f-label">Custos diversos (R$)</label><input class="f-input" type="number" id="ex-cdiv" placeholder="Transp. + alim. + fornecedores" oninput="calcExtras()"></div>
-    </div>
-
-    <!-- BUDGET MODE TOGGLE -->
-    <div style="background:var(--bg3);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:10px">Como definir o valor?</div>
-      <div style="display:flex;gap:8px">
-        <button class="pill active" id="ex-mode-budget" onclick="setExtrasMode('budget')" style="flex:1;text-align:center;padding:10px">Tenho budget definido</button>
-        <button class="pill" id="ex-mode-calc" onclick="setExtrasMode('calc')" style="flex:1;text-align:center;padding:10px">Preciso calcular o preço</button>
-      </div>
-    </div>
-
-    <!-- MODE A: Budget definido -->
-    <div id="ex-sec-budget" style="margin-bottom:14px">
-      <div class="f-field"><label class="f-label" style="color:var(--prod);font-size:12px">Budget do cliente (R$) *</label><input class="f-input" type="number" id="ex-budget" placeholder="Valor já definido pelo cliente" style="font-size:16px;font-weight:700;text-align:center" oninput="calcExtras()"></div>
-    </div>
-
-    <!-- MODE B: Calcular preço -->
-    <div id="ex-sec-calc" style="display:none;margin-bottom:14px;background:var(--bg3);border-radius:var(--radius);padding:16px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Calculadora de preço</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        <div class="f-field"><label class="f-label">Receita líquida desejada (R$)</label><input class="f-input" type="number" id="ex-receita" placeholder="Quanto a TGT quer lucrar" style="font-size:15px;font-weight:700;text-align:center;border-color:var(--prod)" oninput="calcExtrasFromReceita()"></div>
-        <div class="f-field"><label class="f-label">Ou margem desejada (%)</label>
-          <div style="display:flex;gap:6px">
-            <button class="pill" onclick="setMargin(30)" style="flex:1">30%</button>
-            <button class="pill" onclick="setMargin(40)" style="flex:1">40%</button>
-            <button class="pill" onclick="setMargin(50)" style="flex:1">50%</button>
-            <input class="f-input" type="number" id="ex-margin-pct" placeholder="%" style="width:70px;text-align:center" oninput="calcExtrasFromMargin()">
-          </div>
+    
+    <!-- FORMULÁRIO -->
+    <div class="tbl" style="margin-bottom:20px"><div class="tbl-h"><h3>Novo lançamento</h3></div><div style="padding:16px">
+      
+      <!-- Tipo: BV ou Extra -->
+      <div style="background:var(--bg3);border-radius:8px;padding:14px;margin-bottom:14px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:10px">Tipo de lançamento</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="exOnTipoChange('extra')" style="flex:1;padding:14px;background:${!isBV?'var(--red)':'var(--bg2)'};color:${!isBV?'#fff':'var(--txt2)'};border:1px solid ${!isBV?'var(--red)':'var(--border)'};border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;text-align:left">
+            <div>💼 Lançamento Extra</div>
+            <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">Valor cobrado do cliente · imposto 18% fixo</div>
+          </button>
+          <button onclick="exOnTipoChange('bv')" style="flex:1;padding:14px;background:${isBV?'var(--red)':'var(--bg2)'};color:${isBV?'#fff':'var(--txt2)'};border:1px solid ${isBV?'var(--red)':'var(--border)'};border-radius:6px;font-weight:700;cursor:pointer;font-size:13px;text-align:left">
+            <div>🎁 BV — Bônus de Veiculação</div>
+            <div style="font-size:10px;font-weight:400;opacity:.85;margin-top:3px">Valor recebido do fornecedor · imposto do fornecedor</div>
+          </button>
         </div>
       </div>
-      <div style="border-top:1px solid var(--border);padding-top:12px;text-align:center">
-        <div style="font-size:10px;color:var(--txt3);margin-bottom:4px">PREÇO CALCULADO PARA O CLIENTE</div>
-        <div style="font-size:32px;font-weight:900;color:var(--prod);font-family:var(--mono)" id="ex-calc-price">R$ 0</div>
-        <div style="font-size:11px;color:var(--txt2);margin-top:4px" id="ex-calc-breakdown">Custos + Impostos + Comissões + Receita = Preço</div>
+      
+      <!-- Campos comuns -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div class="f-field" style="grid-column:1/-1">
+          <label class="f-label">Descrição *</label>
+          <input class="f-input" id="ex-nome" value="${escapeHtml(_exForm.nome||'')}" placeholder="Ex: ${isBV?'BV Globo — campanha Kerry Q2':'Vídeo institucional De Marchi'}" 
+            oninput="_exForm.nome=this.value">
+        </div>
+        <div class="f-field">
+          <label class="f-label">Cliente (opcional)</label>
+          <select class="f-sel" id="ex-cliente" onchange="_exForm.client_id=this.value">
+            <option value="">— sem cliente —</option>
+            ${myClients.map(c=>`<option value="${c.id}" ${_exForm.client_id===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="f-field">
+          <label class="f-label">Observações</label>
+          <input class="f-input" id="ex-obs" value="${escapeHtml(_exForm.obs||'')}" placeholder="Contexto adicional" oninput="_exForm.obs=this.value">
+        </div>
       </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-      <div class="f-field"><label class="f-label">Stakeholders (opcional)</label><input class="f-input" id="ex-stake" placeholder="Ex: Enzo 60%, Mariana 40%"></div>
-      <div class="f-field"><label class="f-label">Observações</label><input class="f-input" id="ex-obs" placeholder="Contexto adicional"></div>
-    </div>
-
-    <div style="background:var(--bg3);border-radius:var(--radius);padding:16px;margin-bottom:16px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Prévia da distribuição</div>
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px">
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Budget</div><div style="font-size:15px;font-weight:800" id="ex-pv-b">R$ 0</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Impostos 18%</div><div style="font-size:15px;font-weight:800;color:var(--red)" id="ex-pv-i">R$ 0</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Custo time</div><div style="font-size:15px;font-weight:800;color:var(--pack)" id="ex-pv-ct">R$ 0</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Custos div.</div><div style="font-size:15px;font-weight:800;color:var(--pack)" id="ex-pv-cd">R$ 0</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Base comissão</div><div style="font-size:15px;font-weight:800;color:var(--prod)" id="ex-pv-base">R$ 0</div></div>
+      
+      <!-- Valor + imposto -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div class="f-field">
+          <label class="f-label" style="color:${isBV?'var(--pack)':'var(--prod)'}">${isBV?'Valor recebido do fornecedor (R$) *':'Valor cobrado do cliente (R$) *'}</label>
+          <input class="f-input" type="number" id="ex-bruto" min="0" step="any" inputmode="decimal" value="${_exForm.valor_bruto||''}" placeholder="0,00" 
+            style="font-size:16px;font-weight:700"
+            oninput="exOnFieldChange('valor_bruto',this.value)">
+        </div>
+        <div class="f-field">
+          <label class="f-label">${isBV?'Imposto do fornecedor (%) *':'Imposto (% fixo)'}</label>
+          <input class="f-input" type="number" id="ex-imposto-pct" min="0" max="100" step="any" inputmode="decimal" value="${_exForm.imposto_pct}" 
+            ${!isBV?'disabled style="opacity:.6;cursor:not-allowed"':''}
+            oninput="exOnFieldChange('imposto_pct',this.value)">
+          ${!isBV?'<div style="font-size:10px;color:var(--txt3);margin-top:3px">Travado em 18% para lançamentos extras</div>':'<div style="font-size:10px;color:var(--txt3);margin-top:3px">Informe o imposto que o fornecedor descontou</div>'}
+        </div>
       </div>
-      <div style="border-top:1px solid var(--border);padding-top:12px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Sua comissão</div><div style="font-size:18px;font-weight:800;color:var(--prod)" id="ex-pv-acc">R$ 0</div><div style="font-size:9px;color:var(--txt3)" id="ex-pv-acc-s">0%</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Líder PROD</div><div style="font-size:18px;font-weight:800;color:var(--t1)" id="ex-pv-ldr">R$ 0</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Margem TGT</div><div style="font-size:18px;font-weight:800;color:var(--prod)" id="ex-pv-tgt">R$ 0</div><div style="font-size:9px;color:var(--txt3)" id="ex-pv-tgt-s"></div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Seu score</div><div style="font-size:18px;font-weight:800" id="ex-pv-score">—</div></div>
-        <div style="text-align:center"><div style="font-size:10px;color:var(--txt3)">Elegibilidade</div><div id="ex-pv-elig" style="margin-top:4px">—</div></div>
-      </div>
-      <div id="ex-alert" style="margin-top:12px"></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <button class="btn btn-r" id="ex-submit" onclick="submitExtras()">Salvar no Monday</button>
-      <span style="font-size:11px;color:var(--txt2)">Cria item no board TGT — Extras & Comissionamento</span>
-    </div>
-    <div id="ex-toast" style="margin-top:12px"></div>
-    </div></div>`;
-  setTimeout(()=>{calcExtras();el.querySelectorAll('input,select').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})},50);
-}
-
-async function submitExtras(){
-  const nome=$('ex-nome')?.value?.trim();
-  const cliente=$('ex-cliente')?.value;
-  const tipo=$('ex-tipo')?.value;
-  const impacto=$('ex-impacto')?.value;
-  const b=parseFloat($('ex-budget')?.value)||0;
-  const ct=parseFloat($('ex-ctime')?.value)||0;
-  const cd=parseFloat($('ex-cdiv')?.value)||0;
-  const stake=$('ex-stake')?.value?.trim()||'';
-  const obs=$('ex-obs')?.value?.trim()||'';
-  if(!nome||!cliente||!tipo||b<=0){toast('Preencha nome, cliente, tipo e budget','error');return}
-  const imp=b*0.18;const base=Math.max(0,b-imp-ct-cd);
-  const elig=getMyEligibility();
-  const pct=scorePctDirect(elig.score,elig.blockStatus);
-  const acc=Math.round(base*pct);
-  const ldr=Math.round(base*(pct>0?0.10:0));
-  const tgt=Math.round(base-acc-ldr);
-  const btn=$('ex-submit');btn.disabled=true;
-  const toastEl=$('ex-toast');
-  toastEl.innerHTML='<div style="background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--t1)">Enviando para o Monday...</div>';
-  const itemName=`${S.user.name.split(' ')[0]} · ${cliente} · ${nome}`.replace(/"/g,"'");
-  try{
-    const payload={
-      account:S.user.name.split(' ')[0],
-      nome:itemName,
-      cliente,tipo,impacto:impacto.split(' — ')[0],
-      budget:b,custo_time:ct,custos_div:cd,
-      base_comissao:Math.round(base),
-      comissao_account:acc,comissao_leader:ldr,margem_tgt:tgt,
-      stakeholders:stake,obs,
-      score:elig.score,elegibilidade:elig.label,pct_efetivo:pct
-    };
-    const res=await fetch(MAKE_EXTRAS_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(!res.ok)throw new Error('Webhook retornou '+res.status);
-    toastEl.innerHTML='<div style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--prod)">Lançado com sucesso no Monday!</div>';
-    setTimeout(()=>toastEl.innerHTML='',4000);
-    // Clear form
-    ['ex-nome','ex-budget','ex-ctime','ex-cdiv','ex-stake','ex-obs'].forEach(id=>{if($(id))$(id).value=''});
-    calcExtras();
-  }catch(e){
-    toastEl.innerHTML=`<div style="background:rgba(237,28,36,.08);border:1px solid rgba(237,28,36,.2);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--red)">Erro: ${e.message}</div>`;
-  }
-  btn.disabled=false;
-}
-
-async function pgExtrasHist(el){
-  // Fetch from Monday board
-  el.innerHTML='<div class="loading"><div class="spin"></div> Carregando histórico...</div>';
-  try{
-    const myName=S.user.name.split(' ')[0];
-    const items=await sbGet('extras_history',`account=eq.${myName}&order=created_at.desc`).catch(()=>[]);
-    // If no Supabase table, show manual message
-    if(!items.length){
-      el.innerHTML=`
-        <div style="text-align:center;padding:48px 20px;color:var(--txt2)">
-          <div style="font-size:40px;margin-bottom:12px">📋</div>
-          <div style="font-size:14px;font-weight:600;margin-bottom:8px">Histórico no Monday</div>
-          <div style="font-size:12px;color:var(--txt3);max-width:400px;margin:0 auto">
-            Os lançamentos de extras são enviados diretamente ao board <b>TGT — Extras & Comissionamento</b> no Monday.com.<br><br>
-            Acesse o board para ver todos os seus lançamentos com status, valores e comissões calculadas.
+      
+      <!-- PREVIEW -->
+      <div style="background:var(--bg3);border-radius:8px;padding:16px;margin-bottom:14px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--txt2);font-weight:700;margin-bottom:12px">Prévia da distribuição</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:10px;text-align:center">
+          <div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Valor bruto</div>
+            <div style="font-size:14px;font-weight:700" id="exp-bruto">R$ 0,00</div>
           </div>
-          <a href="https://tgt-studio.monday.com/boards/18408140037" target="_blank" class="btn btn-r" style="display:inline-flex;margin-top:16px;text-decoration:none">Abrir no Monday</a>
-        </div>`;
-      return;
-    }
-    // Render items if they exist
-    el.innerHTML=items.map(e=>`<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${e.nome||'—'}</span><span style="font-size:11px;color:var(--txt2)">${e.created_at?new Date(e.created_at).toLocaleDateString('pt-BR'):''}</span></div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><span class="bg bg-t1">${e.cliente||''}</span><span class="bg">${e.tipo||''}</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px"><div style="text-align:center"><div class="cl">Budget</div><div style="font-weight:700">${fMoney(e.budget||0)}</div></div><div style="text-align:center"><div class="cl">Comissão</div><div style="font-weight:700;color:var(--prod)">${fMoney(e.comissao_account||0)}</div></div><div style="text-align:center"><div class="cl">Margem TGT</div><div style="font-weight:700;color:var(--prod)">${fMoney(e.margem_tgt||0)}</div></div></div></div>`).join('');
-  }catch(e){
-    el.innerHTML=`<div class="empty">Erro ao carregar: ${e.message}</div>`;
-  }
+          <div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Imposto</div>
+            <div style="font-size:14px;font-weight:700;color:var(--red)" id="exp-imposto">− R$ 0,00</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Líquido</div>
+            <div style="font-size:14px;font-weight:800;color:var(--txt)" id="exp-liquido">R$ 0,00</div>
+          </div>
+          <div style="border-left:1px solid var(--border);padding-left:10px">
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Você recebe (<span id="exp-conta-pct">${pctScore.toFixed(0)}%</span>)</div>
+            <div style="font-size:16px;font-weight:800;color:var(--prod)" id="exp-conta">R$ 0,00</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Margem TGT</div>
+            <div style="font-size:14px;font-weight:700;color:var(--t1)" id="exp-margem">R$ 0,00</div>
+          </div>
+        </div>
+        <div id="exp-warn"></div>
+      </div>
+      
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn btn-r" id="ex-salvar-btn" onclick="exSalvar()" style="min-width:140px">💾 Salvar lançamento</button>
+        <span style="font-size:11px;color:var(--txt2)">Vai ficar pendente até a ADM marcar como pago</span>
+      </div>
+    </div></div>
+    
+    <!-- HISTÓRICO -->
+    <div class="tbl"><div class="tbl-h"><h3>Meus lançamentos</h3><span style="font-size:11px;color:var(--txt3)">${myExtras.length} total · ${pendentes.length} pendente${pendentes.length===1?'':'s'}</span></div>
+    ${myExtras.length===0?'<div class="empty" style="padding:30px;text-align:center;color:var(--txt3)">Nenhum lançamento ainda. Faça o primeiro acima ☝</div>':`
+      <table class="t-table"><thead><tr>
+        <th>Data</th><th>Descrição</th><th>Cliente</th><th>Tipo</th>
+        <th style="text-align:right">Bruto</th><th style="text-align:right">Líquido</th>
+        <th style="text-align:right">A receber</th><th>Status</th><th></th>
+      </tr></thead><tbody>
+      ${myExtras.map(x=>`<tr>
+        <td style="font-size:11px;color:var(--txt2);white-space:nowrap">${new Date(x.created_at).toLocaleDateString('pt-BR')}</td>
+        <td><b>${escapeHtml(x.nome)}</b>${x.obs?`<div style="font-size:10px;color:var(--txt3);margin-top:2px">${escapeHtml(x.obs)}</div>`:''}</td>
+        <td>${x.client_name?`<span class="bg bg-t1">${escapeHtml(x.client_name)}</span>`:'<span style="color:var(--txt3);font-size:11px">—</span>'}</td>
+        <td>${x.tipo==='bv'?'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack)">🎁 BV</span>':'<span class="bg" style="background:rgba(237,28,36,.15);color:var(--red)">💼 Extra</span>'}</td>
+        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_bruto)}<div style="font-size:9px;color:var(--txt3)">− ${Number(x.imposto_pct).toFixed(1)}%</div></td>
+        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_liquido)}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--prod)">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%</div></td>
+        <td>${x.status==='pago'?`<span class="bg" style="background:rgba(74,222,128,.15);color:var(--prod);font-weight:700">✓ PAGO</span>${x.paid_at?`<div style="font-size:9px;color:var(--txt3);margin-top:2px">${new Date(x.paid_at).toLocaleDateString('pt-BR')}</div>`:''}`:'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack);font-weight:700">⏳ PENDENTE</span>'}</td>
+        <td>${x.status==='pendente'?`<button onclick="exCancelar('${x.id}')" title="Cancelar" style="background:transparent;border:none;color:var(--txt3);cursor:pointer;font-size:14px;padding:4px">🗑</button>`:''}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    `}
+    </div>`;
+  
+  setTimeout(()=>{exUpdatePreview();el.querySelectorAll('input,select').forEach(i=>{i.addEventListener('keydown',e=>e.stopPropagation());i.addEventListener('keyup',e=>e.stopPropagation())})},30);
+}
+
+// pgExtrasHist é alias do pgExtras (mesma página)
+async function pgExtrasHist(el){return pgExtras(el)}
+
+// ═══════════════════════════════════════════════
+// EXTRAS A PAGAR (ADMIN)
+// ═══════════════════════════════════════════════
+let _exPagFilter='pendente'; // pendente | pago | todos
+
+async function pgExtrasPagar(el){
+  if(!isA()){el.innerHTML='<div class="empty">Acesso restrito a administradores</div>';return}
+  
+  let all=[];
+  try{all=await sbGet('tt_extras','order=created_at.desc')}catch(e){console.error(e)}
+  
+  const filtered=_exPagFilter==='todos'?all:all.filter(x=>x.status===_exPagFilter);
+  
+  // Agrupar por account
+  const byAccount={};
+  filtered.forEach(x=>{
+    const k=x.account_id;
+    if(!byAccount[k])byAccount[k]={account_name:x.account_name||'?',items:[],total:0};
+    byAccount[k].items.push(x);
+    byAccount[k].total+=Number(x.valor_account||0);
+  });
+  const accounts=Object.values(byAccount).sort((a,b)=>b.total-a.total);
+  
+  const totalPendente=all.filter(x=>x.status==='pendente').reduce((s,x)=>s+Number(x.valor_account||0),0);
+  const totalPago=all.filter(x=>x.status==='pago').reduce((s,x)=>s+Number(x.valor_account||0),0);
+  const totalGeral=filtered.reduce((s,x)=>s+Number(x.valor_account||0),0);
+  
+  el.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div class="card"><div class="cl">A pagar (pendente)</div><div class="cv" style="color:var(--pack)">${fMoney(totalPendente)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${all.filter(x=>x.status==='pendente').length} lançamento${all.filter(x=>x.status==='pendente').length===1?'':'s'}</div></div>
+      <div class="card"><div class="cl">Já pago</div><div class="cv" style="color:var(--prod)">${fMoney(totalPago)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${all.filter(x=>x.status==='pago').length} pago${all.filter(x=>x.status==='pago').length===1?'':'s'}</div></div>
+      <div class="card"><div class="cl">Total geral</div><div class="cv">${fMoney(totalPendente+totalPago)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${all.length} lançamento${all.length===1?'':'s'}</div></div>
+    </div>
+    
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button class="pill ${_exPagFilter==='pendente'?'active':''}" onclick="_exPagFilter='pendente';renderPage()">⏳ Pendentes</button>
+      <button class="pill ${_exPagFilter==='pago'?'active':''}" onclick="_exPagFilter='pago';renderPage()">✓ Pagos</button>
+      <button class="pill ${_exPagFilter==='todos'?'active':''}" onclick="_exPagFilter='todos';renderPage()">Todos</button>
+      <div style="margin-left:auto;font-size:12px;color:var(--txt3);align-self:center">Filtrado: <b style="color:var(--txt)">${fMoney(totalGeral)}</b> · ${filtered.length} lançamento${filtered.length===1?'':'s'}</div>
+    </div>
+    
+    ${accounts.length===0?'<div class="empty" style="padding:40px;text-align:center;color:var(--txt3)">Nenhum lançamento neste filtro</div>':accounts.map(acc=>`
+      <div class="tbl" style="margin-bottom:14px"><div class="tbl-h" style="display:flex;justify-content:space-between;align-items:center">
+        <h3>${escapeHtml(acc.account_name)}</h3>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:var(--txt3)">${acc.items.length} lançamento${acc.items.length===1?'':'s'}</span>
+          <span style="font-size:16px;font-weight:800;color:var(--prod);font-family:var(--mono)">${fMoney(acc.total)}</span>
+        </div>
+      </div>
+      <table class="t-table"><thead><tr>
+        <th>Data</th><th>Descrição</th><th>Cliente</th><th>Tipo</th>
+        <th style="text-align:right">Bruto</th><th style="text-align:right">Líquido</th>
+        <th style="text-align:right">Pagar</th><th>Status</th><th></th>
+      </tr></thead><tbody>
+      ${acc.items.map(x=>`<tr>
+        <td style="font-size:11px;color:var(--txt2);white-space:nowrap">${new Date(x.created_at).toLocaleDateString('pt-BR')}</td>
+        <td><b>${escapeHtml(x.nome)}</b>${x.obs?`<div style="font-size:10px;color:var(--txt3);margin-top:2px">${escapeHtml(x.obs)}</div>`:''}</td>
+        <td>${x.client_name?`<span class="bg bg-t1">${escapeHtml(x.client_name)}</span>`:'<span style="color:var(--txt3);font-size:11px">—</span>'}</td>
+        <td>${x.tipo==='bv'?'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack)">🎁 BV</span>':'<span class="bg" style="background:rgba(237,28,36,.15);color:var(--red)">💼 Extra</span>'}</td>
+        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_bruto)}<div style="font-size:9px;color:var(--txt3)">− ${Number(x.imposto_pct).toFixed(1)}%</div></td>
+        <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_liquido)}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--prod)">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%</div></td>
+        <td>${x.status==='pago'?`<span class="bg" style="background:rgba(74,222,128,.15);color:var(--prod);font-weight:700">✓ PAGO</span>${x.paid_at?`<div style="font-size:9px;color:var(--txt3);margin-top:2px">${new Date(x.paid_at).toLocaleDateString('pt-BR')}</div>`:''}`:'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack);font-weight:700">⏳ PENDENTE</span>'}</td>
+        <td style="white-space:nowrap">${x.status==='pendente'?`<button onclick="exMarkPago('${x.id}')" class="btn btn-sm btn-r" style="font-size:10px;padding:4px 8px">✓ Pagar</button>`:`<button onclick="exMarkPendente('${x.id}')" title="Voltar pra pendente" style="background:transparent;border:1px solid var(--border);color:var(--txt3);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px">↺ pendente</button>`}</td>
+      </tr>`).join('')}
+      </tbody></table></div>
+    `).join('')}`;
 }
 
 // ═══════════════════════════════════════════════
