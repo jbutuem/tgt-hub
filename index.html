@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.37';
+const HUB_VERSION='0.38';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -3787,10 +3787,19 @@ async function saveCostDef(id){
 
 function getMyEligibility(){
   const curMonth=new Date().toISOString().substring(0,7);
-  const sc=S.scores.find(s=>s.account_id===S.user.id&&s.month===curMonth);
+  // 1ª tentativa: score do mês corrente
+  let sc=S.scores.find(s=>s.account_id===S.user.id&&s.month===curMonth);
+  // Fallback: usa o score mais recente disponível (até 12 meses atrás)
+  if(!sc){
+    const mine=(S.scores||[]).filter(s=>s.account_id===S.user.id&&s.final_score!==null)
+      .sort((a,b)=>(b.month||'').localeCompare(a.month||''));
+    if(mine.length>0)sc=mine[0];
+  }
   if(!sc)return{pct:0,label:'Sem avaliação',cls:'',color:'var(--txt3)',score:null,commRules:S.commission_rules};
   const elig=getEligibility(Number(sc.final_score),sc.block_status);
-  elig.score=Number(sc.final_score);elig.commRules=S.commission_rules;
+  elig.score=Number(sc.final_score);
+  elig.commRules=S.commission_rules;
+  elig.scoreMonth=sc.month;
   return elig;
 }
 
@@ -3821,7 +3830,8 @@ function exCalcPreview(){
   const imposto=bruto*impPct/100;
   const liquido=bruto-imposto;
   const elig=getMyEligibility();
-  const pct=scorePctDirect(elig.score,elig.blockStatus)*100; // converte 0.15 -> 15
+  // BV ganha +10% adicional sobre o score
+  const pct=extrasPct(elig.score,elig.blockStatus,_exForm.tipo); // 0/10/15/20 ou 0/20/25/30 pra BV
   const valorAccount=liquido*pct/100;
   const margem=liquido-valorAccount;
   return{bruto,impPct,imposto,liquido,pctComissao:pct,valorAccount,margem,elig};
@@ -3868,6 +3878,8 @@ async function exSalvar(){
     if(bruto<=0){toast('Informe um valor maior que zero','error');return}
     const impPct=parseFloat(_exForm.imposto_pct)||0;
     if(impPct<0||impPct>100){toast('Imposto deve ser entre 0 e 100%','error');return}
+    // Refresh S.scores antes de salvar (garante valor mais atual mesmo se outra aba editou)
+    try{S.scores=await sbGet('score_adm','order=month.desc,account_id')}catch(e){}
     const p=exCalcPreview();
     const client=S.clients.find(c=>c.id===_exForm.client_id);
     const payload={
@@ -3937,7 +3949,8 @@ function pgExtrasRerender(){
 
 async function pgExtras(el){
   const elig=getMyEligibility();
-  const pctScore=scorePctDirect(elig.score,elig.blockStatus)*100;
+  const pctExtra=extrasPct(elig.score,elig.blockStatus,'extra'); // 0/10/15/20
+  const pctBV=extrasPct(elig.score,elig.blockStatus,'bv');       // 0/20/25/30
   
   // Lista os meus extras
   let myExtras=[];
@@ -3950,16 +3963,23 @@ async function pgExtras(el){
   const totalPendente=pendentes.reduce((s,x)=>s+Number(x.valor_account||0),0);
   const totalPago=pagos.reduce((s,x)=>s+Number(x.valor_account||0),0);
   
+  // Mês corrente para destaque "a receber este mês"
+  const curMonth=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).substring(0,7);
+  const pagosEsteMes=pagos.filter(x=>x.paid_at&&x.paid_at.substring(0,7)===curMonth);
+  const totalPagoMes=pagosEsteMes.reduce((s,x)=>s+Number(x.valor_account||0),0);
+  
   const myClients=isA()?S.clients:S.clients.filter(c=>accountSeesClient(c));
   const isBV=_exForm.tipo==='bv';
+  const pctScore=isBV?pctBV:pctExtra; // % a usar nos cards-resumo
   
   el.innerHTML=`
     <!-- CARDS RESUMO -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
-      <div class="card"><div class="cl">Seu Score</div><div class="cv" style="color:${elig.color}">${elig.score!==null?elig.score.toFixed(1):'—'}</div></div>
-      <div class="card"><div class="cl">% Comissão</div><div class="cv" style="color:${elig.color}">${pctScore.toFixed(0)}%</div></div>
-      <div class="card"><div class="cl">A receber (pendente)</div><div class="cv" style="color:var(--pack)">${fMoney(totalPendente)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pendentes.length} lança${pendentes.length===1?'mento':'mentos'}</div></div>
-      <div class="card"><div class="cl">Já recebido</div><div class="cv" style="color:var(--prod)">${fMoney(totalPago)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pagos.length} pago${pagos.length===1?'':'s'}</div></div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px">
+      <div class="card"><div class="cl">Seu Score</div><div class="cv" style="color:${elig.color};font-size:24px">${elig.score!==null?elig.score.toFixed(1):'—'}</div>${elig.scoreMonth&&elig.scoreMonth!==curMonth?`<div style="font-size:9px;color:var(--txt3);margin-top:3px">de ${elig.scoreMonth}</div>`:''}</div>
+      <div class="card"><div class="cl">% Extra</div><div class="cv" style="color:${elig.color};font-size:24px">${pctExtra}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">lançamento normal</div></div>
+      <div class="card" style="border-left:3px solid var(--pack)"><div class="cl">% BV</div><div class="cv" style="color:var(--pack);font-size:24px">${pctBV}%</div><div style="font-size:9px;color:var(--txt3);margin-top:3px">bônus +10%</div></div>
+      <div class="card"><div class="cl">A receber (pendente)</div><div class="cv" style="color:var(--pack);font-size:20px">${fMoney(totalPendente)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pendentes.length} lança${pendentes.length===1?'mento':'mentos'}</div></div>
+      <div class="card"><div class="cl">Recebido em ${curMonth.split('-').reverse().join('/')}</div><div class="cv" style="color:var(--prod);font-size:20px">${fMoney(totalPagoMes)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${pagosEsteMes.length} pagamento${pagosEsteMes.length===1?'':'s'}</div></div>
     </div>
     
     <!-- FORMULÁRIO -->
@@ -4034,7 +4054,7 @@ async function pgExtras(el){
             <div style="font-size:14px;font-weight:800;color:var(--txt)" id="exp-liquido">R$ 0,00</div>
           </div>
           <div style="border-left:1px solid var(--border);padding-left:10px">
-            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Você recebe (<span id="exp-conta-pct">${pctScore.toFixed(0)}%</span>)</div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:3px">Você recebe (<span id="exp-conta-pct">${pctScore}%</span>)</div>
             <div style="font-size:16px;font-weight:800;color:var(--prod)" id="exp-conta">R$ 0,00</div>
           </div>
           <div>
@@ -4084,6 +4104,7 @@ async function pgExtrasHist(el){return pgExtras(el)}
 // EXTRAS A PAGAR (ADMIN)
 // ═══════════════════════════════════════════════
 let _exPagFilter='pendente'; // pendente | pago | todos
+let _exPagMonth=null; // 'YYYY-MM' ou null = todos
 
 async function pgExtrasPagar(el){
   if(!isA()){el.innerHTML='<div class="empty">Acesso restrito a administradores</div>';return}
@@ -4091,7 +4112,17 @@ async function pgExtrasPagar(el){
   let all=[];
   try{all=await sbGet('tt_extras','order=created_at.desc')}catch(e){console.error(e)}
   
-  const filtered=_exPagFilter==='todos'?all:all.filter(x=>x.status===_exPagFilter);
+  // Filtro por mês (baseado no mês de criação para pendentes, mês de pagamento para pagos)
+  let filtered=all;
+  if(_exPagMonth){
+    filtered=all.filter(x=>{
+      // Pra pendentes/cancelados: usa created_at
+      // Pra pagos: usa paid_at (mês em que foi pago)
+      const ref=(x.status==='pago'&&x.paid_at)?x.paid_at:x.created_at;
+      return ref && ref.substring(0,7)===_exPagMonth;
+    });
+  }
+  if(_exPagFilter!=='todos')filtered=filtered.filter(x=>x.status===_exPagFilter);
   
   // Agrupar por account
   const byAccount={};
@@ -4103,22 +4134,67 @@ async function pgExtrasPagar(el){
   });
   const accounts=Object.values(byAccount).sort((a,b)=>b.total-a.total);
   
-  const totalPendente=all.filter(x=>x.status==='pendente').reduce((s,x)=>s+Number(x.valor_account||0),0);
-  const totalPago=all.filter(x=>x.status==='pago').reduce((s,x)=>s+Number(x.valor_account||0),0);
-  const totalGeral=filtered.reduce((s,x)=>s+Number(x.valor_account||0),0);
+  // Totalizadores (considerando filtro de mês)
+  const monthSet=all.filter(x=>{
+    if(!_exPagMonth)return true;
+    const ref=(x.status==='pago'&&x.paid_at)?x.paid_at:x.created_at;
+    return ref && ref.substring(0,7)===_exPagMonth;
+  });
+  const totalPendenteMes=monthSet.filter(x=>x.status==='pendente').reduce((s,x)=>s+Number(x.valor_account||0),0);
+  const totalPagoMes=monthSet.filter(x=>x.status==='pago').reduce((s,x)=>s+Number(x.valor_account||0),0);
+  const totalGeralMes=totalPendenteMes+totalPagoMes;
+  const filteredTotal=filtered.reduce((s,x)=>s+Number(x.valor_account||0),0);
+  
+  // Lista de meses disponíveis
+  const monthsSet=new Set();
+  all.forEach(x=>{
+    if(x.created_at)monthsSet.add(x.created_at.substring(0,7));
+    if(x.paid_at)monthsSet.add(x.paid_at.substring(0,7));
+  });
+  const months=Array.from(monthsSet).sort().reverse();
+  const curMonth=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).substring(0,7);
+  if(_exPagMonth===null&&months.length>0)_exPagMonth=curMonth;
+  
+  const monthLabel=(m)=>{const[y,mn]=m.split('-');return new Date(Number(y),Number(mn)-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})};
   
   el.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div class="card"><div class="cl">A pagar (pendente)</div><div class="cv" style="color:var(--pack)">${fMoney(totalPendente)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${all.filter(x=>x.status==='pendente').length} lançamento${all.filter(x=>x.status==='pendente').length===1?'':'s'}</div></div>
-      <div class="card"><div class="cl">Já pago</div><div class="cv" style="color:var(--prod)">${fMoney(totalPago)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${all.filter(x=>x.status==='pago').length} pago${all.filter(x=>x.status==='pago').length===1?'':'s'}</div></div>
-      <div class="card"><div class="cl">Total geral</div><div class="cv">${fMoney(totalPendente+totalPago)}</div><div style="font-size:10px;color:var(--txt3);margin-top:3px">${all.length} lançamento${all.length===1?'':'s'}</div></div>
+    <!-- Toolbar com seletor de mês -->
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px">
+        <label style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:1px">PERÍODO:</label>
+        <select class="f-sel" id="ex-pag-month" onchange="_exPagMonth=this.value||null;renderPage()" style="width:200px">
+          <option value="">— todos os meses —</option>
+          ${months.map(m=>`<option value="${m}" ${_exPagMonth===m?'selected':''}>${escapeHtml(monthLabel(m))}</option>`).join('')}
+        </select>
+        ${_exPagMonth?`<button class="btn btn-sm" onclick="_exPagMonth=null;renderPage()" style="font-size:10px">limpar</button>`:''}
+      </div>
     </div>
     
-    <div style="display:flex;gap:6px;margin-bottom:14px">
+    <!-- CARDS RESUMO DO MÊS -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div class="card" style="border-left:3px solid var(--pack)">
+        <div class="cl">${_exPagMonth?'A pagar em '+monthLabel(_exPagMonth):'A pagar (todos)'}</div>
+        <div class="cv" style="color:var(--pack)">${fMoney(totalPendenteMes)}</div>
+        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${monthSet.filter(x=>x.status==='pendente').length} pendente${monthSet.filter(x=>x.status==='pendente').length===1?'':'s'}</div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--prod)">
+        <div class="cl">${_exPagMonth?'Pago em '+monthLabel(_exPagMonth):'Pago (todos)'}</div>
+        <div class="cv" style="color:var(--prod)">${fMoney(totalPagoMes)}</div>
+        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${monthSet.filter(x=>x.status==='pago').length} pagamento${monthSet.filter(x=>x.status==='pago').length===1?'':'s'}</div>
+      </div>
+      <div class="card">
+        <div class="cl">Total ${_exPagMonth?'do mês':'geral'}</div>
+        <div class="cv">${fMoney(totalGeralMes)}</div>
+        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${monthSet.length} lançamento${monthSet.length===1?'':'s'}</div>
+      </div>
+    </div>
+    
+    <!-- Filtros status -->
+    <div style="display:flex;gap:6px;margin-bottom:14px;align-items:center">
       <button class="pill ${_exPagFilter==='pendente'?'active':''}" onclick="_exPagFilter='pendente';renderPage()">⏳ Pendentes</button>
       <button class="pill ${_exPagFilter==='pago'?'active':''}" onclick="_exPagFilter='pago';renderPage()">✓ Pagos</button>
       <button class="pill ${_exPagFilter==='todos'?'active':''}" onclick="_exPagFilter='todos';renderPage()">Todos</button>
-      <div style="margin-left:auto;font-size:12px;color:var(--txt3);align-self:center">Filtrado: <b style="color:var(--txt)">${fMoney(totalGeral)}</b> · ${filtered.length} lançamento${filtered.length===1?'':'s'}</div>
+      <div style="margin-left:auto;font-size:12px;color:var(--txt3)">Filtrado: <b style="color:var(--txt)">${fMoney(filteredTotal)}</b> · ${filtered.length} lança${filtered.length===1?'mento':'mentos'}</div>
     </div>
     
     ${accounts.length===0?'<div class="empty" style="padding:40px;text-align:center;color:var(--txt3)">Nenhum lançamento neste filtro</div>':accounts.map(acc=>`
@@ -4126,7 +4202,8 @@ async function pgExtrasPagar(el){
         <h3>${escapeHtml(acc.account_name)}</h3>
         <div style="display:flex;align-items:center;gap:10px">
           <span style="font-size:11px;color:var(--txt3)">${acc.items.length} lançamento${acc.items.length===1?'':'s'}</span>
-          <span style="font-size:16px;font-weight:800;color:var(--prod);font-family:var(--mono)">${fMoney(acc.total)}</span>
+          <span style="font-size:11px;color:var(--txt3)">${_exPagFilter==='pendente'?'A PAGAR:':_exPagFilter==='pago'?'PAGO:':'TOTAL:'}</span>
+          <span style="font-size:20px;font-weight:800;color:${_exPagFilter==='pago'?'var(--prod)':'var(--pack)'};font-family:var(--mono)">${fMoney(acc.total)}</span>
         </div>
       </div>
       <table class="t-table"><thead><tr>
@@ -4141,7 +4218,7 @@ async function pgExtrasPagar(el){
         <td>${x.tipo==='bv'?'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack)">🎁 BV</span>':'<span class="bg" style="background:rgba(237,28,36,.15);color:var(--red)">💼 Extra</span>'}</td>
         <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_bruto)}<div style="font-size:9px;color:var(--txt3)">− ${Number(x.imposto_pct).toFixed(1)}%</div></td>
         <td style="text-align:right;font-family:var(--mono)">${fMoney(x.valor_liquido)}</td>
-        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--prod)">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%</div></td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:800;color:var(--prod);font-size:14px">${fMoney(x.valor_account)}<div style="font-size:9px;color:var(--txt3)">${Number(x.pct_comissao).toFixed(0)}%${x.tipo==='bv'?' BV+10':''}</div></td>
         <td>${x.status==='pago'?`<span class="bg" style="background:rgba(74,222,128,.15);color:var(--prod);font-weight:700">✓ PAGO</span>${x.paid_at?`<div style="font-size:9px;color:var(--txt3);margin-top:2px">${new Date(x.paid_at).toLocaleDateString('pt-BR')}</div>`:''}`:'<span class="bg" style="background:rgba(245,158,11,.15);color:var(--pack);font-weight:700">⏳ PENDENTE</span>'}</td>
         <td style="white-space:nowrap">${x.status==='pendente'?`<button onclick="exMarkPago('${x.id}')" class="btn btn-sm btn-r" style="font-size:10px;padding:4px 8px">✓ Pagar</button>`:`<button onclick="exMarkPendente('${x.id}')" title="Voltar pra pendente" style="background:transparent;border:1px solid var(--border);color:var(--txt3);cursor:pointer;font-size:11px;padding:3px 7px;border-radius:4px">↺ pendente</button>`}</td>
       </tr>`).join('')}
@@ -5748,6 +5825,16 @@ function getEligibility(score,blockStatus){
 // Retorna % comissão em DECIMAL (0.20, 0.15, 0.10, 0). Usado em cálculos de extras.
 function scorePctDirect(score,blockStatus){
   return getEligibility(score,blockStatus).pct/100;
+}
+
+// Comissão específica de Extras. BV ganha +10 pontos percentuais (gráfica/fornecedor).
+// Score 6.0  → Extra 10% | BV 20%
+// Score 7.5  → Extra 15% | BV 25%
+// Score 9.0  → Extra 20% | BV 30%
+function extrasPct(score,blockStatus,tipo){
+  const base=getEligibility(score,blockStatus).pct; // 0/10/15/20
+  if(base===0)return 0; // bloqueio ou abaixo de 6.0 → não comissiona BV também
+  return tipo==='bv'?base+10:base;
 }
 
 function calcScoreLive(){
