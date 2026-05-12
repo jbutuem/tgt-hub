@@ -718,12 +718,12 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.27';
+const HUB_VERSION='0.30';
 
 // ═══════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════
-let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],av_budgets:[],scores:[],commission_rules:[],cost_defaults:[],qc_requests:[],announcements:[],announcement_reads:[]};
+let S={user:null,members:[],clients:[],entries:[],equipment:[],categories:[],av_requests:[],av_budgets:[],scores:[],commission_rules:[],cost_defaults:[],qc_requests:[],announcements:[],announcement_reads:[],member_teams:[]};
 let curPage='timer';
 let timerStart=null,timerSec=0,timerInt=null,running=false,activeEntryId=null;
 let dateRange='this_month',customFrom='',customTo='';
@@ -742,6 +742,38 @@ const isPL=()=>S.user&&S.user.access_level==='prod_leader';
 const isAcc=()=>S.user&&S.user.access_level==='account';
 const isCli=()=>S.user&&S.user.access_level==='client';
 const isUser=()=>S.user&&S.user.access_level==='user';
+
+// ───── FINANCIAL VISIBILITY ─────
+// Apenas o João (admin master) pode ver valores de fee/comissão de clientes.
+// Outros admins, accounts e users NÃO veem os valores R$ dos contratos.
+const canSeeClientFinancials=()=>S.user&&S.user.email&&S.user.email.toLowerCase()==='joao@tgtstudio.com.br';
+// Helper de format: retorna o valor ou mascara conforme permissão
+const fMoneyMasked=v=>canSeeClientFinancials()?fMoney(v):'•••';
+
+// ───── WORKDAY WINDOW (7:00 → 19:30 BRT) ─────
+// Users e accounts só podem lançar dentro do horário útil. Admin sem limite.
+const WORKDAY_START_H=7.0;     // 07:00
+const WORKDAY_END_H=19.5;      // 19:30
+// Retorna a hora atual em BRT como decimal (ex: 13.75 = 13:45)
+function nowBRTHour(){
+  const d=new Date();
+  // Pega componentes em São Paulo timezone
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',hour12:false,hour:'2-digit',minute:'2-digit'}).formatToParts(d);
+  const h=parseInt(parts.find(p=>p.type==='hour').value);
+  const m=parseInt(parts.find(p=>p.type==='minute').value);
+  return h+m/60;
+}
+// Verifica se o usuário atual pode lançar agora (admin sempre pode; outros só na janela)
+function isWithinWorkday(){
+  if(!S.user)return false;
+  if(isA())return true; // admin sem limite
+  const h=nowBRTHour();
+  return h>=WORKDAY_START_H&&h<WORKDAY_END_H;
+}
+// Mensagem de fora-de-janela pra mostrar ao usuário
+function workdayWindowMsg(){
+  return `Lançamentos disponíveis das 07:00 às 19:30 (BRT). Fora desse horário, fale com a administração.`;
+}
 
 // ───── PERMISSION MATRIX ─────
 // Todos exceto client usam timer e agentes do Brand Guardian
@@ -914,6 +946,8 @@ async function loadData(){
     // Avisos / Comunicados
     try{S.announcements=await sbGet('tt_announcements','active=eq.true&order=created_at.desc')}catch(e){S.announcements=[]}
     try{S.announcement_reads=await sbGet('tt_announcement_reads',`member_id=eq.${S.user.id}`)}catch(e){S.announcement_reads=[]}
+    // Multi-time: relação pessoa × time × capacidade
+    try{S.member_teams=await sbGet('tt_member_teams','')}catch(e){S.member_teams=[]}
   }catch(e){console.error('loadData:',e);toast('Erro ao carregar dados','error')}
 }
 
@@ -1098,7 +1132,7 @@ function buildNav(){
     h+=`<div class="sb-item" data-p="d-team" onclick="nav('d-team')">${ICONS.members} Por Time</div>`;
     h+=`<div class="sb-item" data-p="d-person" onclick="nav('d-person')">${ICONS.members} Por Pessoa</div>`;
   }
-  if(isA()){
+  if(canSeeClientFinancials()){
     h+=`<div class="sb-item" data-p="d-finance" onclick="nav('d-finance')">${ICONS.money} Financeiro</div>`;
   }
   if(isA()||isAcc()){
@@ -1442,6 +1476,8 @@ function confirmDialog(title,html,okText,cancelText){
 }
 
 async function startTimer(){
+  // Janela de uso 07:00-19:30 BRT (admin sem limite)
+  if(!isWithinWorkday()){toast(workdayWindowMsg(),'error');return}
   const client=$('t-client')?.value,action=$('t-action')?.value,desc=$('t-desc')?.value||'';
   if(!client){toast('Selecione um cliente','error');return}
   
@@ -1663,6 +1699,13 @@ async function saveManualEntry(){
   if(diff>12*60){toast('Lançamento acima de 12h. Faça em 2 lançamentos separados.','error');return}
   if(diff>8*60){
     if(!confirm(`Você está lançando ${Math.floor(diff/60)}h${diff%60?String(diff%60).padStart(2,'0'):''} de uma vez. Tem certeza?`))return;
+  }
+  // Janela de uso 7:00-19:30 BRT (admin sem limite)
+  if(!isA()){
+    const startH=hIn+mIn/60, endH=hOut+mOut/60;
+    if(startH<WORKDAY_START_H||startH>WORKDAY_END_H||endH<WORKDAY_START_H||endH>WORKDAY_END_H){
+      toast(workdayWindowMsg(),'error');return;
+    }
   }
   const hours=diff/60;
   try{
@@ -2091,7 +2134,7 @@ async function pgDashClient(el){
         </div>`).join('')}
     </div>`:'';
   
-  el.innerHTML=datePillsHTML()+scopeNote+activityHTML+`
+  el.innerHTML=datePillsHTML()+scopeNote+`
     <div class="tbl"><div class="tbl-h"><h3>Consumo por Cliente</h3><span style="font-size:11px;color:var(--txt3);font-weight:600">Clique numa linha para detalhar →</span></div>
     <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta</th><th class="rt">Consumido</th><th class="rt">%</th><th style="width:200px">Progresso</th></tr></thead>
     <tbody>${cls.map(c=>{
@@ -2109,7 +2152,8 @@ async function pgDashClient(el){
       </tr>`];
       if(isExpanded)rows.push(renderClientDetail(c.id));
       return rows.join('');
-    }).join('')||'<tr><td colspan="6" class="empty">Sem dados</td></tr>'}</tbody></table></div></div>`;
+    }).join('')||'<tr><td colspan="6" class="empty">Sem dados</td></tr>'}</tbody></table></div>
+    ${activityHTML}`;
 }
 
 // pgDashTeam antiga removida - agora está em bloco posterior, próximo aos detalhadores
@@ -2119,24 +2163,25 @@ async function _pgDashTeam_OLD_REMOVED(el){
 
 async function pgDashPerson(el){
   if(!canSeeTeamData()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
-  // Admin vê todo mundo; account/prod_leader só o próprio time
-  const membersScope=isA()?S.members:S.members.filter(m=>m.team===S.user.team);
-  const personData=membersScope.filter(m=>m.team!=='ADM'||m.access_level==='admin').map(m=>{
+  // Admin vê todo mundo; account/prod_leader só pessoas em seus times (qualquer time deles)
+  const myTeams=getMyTeams();
+  const membersScope=isA()?S.members:S.members.filter(m=>accountSeesMember(m.id));
+  const personData=membersScope.filter(m=>m.active!==false).map(m=>{
     const hrs=S.entries.filter(e=>!e.is_running&&e.member_id===m.id).reduce((s,e)=>s+(e.hours||0),0);
-    const cap=m.capacity_hours||140;
+    const cap=getMemberTotalCapacity(m.id)||m.capacity_hours||140;
+    const teams=getTeamsOfMember(m.id);
     const runningEntry=S.entries.find(e=>e.is_running&&e.member_id===m.id);
-    return{...m,hrs,cap,pct:cap>0?hrs/cap*100:0,isRunning:!!runningEntry,runningEntry};
+    return{...m,hrs,cap,teams,pct:cap>0?hrs/cap*100:0,isRunning:!!runningEntry,runningEntry};
   }).sort((a,b)=>{
-    // Ativos primeiro, depois por % decrescente
     if(a.isRunning&&!b.isRunning)return -1;
     if(!a.isRunning&&b.isRunning)return 1;
     return b.pct-a.pct;
   });
-  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seu time: ${S.user.team}</div>`:'';
+  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seus times: ${myTeams.join(', ')}</div>`:'';
 
   el.innerHTML=datePillsHTML()+scopeNote+`
     <div class="tbl"><div class="tbl-h"><h3>Utilização Individual</h3><span style="font-size:11px;color:var(--txt3);font-weight:600">Clique numa linha para detalhar →</span></div>
-    <div class="tbl-r"><table><thead><tr><th>Pessoa</th><th>Time</th><th>Trabalhando agora em</th><th class="rt">Cap</th><th class="rt">Horas</th><th class="rt">%</th><th style="width:140px">Status</th></tr></thead>
+    <div class="tbl-r"><table><thead><tr><th>Pessoa</th><th>Times</th><th>Trabalhando agora em</th><th class="rt">Cap total</th><th class="rt">Horas</th><th class="rt">%</th><th style="width:140px">Status</th></tr></thead>
     <tbody>${personData.map(p=>{
       const color=p.pct>100?'var(--red)':p.pct>70?'var(--pack)':p.pct>30?'var(--prod)':'var(--txt3)';
       let workingCell='<span style="color:var(--txt3);font-size:11px">—</span>';
@@ -2149,11 +2194,15 @@ async function pgDashPerson(el){
           :`<span style="display:inline-block;padding:1px 5px;border-radius:3px;background:rgba(157,157,156,.2);color:var(--txt2);font-size:9px;font-weight:700;margin-right:4px">HUB</span>`;
         workingCell=`<div style="font-size:12px;line-height:1.3"><div style="color:var(--txt3);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px">${c?c.name:'?'} · <span style="color:${elapsed>4?'var(--red)':'var(--prod)'};font-family:var(--mono)">${elapsed.toFixed(1)}h</span></div><div>${sourceBadge}${w.label}</div></div>`;
       }
+      // Times badges (todos os times da pessoa, primary com borda mais grossa)
+      const teamsBadges=p.teams.length>0
+        ?p.teams.map(mt=>`<span class="bg ${TBC(mt.team)}" style="${mt.is_primary?'border:1.5px solid var(--red)':'opacity:.7'};margin-right:3px">${TB(mt.team)}</span>`).join('')
+        :`<span class="bg ${TBC(p.team)}">${TB(p.team)}</span>`;
       const isExpanded=_expandedPerson===p.id;
       const rowBg=isExpanded?'rgba(237,28,36,.08)':(p.isRunning?'rgba(237,28,36,.04)':'');
       const rows=[`<tr onclick="togglePerson('${p.id}')" style="cursor:pointer;background:${rowBg}" onmouseover="if(!${isExpanded}&&!${p.isRunning})this.style.background='rgba(237,28,36,.04)'" onmouseout="if(!${isExpanded}&&!${p.isRunning})this.style.background=''">
         <td style="font-weight:600"><span style="display:inline-block;margin-right:8px;color:var(--red);transform:${isExpanded?'rotate(90deg)':'rotate(0)'};transition:transform .15s">▶</span>${p.name.split(' ').slice(0,2).join(' ')}${p.isRunning?' <span style="color:var(--red);font-size:10px">●</span>':''}<div style="font-size:10px;color:var(--txt3);margin-left:14px">${p.job_title||''}</div></td>
-        <td><span class="bg ${TBC(p.team)}">${TB(p.team)}</span></td>
+        <td>${teamsBadges}</td>
         <td style="max-width:280px;overflow:hidden">${workingCell}</td>
         <td class="rt">${p.cap}h</td>
         <td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(p.hrs)}</td>
@@ -2166,7 +2215,7 @@ async function pgDashPerson(el){
 }
 
 async function pgDashFinance(el){
-  if(!isA()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  if(!canSeeClientFinancials()){el.innerHTML='<div class="empty">Acesso restrito — apenas o admin master (João) vê esta página</div>';return}
   const cls=S.clients.map(c=>{
     const hrs=S.entries.filter(e=>!e.is_running&&e.client_id===c.id).reduce((s,e)=>s+(e.hours||0),0);
     const cost=S.entries.filter(e=>!e.is_running&&e.client_id===c.id).reduce((s,e)=>{const m=S.members.find(mm=>mm.id===e.member_id);return s+(e.hours||0)*(m?Number(m.hourly_cost):0)},0);
@@ -4885,8 +4934,16 @@ async function pgMembers(el){
   el.innerHTML=`
     <div class="tbl"><div class="tbl-h"><h3>Equipe (${S.members.length})</h3><button class="btn btn-r btn-sm" onclick="showMemberModal()">${ICONS.plus} Adicionar</button></div>
     <div class="tbl-r"><table><thead><tr><th>Nome</th><th>Time</th><th>Função</th><th>Nível</th><th class="rt">Cap</th><th class="rt">R$/h</th><th>Email</th><th style="text-align:center">QC</th><th></th></tr></thead>
-    <tbody>${S.members.map(m=>{const cli=m.client_id?S.clients.find(c=>c.id===m.client_id):null;return`<tr>
-      <td style="font-weight:600">${m.name}</td><td>${m.access_level==='client'?(cli?`<span style="font-size:11px;color:var(--txt2)">${cli.name}</span>`:'—'):`<span class="bg ${TBC(m.team)}">${TB(m.team)}</span>`}</td><td>${m.job_title||'—'}</td>
+    <tbody>${S.members.map(m=>{
+      const cli=m.client_id?S.clients.find(c=>c.id===m.client_id):null;
+      const ts=getTeamsOfMember(m.id);
+      const teamCell=m.access_level==='client'
+        ?(cli?`<span style="font-size:11px;color:var(--txt2)">${cli.name}</span>`:'—')
+        :(ts.length>0
+            ?ts.map(mt=>`<span class="bg ${TBC(mt.team)}" style="${mt.is_primary?'border:1.5px solid var(--red)':'opacity:.7'};margin-right:3px">${TB(mt.team)}</span>`).join('')
+            :`<span class="bg ${TBC(m.team)}">${TB(m.team)}</span>`);
+      return`<tr>
+      <td style="font-weight:600">${m.name}</td><td>${teamCell}</td><td>${m.job_title||'—'}</td>
       <td><span class="bg ${m.access_level==='admin'?'bg-red':m.access_level==='account'?'bg-t1':m.access_level==='prod_leader'?'bg-prod':m.access_level==='client'?'bg-amber':'bg-adm'}">${m.access_level}</span></td>
       <td class="rt">${m.access_level==='client'?'—':((m.capacity_hours||'—')+'h')}</td><td class="rt" style="font-family:var(--mono)">${m.access_level==='client'?'—':'R$'+Number(m.hourly_cost||0).toFixed(0)}</td>
       <td style="font-size:12px;color:var(--txt2)">${m.email||'—'}</td>
@@ -4897,12 +4954,32 @@ async function pgMembers(el){
 
 function showMemberModal(id){
   const m=id?S.members.find(mm=>mm.id===id):null;
+  const teams=id?getTeamsOfMember(id):[];
   $('m-member-title').textContent=m?'Editar Pessoa':'Nova Pessoa';
+  // Renderizar checkboxes de times com input de capacidade
+  const allTeams=['T1','T3','T4','T5','PACK','PROD','ADM'];
+  const teamsCheckboxesHTML=allTeams.map(t=>{
+    const found=teams.find(mt=>mt.team===t);
+    const checked=!!found;
+    const cap=found?found.capacity_hours:(m?.capacity_hours||140);
+    const isPrim=found?.is_primary;
+    return `<div class="mb-team-row" data-team="${t}" style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid ${checked?'var(--red)':'var(--border)'};border-radius:6px;margin-bottom:6px;background:${checked?'rgba(237,28,36,.04)':'var(--bg2)'}">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+        <input type="checkbox" class="mb-team-chk" data-team="${t}" ${checked?'checked':''} onchange="toggleMemberTeamRow('${t}')" style="width:16px;height:16px;accent-color:var(--red)">
+        <span class="bg ${TBC(t)}" style="min-width:42px;text-align:center">${TB(t)}</span>
+      </label>
+      <div style="display:flex;align-items:center;gap:6px;${checked?'':'opacity:.3;pointer-events:none'}" class="mb-team-config">
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="mb-primary-team" value="${t}" ${isPrim?'checked':''} class="mb-team-prim" style="accent-color:var(--red)"> primário</label>
+        <input type="number" class="mb-team-cap" data-team="${t}" value="${cap}" min="0" step="1" style="width:70px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--txt);font-size:12px;font-family:var(--mono);text-align:right">
+        <span style="font-size:10px;color:var(--txt3)">h/mês</span>
+      </div>
+    </div>`;
+  }).join('');
+  
   $('m-member-body').innerHTML=`
     <input type="hidden" id="mb-id" value="${m?m.id:''}">
     <div class="f-row"><div class="f-field"><label class="f-label">Nome completo *</label><input class="f-input" id="mb-name" value="${m?m.name:''}"></div><div class="f-field"><label class="f-label">Email *</label><input class="f-input" id="mb-email" value="${m?m.email:''}"></div></div>
-    <div class="f-row3">
-      <div class="f-field"><label class="f-label">Time</label><select class="f-sel" id="mb-team"><option value="">Sem time</option>${['T1','T3','T4','T5','PROD','ADM'].map(t=>`<option value="${t}" ${m?.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="f-row">
       <div class="f-field"><label class="f-label">Nível de acesso</label><select class="f-sel" id="mb-role" onchange="toggleClientField()"><option value="user" ${m?.access_level==='user'?'selected':''}>User (operador)</option><option value="account" ${m?.access_level==='account'?'selected':''}>Account</option><option value="prod_leader" ${m?.access_level==='prod_leader'?'selected':''}>Líder Prod</option><option value="admin" ${m?.access_level==='admin'?'selected':''}>Admin</option><option value="client" ${m?.access_level==='client'?'selected':''}>Cliente externo</option></select></div>
       <div class="f-field"><label class="f-label">Função</label><input class="f-input" id="mb-job" value="${m?m.job_title||'':''}"></div>
     </div>
@@ -4911,8 +4988,11 @@ function showMemberModal(id){
       <select class="f-sel" id="mb-client-id"><option value="">Selecione a empresa</option>${S.clients.map(c=>`<option value="${c.id}" ${m?.client_id===c.id?'selected':''}>${c.name}</option>`).join('')}</select>
       <div style="font-size:11px;color:var(--txt3);margin-top:4px">O cliente verá apenas dados desta empresa</div>
     </div>
-    <div class="f-row3">
-      <div class="f-field"><label class="f-label">Capacidade (h/mês)</label><input class="f-input" type="number" id="mb-cap" value="${m?m.capacity_hours||140:140}"></div>
+    <div class="f-field" id="mb-teams-field" style="display:${m?.access_level==='client'?'none':'block'}">
+      <label class="f-label">Times <span style="font-size:10px;color:var(--txt3);font-weight:400">— marque os times da pessoa, defina capacidade em cada e qual é o primário</span></label>
+      <div style="max-height:280px;overflow-y:auto;padding:2px">${teamsCheckboxesHTML}</div>
+    </div>
+    <div class="f-row">
       <div class="f-field"><label class="f-label">Custo hora (R$)</label><input class="f-input" type="number" id="mb-cost" step="1" min="0" value="${m?Number(m.hourly_cost||0):0}"></div>
       <div class="f-field"><label class="f-label">Senha login</label><input class="f-input" id="mb-pass" value="${m?m.login_password||'':'TGTtime2026'}" placeholder="TGTtime2026"></div>
     </div>
@@ -4929,12 +5009,44 @@ function showMemberModal(id){
   openM('m-member');
 }
 
+function toggleMemberTeamRow(team){
+  const chk=document.querySelector(`.mb-team-chk[data-team="${team}"]`);
+  const row=document.querySelector(`.mb-team-row[data-team="${team}"]`);
+  if(!chk||!row)return;
+  const checked=chk.checked;
+  row.style.borderColor=checked?'var(--red)':'var(--border)';
+  row.style.background=checked?'rgba(237,28,36,.04)':'var(--bg2)';
+  const config=row.querySelector('.mb-team-config');
+  if(config){config.style.opacity=checked?'1':'.3';config.style.pointerEvents=checked?'':'none'}
+  // Se desmarcou e era primary, escolher outro
+  if(!checked){
+    const wasPrim=row.querySelector('.mb-team-prim');
+    if(wasPrim&&wasPrim.checked){
+      wasPrim.checked=false;
+      // pega primeiro time marcado e seta como primary
+      const firstChk=document.querySelector('.mb-team-chk:checked');
+      if(firstChk){
+        const firstRow=firstChk.closest('.mb-team-row');
+        const firstPrim=firstRow.querySelector('.mb-team-prim');
+        if(firstPrim)firstPrim.checked=true;
+      }
+    }
+  }else{
+    // Se marcou e nenhum primário ainda, marca como primário
+    const anyPrim=document.querySelector('.mb-team-prim:checked');
+    if(!anyPrim){
+      const prim=row.querySelector('.mb-team-prim');
+      if(prim)prim.checked=true;
+    }
+  }
+}
+
 function toggleClientField(){
   const isClient=$('mb-role')?.value==='client';
   const field=$('mb-client-field');
   if(field)field.style.display=isClient?'block':'none';
-  // Auto-clear team for clients
-  if(isClient&&$('mb-team'))$('mb-team').value='';
+  const tf=$('mb-teams-field');
+  if(tf)tf.style.display=isClient?'none':'block';
 }
 
 async function saveMember(){
@@ -4942,11 +5054,61 @@ async function saveMember(){
   if(!name||!email){toast('Preencha nome e email','error');return}
   const role=$('mb-role')?.value||'user';
   if(role==='client'&&!$('mb-client-id')?.value){toast('Selecione a empresa vinculada','error');return}
-  const data={name,email,team:$('mb-team')?.value||null,access_level:role,job_title:$('mb-job')?.value||null,capacity_hours:parseInt($('mb-cap')?.value)||140,hourly_cost:parseFloat($('mb-cost')?.value)||0,login_password:$('mb-pass')?.value||'TGTtime2026',client_id:role==='client'?($('mb-client-id')?.value||null):null,qc_reviewer:$('mb-qc')?.checked===true};
+  
+  // Coleta times marcados
+  let selectedTeams=[];
+  if(role!=='client'){
+    document.querySelectorAll('.mb-team-chk:checked').forEach(chk=>{
+      const t=chk.dataset.team;
+      const capEl=document.querySelector(`.mb-team-cap[data-team="${t}"]`);
+      const cap=parseInt(capEl?.value)||0;
+      const row=chk.closest('.mb-team-row');
+      const isPrim=row?.querySelector('.mb-team-prim')?.checked===true;
+      selectedTeams.push({team:t,capacity_hours:cap,is_primary:isPrim});
+    });
+    if(selectedTeams.length===0){toast('Selecione ao menos um time','error');return}
+    // Se ninguém é primário, primeiro vira
+    if(!selectedTeams.some(t=>t.is_primary))selectedTeams[0].is_primary=true;
+  }
+  
+  // Time primário pra preencher tt_members.team (compatibilidade)
+  const primTeam=selectedTeams.find(t=>t.is_primary)?.team||(role==='client'?null:null);
+  // Capacidade total = soma de todos os times (pra preencher capacity_hours legado)
+  const totalCap=selectedTeams.reduce((s,t)=>s+(t.capacity_hours||0),0)||140;
+  
+  const data={
+    name,email,
+    team:primTeam,
+    access_level:role,
+    job_title:$('mb-job')?.value||null,
+    capacity_hours:totalCap,
+    hourly_cost:parseFloat($('mb-cost')?.value)||0,
+    login_password:$('mb-pass')?.value||'TGTtime2026',
+    client_id:role==='client'?($('mb-client-id')?.value||null):null,
+    qc_reviewer:$('mb-qc')?.checked===true
+  };
+  
   try{
-    if(id)await sbPatch('tt_members',`id=eq.${id}`,data);
-    else{data.is_active=true;await sbPost('tt_members',data)}
-    closeM('m-member');S.members=await sbGet('tt_members','is_active=eq.true&order=team,name');toast('Pessoa salva');renderPage();
+    let memberId=id;
+    if(id){
+      await sbPatch('tt_members',`id=eq.${id}`,data);
+    }else{
+      data.is_active=true;
+      const created=await sbPost('tt_members',data);
+      memberId=Array.isArray(created)?created[0]?.id:created?.id;
+    }
+    // Sincroniza tt_member_teams: apaga existentes desse membro e recria
+    if(role!=='client'&&memberId){
+      await sbDel('tt_member_teams',`member_id=eq.${memberId}`);
+      for(const t of selectedTeams){
+        await sbPost('tt_member_teams',{member_id:memberId,team:t.team,capacity_hours:t.capacity_hours,is_primary:t.is_primary});
+      }
+    }
+    closeM('m-member');
+    S.members=await sbGet('tt_members','is_active=eq.true&order=team,name');
+    S.member_teams=await sbGet('tt_member_teams','');
+    toast('Pessoa salva');
+    renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
@@ -4962,13 +5124,14 @@ async function pgClients(el){
       <td style="font-weight:600">${c.name}</td><td><span class="bg ${TBC(c.team)}">${c.team?TB(c.team):'—'}</span></td>
       <td class="rt" style="font-family:var(--mono)">${c.target_hours_month?Number(c.target_hours_month).toFixed(0)+'h':'—'}</td>
       <td>${c.is_fee?'<span class="bg bg-t1">Fee</span>':'<span class="bg bg-adm">Pontual</span>'}</td>
-      <td class="rt" style="font-family:var(--mono)">${c.is_fee&&Number(c.fee_monthly)>0?fMoney(c.fee_monthly):'—'}</td>
+      <td class="rt" style="font-family:var(--mono)">${c.is_fee&&Number(c.fee_monthly)>0?fMoneyMasked(c.fee_monthly):'—'}</td>
       <td><button class="btn-icon" onclick="showClientModal('${c.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>
     </tr>`).join('')}</tbody></table></div></div>`;
 }
 
 function showClientModal(id){
   const c=id?S.clients.find(cl=>cl.id===id):null;
+  const seeFee=canSeeClientFinancials();
   $('m-client-title').textContent=c?'Editar Cliente':'Novo Cliente';
   $('m-client-body').innerHTML=`
     <input type="hidden" id="cl-id" value="${c?c.id:''}">
@@ -4976,9 +5139,9 @@ function showClientModal(id){
     <div class="f-row3">
       <div class="f-field"><label class="f-label">Time</label><select class="f-sel" id="cl-team"><option value="">Sem time</option>${['T1','T3','T4','T5'].map(t=>`<option value="${t}" ${c?.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Meta h/mês</label><input class="f-input" type="number" id="cl-target" min="0" step="any" inputmode="decimal" value="${c?Number(c.target_hours_month)||'':''}"></div>
-      <div class="f-field"><label class="f-label">É Fee?</label><select class="f-sel" id="cl-isfee" onchange="document.getElementById('cl-fee-wrap').style.display=this.value==='1'?'block':'none'"><option value="0" ${!c?.is_fee?'selected':''}>Não</option><option value="1" ${c?.is_fee?'selected':''}>Sim</option></select></div>
+      ${seeFee?`<div class="f-field"><label class="f-label">É Fee?</label><select class="f-sel" id="cl-isfee" onchange="document.getElementById('cl-fee-wrap').style.display=this.value==='1'?'block':'none'"><option value="0" ${!c?.is_fee?'selected':''}>Não</option><option value="1" ${c?.is_fee?'selected':''}>Sim</option></select></div>`:`<input type="hidden" id="cl-isfee" value="${c?.is_fee?'1':'0'}">`}
     </div>
-    <div class="f-field" id="cl-fee-wrap" style="display:${c?.is_fee?'block':'none'};margin-top:12px"><label class="f-label">Valor do Fee mensal (R$)</label><input class="f-input" type="number" id="cl-fee" min="0" step="any" inputmode="decimal" value="${c&&c.is_fee?Number(c.fee_monthly)||'':''}"></div>`;
+    ${seeFee?`<div class="f-field" id="cl-fee-wrap" style="display:${c?.is_fee?'block':'none'};margin-top:12px"><label class="f-label">Valor do Fee mensal (R$)</label><input class="f-input" type="number" id="cl-fee" min="0" step="any" inputmode="decimal" value="${c&&c.is_fee?Number(c.fee_monthly)||'':''}"></div>`:`<input type="hidden" id="cl-fee" value="${c?.fee_monthly||0}">`}`;
   $('m-client-save').onclick=saveClient;
   openM('m-client');
 }
@@ -5521,6 +5684,83 @@ function getVisibleAnnouncementMembersCount(a){
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MULTI-TIME — helpers
+// ═══════════════════════════════════════════════════════════════
+
+// Lista os times de uma pessoa (array de {team, capacity_hours, is_primary})
+function getTeamsOfMember(memberId){
+  return (S.member_teams||[]).filter(mt=>mt.member_id===memberId);
+}
+
+// Lista os IDs de pessoas em um time (array de UUIDs)
+function getMemberIdsInTeam(team){
+  return (S.member_teams||[]).filter(mt=>mt.team===team).map(mt=>mt.member_id);
+}
+
+// Lista pessoas em um time (com info de capacidade nesse time)
+function getMembersInTeam(team){
+  const mtIn=(S.member_teams||[]).filter(mt=>mt.team===team);
+  return mtIn.map(mt=>{
+    const m=S.members.find(mm=>mm.id===mt.member_id);
+    if(!m)return null;
+    return{...m,capacity_in_team:mt.capacity_hours,team_role_primary:mt.is_primary,_team_ctx:team};
+  }).filter(x=>x&&x.active!==false);
+}
+
+// Capacidade de uma pessoa em um time específico
+function getMemberCapacityInTeam(memberId,team){
+  const mt=(S.member_teams||[]).find(x=>x.member_id===memberId&&x.team===team);
+  return mt?(mt.capacity_hours||0):0;
+}
+
+// Capacidade total de uma pessoa (soma de todos os times)
+function getMemberTotalCapacity(memberId){
+  return (S.member_teams||[]).filter(mt=>mt.member_id===memberId).reduce((s,mt)=>s+(mt.capacity_hours||0),0);
+}
+
+// Texto pra exibir times de uma pessoa: "T1, T3" ou só "T1" se for um só
+function teamsLabelOfMember(memberId){
+  const teams=getTeamsOfMember(memberId).map(mt=>mt.team);
+  if(teams.length===0)return'—';
+  if(teams.length===1)return teams[0];
+  // Primary primeiro
+  const primary=getTeamsOfMember(memberId).find(mt=>mt.is_primary);
+  if(primary){
+    const others=teams.filter(t=>t!==primary.team);
+    return primary.team+' +'+others.length;
+  }
+  return teams.join(', ');
+}
+
+// Verifica se uma pessoa pertence a determinado time
+function memberInTeam(memberId,team){
+  return (S.member_teams||[]).some(mt=>mt.member_id===memberId&&mt.team===team);
+}
+
+// Lista todos os times do usuário logado
+function getMyTeams(){
+  if(!S.user)return[];
+  const fromTable=getTeamsOfMember(S.user.id).map(mt=>mt.team);
+  if(fromTable.length>0)return fromTable;
+  return S.user.team?[S.user.team]:[];
+}
+
+// Account vê pessoa? (se a pessoa pertence a algum dos times do account)
+function accountSeesMember(memberId){
+  if(isA()||isPL())return true;
+  const myTeams=getMyTeams();
+  return getTeamsOfMember(memberId).some(mt=>myTeams.includes(mt.team));
+}
+
+// Account vê cliente? (se o cliente é de algum dos times do account)
+function accountSeesClient(client){
+  if(isA()||isPL())return true;
+  if(!client)return false;
+  const myTeams=getMyTeams();
+  return myTeams.includes(client.team);
+}
+
+// ═══════════════════════════════════════════════════════════════
 // DASHBOARDS DETALHADOS — drill-down inline com Chart.js
 // Por Pessoa, Por Cliente, Por Time
 // ═══════════════════════════════════════════════════════════════
@@ -5668,12 +5908,16 @@ function destroyAllCharts(){
 // Helper: filtra entries por escopo (permissões)
 // ───────────────────────────────────────────────────────────
 function entriesInScope(){
-  // Admin/PL veem tudo; account vê só do próprio time; user só dele; client só do próprio
+  // Admin/PL veem tudo; account vê só dos próprios times; user só dele; client só do próprio
   if(isA()||isPL())return S.entries.filter(e=>!e.is_running);
   if(isAcc()){
-    const myTeamIds=S.clients.filter(c=>c.team===S.user.team).map(c=>c.id);
-    const myTeamMemberIds=S.members.filter(m=>m.team===S.user.team).map(m=>m.id);
-    return S.entries.filter(e=>!e.is_running&&(myTeamIds.includes(e.client_id)||myTeamMemberIds.includes(e.member_id)));
+    const myTeams=getMyTeams();
+    // Lança de quem está em algum dos times do account
+    const myTeamMemberIds=new Set();
+    myTeams.forEach(t=>getMemberIdsInTeam(t).forEach(id=>myTeamMemberIds.add(id)));
+    // E de clientes em algum dos times
+    const myTeamClientIds=new Set(S.clients.filter(c=>myTeams.includes(c.team)).map(c=>c.id));
+    return S.entries.filter(e=>!e.is_running&&(myTeamMemberIds.has(e.member_id)||myTeamClientIds.has(e.client_id)));
   }
   if(isCli()){
     return S.entries.filter(e=>!e.is_running&&e.client_id===S.user.client_id);
@@ -5710,11 +5954,15 @@ function renderPersonDetail(personId){
   if(!p)return'<div style="padding:20px;color:var(--txt3)">Pessoa não encontrada</div>';
   const myE=entriesInScope().filter(e=>e.member_id===personId);
   const totalH=myE.reduce((s,e)=>s+(e.hours||0),0);
-  const cap=p.capacity_hours||140;
+  const teams=getTeamsOfMember(personId);
+  const cap=teams.reduce((s,mt)=>s+(mt.capacity_hours||0),0)||p.capacity_hours||140;
   const pct=cap>0?totalH/cap*100:0;
   const clientesCount=new Set(myE.map(e=>e.client_id)).size;
   const dias=new Set(myE.map(e=>(e.started_at||'').substring(0,10))).size;
   const media=dias>0?totalH/dias:0;
+  
+  // Resumo de times (badges com cap por time)
+  const teamsHTML=teams.length>0?teams.map(mt=>`<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:var(--bg3);border:1px solid ${mt.is_primary?'var(--red)':'rgba(157,157,156,.3)'};border-radius:6px;margin-right:6px;font-size:11px"><b>${mt.team}</b>${mt.is_primary?' <span style="font-size:9px;color:var(--red);font-weight:800">●</span>':''}<span style="color:var(--txt3);font-family:var(--mono)">${mt.capacity_hours}h</span></span>`).join(''):'<span style="color:var(--txt3)">Sem times</span>';
   
   // Por cliente
   const byClient={};myE.forEach(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const n=c?c.name:'?';byClient[n]=(byClient[n]||0)+(e.hours||0)});
@@ -5759,7 +6007,8 @@ function renderPersonDetail(personId){
         <div>
           <div style="font-size:11px;color:var(--red);font-weight:800;letter-spacing:1.2px">DETALHAMENTO</div>
           <div style="font-size:18px;font-weight:800;margin-top:2px">${p.name}</div>
-          <div style="font-size:11px;color:var(--txt3);margin-top:2px">${p.job_title||''} · ${p.team||''}</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px">${p.job_title||''}</div>
+          <div style="margin-top:8px">${teamsHTML}</div>
         </div>
         <button class="btn btn-sm" onclick="togglePerson('${personId}')" style="font-size:11px">✕ Fechar</button>
       </div>
@@ -5913,13 +6162,15 @@ function toggleTeam(team){
 }
 
 function renderTeamDetail(team){
-  const teamMembers=S.members.filter(m=>m.team===team&&m.active!==false);
+  // Pessoas do time via tabela de membership (multi-time)
+  const teamMembers=getMembersInTeam(team);
   const teamMemberIds=teamMembers.map(m=>m.id);
   const teamClients=S.clients.filter(c=>c.team===team);
   const teamClientIds=teamClients.map(c=>c.id);
   const myE=entriesInScope().filter(e=>teamMemberIds.includes(e.member_id)||teamClientIds.includes(e.client_id));
   const totalH=myE.reduce((s,e)=>s+(e.hours||0),0);
-  const totalCap=teamMembers.reduce((s,m)=>s+(m.capacity_hours||140),0);
+  // Capacidade do time = soma das capacidades de cada pessoa NESTE time
+  const totalCap=teamMembers.reduce((s,m)=>s+(m.capacity_in_team||0),0);
   const pct=totalCap>0?totalH/totalCap*100:0;
   const ativosNaPeriodo=new Set(myE.map(e=>e.member_id)).size;
   const clientesAtendidos=new Set(myE.map(e=>e.client_id)).size;
@@ -5953,12 +6204,12 @@ function renderTeamDetail(team){
     }
   },50);
   
-  // Tabela de pessoas do time com utilização
+  // Tabela de pessoas do time com utilização (cap específica daquele time)
   const personRows=teamMembers.map(m=>{
     const h=myE.filter(e=>e.member_id===m.id).reduce((s,e)=>s+(e.hours||0),0);
-    const c=m.capacity_hours||140;
+    const c=m.capacity_in_team||0;
     const p=c>0?h/c*100:0;
-    return{name:m.name,jt:m.job_title||'',h,c,p};
+    return{name:m.name,jt:m.job_title||'',h,c,p,isPrimary:m.team_role_primary};
   }).sort((a,b)=>b.h-a.h);
   
   return `<tr><td colspan="100" style="padding:0;background:var(--bg2)">
@@ -6003,7 +6254,7 @@ function renderTeamDetail(team){
       <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px">
         <div style="font-size:11px;color:var(--txt3);font-weight:700;letter-spacing:.5px;margin-bottom:8px">UTILIZAÇÃO POR PESSOA (${personRows.length})</div>
         <table style="width:100%;font-size:12px"><thead><tr style="border-bottom:1px solid var(--bg2)"><th style="text-align:left;padding:6px;color:var(--txt3)">Pessoa</th><th style="text-align:right;padding:6px;color:var(--txt3)">Cap</th><th style="text-align:right;padding:6px;color:var(--txt3)">Horas</th><th style="text-align:right;padding:6px;color:var(--txt3)">%</th></tr></thead>
-        <tbody>${personRows.map(r=>{const col=r.p>100?'#ED1C24':r.p>70?'#F59E0B':r.p>30?'#00C864':'#9D9D9C';return`<tr style="border-bottom:1px solid var(--bg2)"><td style="padding:6px"><b>${r.name.split(' ').slice(0,2).join(' ')}</b><span style="color:var(--txt3);font-size:10px;margin-left:6px">${r.jt}</span></td><td style="padding:6px;text-align:right;color:var(--txt3)">${r.c}h</td><td style="padding:6px;text-align:right;font-weight:700;font-family:var(--mono)">${fH(r.h)}</td><td style="padding:6px;text-align:right;font-weight:700;color:${col}">${r.p.toFixed(0)}%</td></tr>`}).join('')||'<tr><td colspan="4" style="padding:14px;text-align:center;color:var(--txt3)">Sem dados</td></tr>'}</tbody></table>
+        <tbody>${personRows.map(r=>{const col=r.p>100?'#ED1C24':r.p>70?'#F59E0B':r.p>30?'#00C864':'#9D9D9C';const secondaryBadge=!r.isPrimary?' <span style="display:inline-block;padding:1px 5px;background:rgba(157,157,156,.2);color:var(--txt3);font-size:9px;font-weight:700;border-radius:3px;margin-left:4px" title="Pessoa tem este time como secundário">SEC</span>':'';return`<tr style="border-bottom:1px solid var(--bg2)"><td style="padding:6px"><b>${r.name.split(' ').slice(0,2).join(' ')}</b>${secondaryBadge}<span style="color:var(--txt3);font-size:10px;margin-left:6px">${r.jt}</span></td><td style="padding:6px;text-align:right;color:var(--txt3)">${r.c}h</td><td style="padding:6px;text-align:right;font-weight:700;font-family:var(--mono)">${fH(r.h)}</td><td style="padding:6px;text-align:right;font-weight:700;color:${col}">${r.p.toFixed(0)}%</td></tr>`}).join('')||'<tr><td colspan="4" style="padding:14px;text-align:center;color:var(--txt3)">Sem dados</td></tr>'}</tbody></table>
       </div>
     </div>
   </td></tr>`;
@@ -6015,25 +6266,25 @@ function renderTeamDetail(team){
 async function pgDashTeam(el){
   if(!canSeeTeamData()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   
-  // Determina times visíveis
-  const TEAMS=['T1','T3','T4','T5','PROD','ADM'];
-  const visibleTeams=isA()?TEAMS:[S.user.team];
+  // Determina times visíveis (admin: todos com membros; account/PL: próprios times)
+  const allTeams=['T1','T3','T4','T5','PACK','PROD','ADM'];
+  const visibleTeams=isA()?allTeams:getMyTeams();
   
   const entries=entriesInScope();
   
   const teamData=visibleTeams.map(team=>{
-    const members=S.members.filter(m=>m.team===team&&m.active!==false);
-    const memberIds=members.map(m=>m.id);
+    const memberIds=getMemberIdsInTeam(team);
     const clients=S.clients.filter(c=>c.team===team);
     const clientIds=clients.map(c=>c.id);
     const teamE=entries.filter(e=>memberIds.includes(e.member_id)||clientIds.includes(e.client_id));
     const totalH=teamE.reduce((s,e)=>s+(e.hours||0),0);
-    const cap=members.reduce((s,m)=>s+(m.capacity_hours||140),0);
+    // Capacidade = soma dos slots de tempo nesse time específico
+    const cap=(S.member_teams||[]).filter(mt=>mt.team===team).reduce((s,mt)=>s+(mt.capacity_hours||0),0);
     const ativos=new Set(teamE.map(e=>e.member_id)).size;
-    return{team,members:members.length,clients:clients.length,totalH,cap,ativos,pct:cap>0?totalH/cap*100:0};
+    return{team,members:memberIds.length,clients:clients.length,totalH,cap,ativos,pct:cap>0?totalH/cap*100:0};
   }).filter(t=>t.members>0).sort((a,b)=>b.totalH-a.totalH);
   
-  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seu time: ${S.user.team}</div>`:'';
+  const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Seus times: ${getMyTeams().join(', ')}</div>`:'';
   
   el.innerHTML=datePillsHTML()+scopeNote+`
     <div class="tbl">
