@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.32';
+const HUB_VERSION='0.33';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -4997,12 +4997,14 @@ async function pgMyScore(el){
 let _plPage={
   team:null,                // time selecionado
   month:null,               // YYYY-MM atualmente em edição
+  viewMode:'client',        // 'client' = visão por cliente; 'person' = visão por pessoa
   clientHours:{},           // {client_id: planned_hours}
   clientLocked:{},          // {client_id: bool}
   clientExtra:{},           // {client_id: bool} — horas extras (não conta no teto)
   memberHours:{},           // {client_id: {member_id: hours}}
   memberLocked:{},          // {client_id: {member_id: bool}}
-  expandedClient:null,      // qual cliente está expandido
+  expandedClient:null,      // qual cliente está expandido (visão cliente)
+  expandedMember:null,      // qual pessoa está expandida (visão pessoa)
   dirty:false
 };
 
@@ -5028,11 +5030,11 @@ function planningLoadState(team,month){
   _plPage.clientHours={};_plPage.clientLocked={};_plPage.clientExtra={};
   _plPage.memberHours={};_plPage.memberLocked={};
   _plPage.expandedClient=null;
+  _plPage.expandedMember=null;
   _plPage.dirty=false;
   
   teamClients.forEach(c=>{
     const plan=S.client_plans.find(p=>p.client_id===c.id&&p.month===month);
-    _plPage.clientHours[c.id]=plan?Number(plan.planned_hours):(Number(c.target_hours_month)||0);
     _plPage.clientLocked[c.id]=plan?!!plan.is_locked:false;
     _plPage.clientExtra[c.id]=plan?!!plan.is_extra:false;
     _plPage.memberHours[c.id]={};
@@ -5043,6 +5045,15 @@ function planningLoadState(team,month){
       _plPage.memberHours[c.id][m.id]=mp?Number(mp.allocated_hours):0;
       _plPage.memberLocked[c.id][m.id]=mp?!!mp.is_locked:false;
     });
+    // Total do cliente = soma das pessoas (derivado).
+    // Se não houver member plans ainda, distribui o planned_hours proporcionalmente entre as pessoas (igualmente)
+    const memberSum=planningClientTotal(c.id);
+    if(memberSum===0&&plan&&Number(plan.planned_hours)>0&&teamMembers.length>0){
+      // Distribuir igualmente entre as pessoas do time como ponto de partida
+      const per=Number(plan.planned_hours)/teamMembers.length;
+      teamMembers.forEach(m=>{_plPage.memberHours[c.id][m.id]=Math.round(per*10)/10});
+    }
+    _plPage.clientHours[c.id]=planningClientTotal(c.id);
   });
 }
 
@@ -5091,66 +5102,85 @@ function planningEfficiencyGainPrevMonth(team){
   return{planned:totalPlanned,real:totalReal,gain:Math.max(0,totalPlanned-totalReal),prevMonth};
 }
 
-// Modelo simples: o slider só altera o cliente da linha.
-// O saldo de horas do time vai caindo conforme aloca.
-// Limite: cliente normal não pode ir além de (saldo disponível + valor atual dele).
-// Cliente marcado como 💰 extra: sem limite (não conta no teto do time).
-function planningOnSliderChange(team,clientId,newValue){
+// FONTE DA VERDADE = alocações por pessoa (memberHours)
+// O total do cliente é derivado: soma das pessoas alocadas
+// O slider de cada pessoa em cada cliente é INDEPENDENTE - mexe só ele
+
+// Soma de horas de um cliente (vem das pessoas)
+function planningClientTotal(clientId){
+  if(!_plPage.memberHours[clientId])return 0;
+  return Object.values(_plPage.memberHours[clientId]).reduce((s,v)=>s+(Number(v)||0),0);
+}
+
+// Saldo da pessoa: cap dela no time - já alocada em outros clientes
+function planningMemberBalance(memberId,excludeClientId){
+  const teamMembers=getMembersInTeam(_plPage.team);
+  const m=teamMembers.find(mm=>mm.id===memberId);
+  if(!m)return 0;
+  const cap=m.capacity_in_team||0;
+  let aloc=0;
+  Object.keys(_plPage.memberHours).forEach(cid=>{
+    if(cid===excludeClientId)return;
+    // Se o cliente está marcado como extra, NÃO conta no saldo da pessoa
+    if(_plPage.clientExtra[cid])return;
+    aloc+=Number(_plPage.memberHours[cid]?.[memberId])||0;
+  });
+  return Math.max(0,cap-aloc);
+}
+
+// Mudar alocação de uma pessoa em um cliente.
+// Sem auto-balanço. Apenas limita pelo saldo da pessoa (se cliente não for extra).
+function planningOnMemberSliderChange(team,clientId,memberId,newValue){
   newValue=Math.max(0,parseFloat(newValue)||0);
   const isExtra=_plPage.clientExtra[clientId];
   
   if(!isExtra){
-    const cap=planningTeamCap(team);
-    const alocOutros=planningAllocatedNormal(team)-(Number(_plPage.clientHours[clientId])||0);
-    const tetoCliente=Math.max(0,cap-alocOutros);
-    // Não permite ir além do saldo
-    if(newValue>tetoCliente){
-      newValue=tetoCliente;
-      toast(`Saldo do time é ${fH(tetoCliente)}. Marque como 💰 horas extras se precisar de mais.`,'info');
+    const balance=planningMemberBalance(memberId,clientId);
+    if(newValue>balance){
+      const m=getMembersInTeam(team).find(mm=>mm.id===memberId);
+      const nome=m?m.name.split(' ')[0]:'pessoa';
+      newValue=balance;
+      toast(`Saldo de ${escapeHtml(nome)}: ${fH(balance)}. Marque o cliente como 💰 extras para passar disso.`,'info');
     }
   }
-  _plPage.clientHours[clientId]=newValue;
+  
+  if(!_plPage.memberHours[clientId])_plPage.memberHours[clientId]={};
+  _plPage.memberHours[clientId][memberId]=newValue;
+  // Sincroniza o total do cliente (derivado)
+  _plPage.clientHours[clientId]=planningClientTotal(clientId);
   _plPage.dirty=true;
   planningRender();
 }
 
-// Mesmo modelo simples por pessoa dentro do cliente
-// Limite por pessoa: cap dela no time menos o que já está alocada em OUTROS clientes
-function planningOnMemberSliderChange(team,clientId,memberId,newValue){
-  newValue=Math.max(0,parseFloat(newValue)||0);
-  
-  // Cap individual da pessoa nesse time
-  const teamMembers=getMembersInTeam(team);
-  const m=teamMembers.find(mm=>mm.id===memberId);
-  const capPessoa=m?(m.capacity_in_team||0):0;
-  
-  // Quanto a pessoa já está alocada em OUTROS clientes (não conta este)
-  let alocOutros=0;
-  Object.keys(_plPage.memberHours).forEach(cid=>{
-    if(cid!==clientId){
-      alocOutros+=Number(_plPage.memberHours[cid]?.[memberId])||0;
-    }
-  });
-  const saldoPessoa=Math.max(0,capPessoa-alocOutros);
-  
-  if(newValue>saldoPessoa){
-    newValue=saldoPessoa;
-    toast(`Saldo de ${escapeHtml(m?m.name.split(' ')[0]:'pessoa')}: ${fH(saldoPessoa)}.`,'info');
-  }
-  
-  _plPage.memberHours[clientId][memberId]=newValue;
-  _plPage.dirty=true;
-  planningRender();
+// Compatibilidade: planningOnSliderChange (slider de total do cliente)
+// Mexer no slider total do cliente é interpretado como "distribuir proporcionalmente entre pessoas que já têm horas"
+// Mas se você quer SEM auto-balanço, isso fica desabilitado na UI - o total vira read-only
+function planningOnSliderChange(team,clientId,newValue){
+  // Não usado mais - o total do cliente é derivado das pessoas
+  // Mantido só por compatibilidade caso ainda exista referência
+  console.warn('planningOnSliderChange deprecated - alocação é feita por pessoa');
 }
 
 // Toggle "horas extras" — cliente sai do teto da capacidade
 function planningToggleClientExtra(clientId){
   _plPage.clientExtra[clientId]=!_plPage.clientExtra[clientId];
+  // Sincronizar total (caso extras mudem o cálculo do saldo das pessoas)
+  _plPage.clientHours[clientId]=planningClientTotal(clientId);
   _plPage.dirty=true;
   planningRender();
 }
 function planningToggleExpand(clientId){
   _plPage.expandedClient=_plPage.expandedClient===clientId?null:clientId;
+  planningRender();
+}
+function planningToggleExpandMember(memberId){
+  _plPage.expandedMember=_plPage.expandedMember===memberId?null:memberId;
+  planningRender();
+}
+function planningSwitchView(mode){
+  _plPage.viewMode=mode;
+  _plPage.expandedClient=null;
+  _plPage.expandedMember=null;
   planningRender();
 }
 
@@ -5193,7 +5223,9 @@ async function planningSave(){
     const teamClients=S.clients.filter(c=>c.is_active!==false&&c.team===_plPage.team);
     
     for(const c of teamClients){
-      const hours=Number(_plPage.clientHours[c.id])||0;
+      // planned_hours = soma das pessoas (fonte da verdade)
+      const hours=planningClientTotal(c.id);
+      _plPage.clientHours[c.id]=hours;
       const existing=S.client_plans.find(p=>p.client_id===c.id&&p.month===_plPage.month);
       const data={
         client_id:c.id,
@@ -5315,80 +5347,147 @@ function planningRender(){
     </div>`;
   }
   
-  // Toolbar (replicar + salvar)
-  const toolbar=`<div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:14px">
-    <button class="btn btn-sm" onclick="planningReplicatePrev()" style="font-size:11px">↩ Replicar mês anterior</button>
-    <button class="btn btn-r btn-sm" id="pl-save-btn" onclick="planningSave()" style="font-size:11px;font-weight:800" ${!_plPage.dirty?'disabled':''}>💾 Salvar ${_plPage.dirty?'•':''}</button>
+  // Toolbar com toggle de view + replicar + salvar
+  const toolbar=`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap">
+    <div style="display:inline-flex;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:3px;gap:2px">
+      <button onclick="planningSwitchView('client')" style="background:${_plPage.viewMode==='client'?'var(--red)':'transparent'};color:${_plPage.viewMode==='client'?'#fff':'var(--txt2)'};border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.3px">👥 Por Cliente</button>
+      <button onclick="planningSwitchView('person')" style="background:${_plPage.viewMode==='person'?'var(--red)':'transparent'};color:${_plPage.viewMode==='person'?'#fff':'var(--txt2)'};border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.3px">🧑 Por Pessoa</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-sm" onclick="planningReplicatePrev()" style="font-size:11px">↩ Replicar mês anterior</button>
+      <button class="btn btn-r btn-sm" id="pl-save-btn" onclick="planningSave()" style="font-size:11px;font-weight:800" ${!_plPage.dirty?'disabled':''}>💾 Salvar ${_plPage.dirty?'•':''}</button>
+    </div>
   </div>`;
   
-  // Lista de clientes
-  let clientsList='';
-  teamClients.forEach(c=>{
-    const hours=Number(_plPage.clientHours[c.id])||0;
-    const extra=_plPage.clientExtra[c.id];
-    const expanded=_plPage.expandedClient===c.id;
-    // Max do slider: pra clientes normais = atual + saldo (não vai além do teto); pra extras = aberto
-    const maxSlider=extra?Math.max(cap,200):Math.min(cap,hours+balance);
-    const memberSum=teamMembers.reduce((s,m)=>s+(Number(_plPage.memberHours[c.id]?.[m.id])||0),0);
-    const memberDelta=hours-memberSum;
-    const memberCellWarn=Math.abs(memberDelta)>0.1?`<span style="font-size:10px;color:${memberDelta>0?'var(--pack)':'var(--red)'};font-weight:700;margin-left:6px">${memberDelta>0?'+':''}${memberDelta.toFixed(1)}h sem dono</span>`:'';
-    
-    const bgColor=extra?'rgba(245,158,11,.05)':(expanded?'rgba(237,28,36,.03)':'var(--bg2)');
-    const borderColor=extra?'rgba(245,158,11,.4)':(expanded?'rgba(237,28,36,.4)':'var(--border)');
-    const sliderColor=extra?'#F59E0B':'#ED1C24';
-    
-    clientsList+=`<div style="background:${bgColor};border:1px solid ${borderColor};border-left:3px solid ${sliderColor};border-radius:8px;padding:12px 14px;margin-bottom:8px">
-      <div style="display:grid;grid-template-columns:1fr 280px 56px 32px;gap:12px;align-items:center">
-        <div>
+  let body='';
+  
+  // ─────────── VIEW POR CLIENTE ───────────
+  if(_plPage.viewMode==='client'){
+    teamClients.forEach(c=>{
+      const total=planningClientTotal(c.id);
+      const extra=_plPage.clientExtra[c.id];
+      const expanded=_plPage.expandedClient===c.id;
+      
+      const bgColor=extra?'rgba(245,158,11,.05)':(expanded?'rgba(237,28,36,.03)':'var(--bg2)');
+      const borderColor=extra?'rgba(245,158,11,.4)':(expanded?'rgba(237,28,36,.4)':'var(--border)');
+      const accentColor=extra?'#F59E0B':'#ED1C24';
+      
+      // Linha do cliente: nome + total (read-only, derivado) + botão extra
+      body+=`<div style="background:${bgColor};border:1px solid ${borderColor};border-left:3px solid ${accentColor};border-radius:8px;padding:12px 14px;margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center">
           <div style="font-weight:700;font-size:13px;cursor:pointer" onclick="planningToggleExpand('${c.id}')">
             <span style="display:inline-block;color:var(--red);transform:${expanded?'rotate(90deg)':'rotate(0)'};transition:transform .15s">▶</span>
             ${escapeHtml(c.name)}
             ${extra?'<span style="margin-left:6px;font-size:9px;font-weight:800;color:#F59E0B;letter-spacing:.5px">💰 EXTRA</span>':''}
+            <span style="font-size:10px;color:var(--txt3);font-weight:500;margin-left:8px">${expanded?'(clique para fechar)':'(clique para distribuir entre pessoas)'}</span>
           </div>
-          ${memberCellWarn?`<div style="margin-top:2px">${memberCellWarn}</div>`:''}
-        </div>
-        ${planningSliderHTML('cl-'+c.id,hours,maxSlider,`planningOnSliderChange('${team}','${c.id}',this.value)`,sliderColor)}
-        <input type="number" id="cl-${c.id}-num" min="0" step="1" value="${hours.toFixed(0)}" 
-          onchange="planningOnSliderChange('${team}','${c.id}',this.value); document.getElementById('cl-${c.id}').value=this.value" 
-          style="width:56px;padding:5px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--txt);font-family:var(--mono);font-size:12px;font-weight:700;text-align:right">
-        <button onclick="planningToggleClientExtra('${c.id}')" title="${extra?'Voltar para alocação normal (conta no teto do time)':'Marcar como horas EXTRAS — não conta no teto do time, vira oportunidade de faturamento'}" style="background:${extra?'rgba(245,158,11,.25)':'transparent'};border:1px solid var(--border);border-radius:4px;width:28px;height:28px;cursor:pointer;font-size:13px">💰</button>
-      </div>`;
-    
-    // Drill-down: alocação por pessoa
-    if(expanded){
-      clientsList+=`<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">
-        <div style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1px;margin-bottom:8px">DISTRIBUIÇÃO ENTRE PESSOAS · ${escapeHtml(c.name)}</div>`;
-      teamMembers.forEach(m=>{
-        const mH=Number(_plPage.memberHours[c.id]?.[m.id])||0;
-        const cap_m=m.capacity_in_team||140;
-        // Saldo da pessoa: cap dela - alocado em outros clientes
-        let alocOutros=0;
-        Object.keys(_plPage.memberHours).forEach(cid=>{
-          if(cid!==c.id)alocOutros+=Number(_plPage.memberHours[cid]?.[m.id])||0;
-        });
-        const saldoPessoa=Math.max(0,cap_m-alocOutros);
-        const mMax=Math.min(cap_m,mH+saldoPessoa);
-        const balanceText=saldoPessoa===0?'sem saldo':`saldo ${fH(saldoPessoa)}`;
-        clientsList+=`<div style="display:grid;grid-template-columns:1fr 280px 56px;gap:12px;align-items:center;padding:4px 0;font-size:12px">
-          <div>${escapeHtml(m.name.split(' ').slice(0,2).join(' '))} <span style="color:var(--txt3);font-size:10px;margin-left:6px">cap ${cap_m}h · ${balanceText}</span></div>
-          ${planningSliderHTML('mb-'+c.id+'-'+m.id,mH,mMax,`planningOnMemberSliderChange('${team}','${c.id}','${m.id}',this.value)`,'#455E6E')}
-          <input type="number" id="mb-${c.id}-${m.id}-num" min="0" step="1" value="${mH.toFixed(0)}"
-            onchange="planningOnMemberSliderChange('${team}','${c.id}','${m.id}',this.value); document.getElementById('mb-${c.id}-${m.id}').value=this.value"
-            style="width:56px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--txt);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">
+          <div style="font-family:var(--mono);font-size:18px;font-weight:800;color:${accentColor};min-width:80px;text-align:right">${fH(total)}<span style="font-size:10px;color:var(--txt3);font-weight:400;margin-left:2px">total</span></div>
+          <button onclick="planningToggleClientExtra('${c.id}')" title="${extra?'Voltar para alocação normal':'Marcar como horas EXTRAS — não conta no teto do time, vira oportunidade de faturamento'}" style="background:${extra?'rgba(245,158,11,.25)':'transparent'};border:1px solid var(--border);border-radius:4px;width:30px;height:30px;cursor:pointer;font-size:14px">💰</button>
         </div>`;
-      });
-      clientsList+=`<div style="margin-top:8px;font-size:11px;color:var(--txt3);text-align:right">Soma pessoas: <b style="color:${Math.abs(memberDelta)<0.1?'var(--prod)':'var(--pack)'}">${fH(memberSum)}</b> · Meta cliente: ${fH(hours)}</div>
-      </div>`;
-    }
-    
-    clientsList+=`</div>`;
-  });
-  
-  if(teamClients.length===0){
-    clientsList=`<div class="empty" style="padding:40px;text-align:center;color:var(--txt3)">Nenhum cliente neste time. Adicione clientes em <b>Clientes</b> primeiro.</div>`;
+      
+      // Drill-down: sliders por pessoa
+      if(expanded){
+        body+=`<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">
+          <div style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1px;margin-bottom:10px">DISTRIBUIÇÃO ENTRE PESSOAS · ${escapeHtml(c.name)}</div>`;
+        teamMembers.forEach(m=>{
+          const mH=Number(_plPage.memberHours[c.id]?.[m.id])||0;
+          const cap_m=m.capacity_in_team||140;
+          const saldoPessoa=planningMemberBalance(m.id,c.id);
+          const mMax=extra?Math.max(cap_m,200):Math.min(cap_m,mH+saldoPessoa);
+          const balanceText=isExtra=>extra?'sem limite (extra)':(saldoPessoa===0?'sem saldo':`saldo ${fH(saldoPessoa)}`);
+          body+=`<div style="display:grid;grid-template-columns:1fr 280px 56px;gap:12px;align-items:center;padding:5px 0;font-size:12px">
+            <div>${escapeHtml(m.name.split(' ').slice(0,2).join(' '))} <span style="color:var(--txt3);font-size:10px;margin-left:6px">cap ${cap_m}h · ${balanceText()}</span></div>
+            ${planningSliderHTML('mb-'+c.id+'-'+m.id,mH,mMax||cap_m,`planningOnMemberSliderChange('${team}','${c.id}','${m.id}',this.value)`,'#455E6E')}
+            <input type="number" id="mb-${c.id}-${m.id}-num" min="0" step="1" value="${mH.toFixed(0)}"
+              onchange="planningOnMemberSliderChange('${team}','${c.id}','${m.id}',this.value); document.getElementById('mb-${c.id}-${m.id}').value=this.value"
+              style="width:56px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--txt);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">
+          </div>`;
+        });
+        body+=`</div>`;
+      }
+      
+      body+=`</div>`;
+    });
   }
   
-  root.innerHTML=header+effCard+toolbar+clientsList;
+  // ─────────── VIEW POR PESSOA ───────────
+  else{
+    // Para cada pessoa do time: card com cap, saldo, drill-down dos clientes
+    teamMembers.forEach(m=>{
+      const cap_m=m.capacity_in_team||140;
+      // Total alocado da pessoa (normais + extras separados)
+      let totalNormal=0,totalExtra=0;
+      Object.keys(_plPage.memberHours).forEach(cid=>{
+        const v=Number(_plPage.memberHours[cid]?.[m.id])||0;
+        if(_plPage.clientExtra[cid])totalExtra+=v;
+        else totalNormal+=v;
+      });
+      const saldo=Math.max(0,cap_m-totalNormal);
+      const pctPessoa=cap_m>0?totalNormal/cap_m*100:0;
+      const expanded=_plPage.expandedMember===m.id;
+      
+      const pessoaColor=pctPessoa>=95?'var(--red)':pctPessoa>=70?'var(--prod)':pctPessoa>=40?'var(--pack)':'var(--txt3)';
+      const saldoColor=saldo===0?'var(--red)':saldo<cap_m*0.15?'var(--pack)':'var(--prod)';
+      
+      body+=`<div style="background:${expanded?'rgba(69,94,110,.06)':'var(--bg2)'};border:1px solid ${expanded?'rgba(69,94,110,.4)':'var(--border)'};border-left:3px solid ${pessoaColor};border-radius:8px;padding:14px;margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center;cursor:pointer" onclick="planningToggleExpandMember('${m.id}')">
+          <div>
+            <div style="font-weight:700;font-size:13px">
+              <span style="display:inline-block;color:#455E6E;transform:${expanded?'rotate(90deg)':'rotate(0)'};transition:transform .15s">▶</span>
+              ${escapeHtml(m.name)}
+              <span style="font-size:10px;color:var(--txt3);font-weight:500;margin-left:6px">${escapeHtml(m.job_title||'')}</span>
+            </div>
+            <div style="font-size:10px;color:var(--txt3);margin-top:3px;margin-left:18px">Capacidade no time: <b style="color:var(--txt)">${cap_m}h</b></div>
+          </div>
+          <div style="font-family:var(--mono);font-size:16px;font-weight:800;color:${pessoaColor};min-width:70px;text-align:right">
+            ${fH(totalNormal)}<span style="font-size:10px;color:var(--txt3);font-weight:400">/${cap_m}h</span>
+            <div style="font-size:9px;color:var(--txt3);text-align:right;margin-top:2px">${pctPessoa.toFixed(0)}% alocada</div>
+          </div>
+          <div style="font-family:var(--mono);font-size:16px;font-weight:800;color:${saldoColor};min-width:70px;text-align:right;padding-left:14px;border-left:1px solid var(--border)">
+            ${fH(saldo)}<div style="font-size:9px;color:var(--txt3);text-align:right;margin-top:2px;font-weight:400">saldo</div>
+          </div>
+          ${totalExtra>0?`<div style="font-family:var(--mono);font-size:14px;font-weight:800;color:#F59E0B;min-width:60px;text-align:right;padding-left:10px">+${fH(totalExtra)}<div style="font-size:9px;color:var(--txt3);text-align:right;margin-top:2px;font-weight:400">extras 💰</div></div>`:'<div></div>'}
+        </div>`;
+      
+      // Drill-down: sliders para cada cliente do time
+      if(expanded){
+        body+=`<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+          <div style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1px;margin-bottom:10px">DISTRIBUA AS HORAS DE ${escapeHtml(m.name.toUpperCase())} ENTRE OS CLIENTES</div>`;
+        teamClients.forEach(c=>{
+          const mH=Number(_plPage.memberHours[c.id]?.[m.id])||0;
+          const extra=_plPage.clientExtra[c.id];
+          // Max do slider pra esta pessoa neste cliente: cap dela - alocada em OUTROS clientes normais (sem este)
+          const saldoPessoa=planningMemberBalance(m.id,c.id);
+          const mMax=extra?Math.max(cap_m,200):Math.min(cap_m,mH+saldoPessoa);
+          const sliderColor=extra?'#F59E0B':'#ED1C24';
+          
+          body+=`<div style="display:grid;grid-template-columns:1fr 280px 56px 28px;gap:12px;align-items:center;padding:6px 0;font-size:12px">
+            <div style="font-weight:600">${escapeHtml(c.name)}${extra?' <span style="font-size:9px;font-weight:800;color:#F59E0B;letter-spacing:.5px">💰 EXTRA</span>':''}<div style="font-size:10px;color:var(--txt3);font-weight:400;margin-top:1px">total cliente: ${fH(planningClientTotal(c.id))}</div></div>
+            ${planningSliderHTML('pm-'+m.id+'-'+c.id,mH,mMax||cap_m,`planningOnMemberSliderChange('${team}','${c.id}','${m.id}',this.value)`,sliderColor)}
+            <input type="number" id="pm-${m.id}-${c.id}-num" min="0" step="1" value="${mH.toFixed(0)}"
+              onchange="planningOnMemberSliderChange('${team}','${c.id}','${m.id}',this.value); document.getElementById('pm-${m.id}-${c.id}').value=this.value"
+              style="width:56px;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--txt);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right">
+            <button onclick="event.stopPropagation();planningToggleClientExtra('${c.id}')" title="${extra?'Voltar normal':'Marcar como horas EXTRAS'}" style="background:${extra?'rgba(245,158,11,.25)':'transparent'};border:1px solid var(--border);border-radius:4px;width:26px;height:26px;cursor:pointer;font-size:12px">💰</button>
+          </div>`;
+        });
+        body+=`<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);display:flex;justify-content:flex-end;gap:18px;font-size:11px;color:var(--txt3)">
+          <span>Alocada (normal): <b style="color:${pessoaColor}">${fH(totalNormal)}</b></span>
+          ${totalExtra>0?`<span>Extras 💰: <b style="color:#F59E0B">${fH(totalExtra)}</b></span>`:''}
+          <span>Saldo: <b style="color:${saldoColor}">${fH(saldo)}</b></span>
+        </div></div>`;
+      }
+      
+      body+=`</div>`;
+    });
+  }
+  
+  if(teamClients.length===0){
+    body=`<div class="empty" style="padding:40px;text-align:center;color:var(--txt3)">Nenhum cliente neste time. Adicione clientes em <b>Clientes</b> primeiro.</div>`;
+  }else if(teamMembers.length===0){
+    body=`<div class="empty" style="padding:40px;text-align:center;color:var(--txt3)">Nenhum membro vinculado ao time ${team}. Vincule pessoas a este time em <b>Membros</b> primeiro.</div>`;
+  }
+  
+  root.innerHTML=header+effCard+toolbar+body;
 }
 
 async function pgPlanning(el){
