@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.36';
+const HUB_VERSION='0.37';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -5743,6 +5743,11 @@ function getEligibility(score,blockStatus){
   if(score>=7.5)return{pct:15,label:'Destaque',cls:'bg-green',color:'var(--prod)'};
   if(score>=6)return{pct:10,label:'Elegível',cls:'bg-amber',color:'var(--pack)'};
   return{pct:0,label:'Não elegível',cls:'bg-red',color:'var(--red)'};
+}
+
+// Retorna % comissão em DECIMAL (0.20, 0.15, 0.10, 0). Usado em cálculos de extras.
+function scorePctDirect(score,blockStatus){
+  return getEligibility(score,blockStatus).pct/100;
 }
 
 function calcScoreLive(){
