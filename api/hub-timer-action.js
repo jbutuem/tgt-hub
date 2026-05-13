@@ -43,6 +43,7 @@ const BOARDS = {
   '9356397361':  { exec_col: 'multiple_person_mm31yx0p' }, // UV-LINE
   '18395931952': { exec_col: 'multiple_person_mm312gh7' }, // GAROA PACKAGING
   '18411508578': { exec_col: 'multiple_person_mm31hm2w' }, // ADM TGT
+  '18412983620': { exec_col: 'multiple_person_mm3axhyp' }, // TRÁFEGO & PERFORMANCE
 };
 
 const MONDAY_HEADERS = {
