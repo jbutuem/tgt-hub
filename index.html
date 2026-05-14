@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.43';
+const HUB_VERSION='0.44';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -1463,8 +1463,8 @@ async function pgTimer(el){
     </div>
     <div class="tbl" style="max-width:700px;margin:24px auto 0">
       <div class="tbl-h"><h3>Lançamentos recentes</h3></div>
-      <div class="tbl-r"><table><thead><tr><th>Descrição</th><th>Cliente</th><th>Ação</th><th class="rt">Horas</th><th>Data</th></tr></thead>
-      <tbody>${myEntries.slice(0,10).map(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);return`<tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${e.description||'—'}</td><td>${c?c.name:'—'}</td><td>${e.action||'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${e.hours?fH(e.hours):'—'}</td><td>${fD(e.started_at?.substring(0,10))}</td></tr>`}).join('')||'<tr><td colspan="5" class="empty">Nenhum lançamento</td></tr>'}</tbody></table></div>
+      <div class="tbl-r"><table><thead><tr><th>Descrição</th><th>Cliente</th><th>Ação</th><th class="rt">Início</th><th class="rt">Fim</th><th class="rt">Horas</th><th>Data</th></tr></thead>
+      <tbody>${myEntries.slice(0,10).map(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const fmtH=iso=>{if(!iso)return'—';try{return new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'America/Sao_Paulo'})}catch(e){return'—'}};return`<tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${e.description||'—'}</td><td>${c?c.name:'—'}</td><td>${e.action||'—'}</td><td class="rt" style="font-family:var(--mono);font-size:11px;color:var(--txt2)">${fmtH(e.started_at)}</td><td class="rt" style="font-family:var(--mono);font-size:11px;color:var(--txt2)">${fmtH(e.ended_at)}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${e.hours?fH(e.hours):'—'}</td><td>${fD(e.started_at?.substring(0,10))}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento</td></tr>'}</tbody></table></div>
     </div>`;
   if(running&&timerStart)updClock();
 }
@@ -1707,8 +1707,6 @@ const MONDAY_BOARDS_PEOPLE=[
   {board_id:'9356397361',  exec_col:'multiple_person_mm31yx0p', name:'UV_LINE'},
   {board_id:'18395931952', exec_col:'multiple_person_mm312gh7', name:'GAROA_PACKAGING'},
   {board_id:'18411508578', exec_col:'multiple_person_mm31hm2w', name:'ADM_TGT'},
-  {board_id:'18412983620', exec_col:'multiple_person_mm3axhyp', name:'TRAFEGO_PERFORMANCE'},
-  {board_id:'18405089667', exec_col:'multiple_person_mm3asaag', name:'TGT_BOUTIQUE'},
 ];
 
 // Board → Design Check column for QC (Painel Brand Guardian)
@@ -1916,14 +1914,18 @@ async function pgEntries(el){
   
   el.innerHTML=datePillsHTML()+filterHTML+`
     <div class="tbl"><div class="tbl-h"><h3>Lançamentos (${myE.length})</h3><button class="btn btn-r btn-sm" onclick="showManualEntry()">${ICONS.plus} Lançar</button></div>
-    <div class="tbl-r"><table><thead><tr>${isA()?'<th>Pessoa</th>':''}<th>Trabalhando em</th><th>Cliente</th><th>Ação</th><th class="rt">Horas</th><th>Data</th><th></th></tr></thead>
+    <div class="tbl-r"><table><thead><tr>${isA()?'<th>Pessoa</th>':''}<th>Trabalhando em</th><th>Cliente</th><th>Ação</th><th class="rt">Início</th><th class="rt">Fim</th><th class="rt">Horas</th><th>Data</th><th></th></tr></thead>
     <tbody>${myE.map(e=>{
       const c=S.clients.find(cl=>cl.id===e.client_id);
       const m=S.members.find(mm=>mm.id===e.member_id);
       const autoBadge=e.auto_closed?` <span title="Encerrado automaticamente: ${e.auto_close_reason||'inatividade'}" style="display:inline-block;padding:2px 6px;border-radius:4px;background:rgba(237,28,36,.12);color:var(--red);font-size:10px;font-weight:700;font-family:var(--mono);vertical-align:middle">AUTO</span>`:'';
       const editBtn=isA()?`<button class="btn btn-sm" onclick="editEntry('${e.id}')" style="background:rgba(237,28,36,.12);color:var(--red);border:1px solid rgba(237,28,36,.3);padding:5px 10px;font-size:11px;font-weight:700;margin-right:6px;display:inline-flex;align-items:center;gap:4px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar</button>`:'';
-      return`<tr>${isA()?`<td style="font-weight:600">${m?m.name.split(' ')[0]:'—'}</td>`:''}<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(getWorkingOn(e).label||'').replace(/"/g,'&quot;')}">${workingOnHTML(e)}${autoBadge}</td><td>${c?c.name:'—'}</td><td>${e.action||'—'}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${e.hours?fH(e.hours):'—'}</td><td>${fD(e.started_at?.substring(0,10))}</td><td style="white-space:nowrap">${editBtn}<button class="btn-icon btn-del" title="Excluir" onclick="delEntry('${e.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></td></tr>`;
-    }).join('')||'<tr><td colspan="7" class="empty">Nenhum lançamento no período</td></tr>'}</tbody></table></div></div>`;
+      // Formata hora HH:MM em America/Sao_Paulo
+      const fmtHora=iso=>{if(!iso)return'—';try{const d=new Date(iso);return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'America/Sao_Paulo'})}catch(e){return'—'}};
+      const hIn=fmtHora(e.started_at);
+      const hOut=fmtHora(e.ended_at);
+      return`<tr>${isA()?`<td style="font-weight:600">${m?m.name.split(' ')[0]:'—'}</td>`:''}<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(getWorkingOn(e).label||'').replace(/"/g,'&quot;')}">${workingOnHTML(e)}${autoBadge}</td><td>${c?c.name:'—'}</td><td>${e.action||'—'}</td><td class="rt" style="font-family:var(--mono);font-size:11px;color:var(--txt2)">${hIn}</td><td class="rt" style="font-family:var(--mono);font-size:11px;color:var(--txt2)">${hOut}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${e.hours?fH(e.hours):'—'}</td><td>${fD(e.started_at?.substring(0,10))}</td><td style="white-space:nowrap">${editBtn}<button class="btn-icon btn-del" title="Excluir" onclick="delEntry('${e.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></td></tr>`;
+    }).join('')||`<tr><td colspan="${isA()?9:8}" class="empty">Nenhum lançamento no período</td></tr>`}</tbody></table></div></div>`;
 }
 
 async function delEntry(id){
@@ -6336,34 +6338,198 @@ async function pgClientView(el){
   const clientCompany=S.clients.find(c=>c.id===S.user.client_id);
   if(!clientCompany){el.innerHTML='<div class="empty">Nenhuma empresa vinculada ao seu perfil. Contate o administrador.</div>';return}
   
+  // ─── PERÍODO (filtros datePillsHTML já controlam dateFrom/dateTo) ───
+  const today=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'}).substring(0,10);
+  const curMonth=today.substring(0,7);
+  const monthStart=curMonth+'-01';
+  
+  // ─── TIME ENTRIES ───
   const myEntries=S.entries.filter(e=>e.client_id===S.user.client_id&&!e.is_running);
   const totalH=myEntries.reduce((s,e)=>s+(e.hours||0),0);
+  const entriesEsteMes=myEntries.filter(e=>(e.started_at||'').substring(0,10)>=monthStart);
+  const hMes=entriesEsteMes.reduce((s,e)=>s+(e.hours||0),0);
+  
+  // Dias úteis com atividade (engagement constante = valor)
+  const diasComAtividade=new Set(myEntries.map(e=>(e.started_at||'').substring(0,10)).filter(Boolean)).size;
+  const diasMes=new Set(entriesEsteMes.map(e=>(e.started_at||'').substring(0,10)).filter(Boolean)).size;
+  
+  // Target / progresso
   const target=Number(clientCompany.target_hours_month)||0;
-  const pct=target>0?totalH/target*100:0;
+  const pct=target>0?hMes/target*100:0;
   
-  // By action (no names — privacy)
-  const byAction={};myEntries.forEach(e=>{const a=e.action||'Geral';byAction[a]=(byAction[a]||0)+(e.hours||0)});
-  const baSorted=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
+  // ─── PRODUÇÕES AV ───
+  const myAV=(S.av_requests||[]).filter(r=>r.client_id===S.user.client_id);
+  // Status "positivos" pro cliente — só mostrar o que valoriza nosso trabalho
+  const avEntregues=myAV.filter(r=>r.status==='delivered');
+  const avEmAndamento=myAV.filter(r=>['scheduled','in_capture','in_edit','in_review'].includes(r.status));
+  const avPlanejadas=myAV.filter(r=>['account_approved','budget_sent'].includes(r.status));
+  const avEntreguesEsteMes=avEntregues.filter(r=>(r.delivered_at||r.updated_at||'').substring(0,7)===curMonth);
   
-  // By function (job_title instead of name)
-  const byFunction={};myEntries.forEach(e=>{const m=S.members.find(mm=>mm.id===e.member_id);const fn=m?m.job_title||'Equipe':'Equipe';byFunction[fn]=(byFunction[fn]||0)+(e.hours||0)});
-  const bfSorted=Object.entries(byFunction).sort((a,b)=>b[1]-a[1]);
+  // SLA: % entregue no ou antes do desired_deadline
+  let slaCount=0,slaOk=0;
+  avEntregues.forEach(r=>{
+    if(!r.desired_deadline||!r.delivered_at)return;
+    slaCount++;
+    if((r.delivered_at||'').substring(0,10)<=r.desired_deadline)slaOk++;
+  });
+  const slaPct=slaCount>0?(slaOk/slaCount*100):null;
+  
+  // ─── ENTREGAS (count de actions únicas como proxy) ───
+  // Cada entry é uma "ação executada"; contagens são mais palpáveis pro cliente que horas
+  const totalAcoes=myEntries.length;
+  const acoesEsteMes=entriesEsteMes.length;
+  
+  // ─── AGRUPAMENTOS ───
+  // Por atividade (action) — com horas + contagem
+  const byAction={};
+  myEntries.forEach(e=>{
+    const a=e.action||'Outras atividades';
+    if(!byAction[a])byAction[a]={hours:0,count:0};
+    byAction[a].hours+=e.hours||0;
+    byAction[a].count++;
+  });
+  const baSorted=Object.entries(byAction).sort((a,b)=>b[1].hours-a[1].hours);
+  
+  // Por área (job_title agrupado em famílias)
+  const areaMap={
+    'Creative Operator':'Design & Criação',
+    'Designer':'Design & Criação',
+    'Account':'Account & Estratégia',
+    'Account/Design':'Design & Criação',
+    'Head Account':'Account & Estratégia',
+    'CEO':'Direção',
+    'Diretor de Produção':'Produção AV',
+    'Editor':'Produção AV',
+    'Câmera':'Produção AV',
+    'Produtor':'Produção AV',
+    'Social Media':'Social & Conteúdo'
+  };
+  const byArea={};
+  myEntries.forEach(e=>{
+    const m=S.members.find(mm=>mm.id===e.member_id);
+    const jt=m?(m.job_title||'Equipe'):'Equipe';
+    const area=areaMap[jt]||jt;
+    if(!byArea[area])byArea[area]={hours:0,count:0};
+    byArea[area].hours+=e.hours||0;
+    byArea[area].count++;
+  });
+  const arSorted=Object.entries(byArea).sort((a,b)=>b[1].hours-a[1].hours);
+  
+  // Cor por status AV (mais limpo que st-pill geral)
+  const avStColor=(st)=>{
+    if(st==='delivered')return{bg:'rgba(74,222,128,.15)',border:'rgba(74,222,128,.5)',color:'var(--prod)'};
+    if(['scheduled','in_capture','in_edit','in_review'].includes(st))return{bg:'rgba(245,158,11,.12)',border:'rgba(245,158,11,.4)',color:'var(--pack)'};
+    if(['budget_sent','account_approved'].includes(st))return{bg:'rgba(69,94,110,.12)',border:'rgba(69,94,110,.4)',color:'var(--t1)'};
+    return{bg:'var(--bg3)',border:'var(--border)',color:'var(--txt3)'};
+  };
   
   el.innerHTML=datePillsHTML()+`
-    <div style="margin-bottom:20px;padding:16px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);display:flex;align-items:center;gap:12px">
-      <div style="width:40px;height:40px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px">${clientCompany.name.charAt(0)}</div>
-      <div><div style="font-weight:700;font-size:16px">${clientCompany.name}</div><div style="font-size:12px;color:var(--txt2)">Horas contratadas: ${target?fH(target)+'/mês':'Sob demanda'}</div></div>
+    <!-- HERO HEADER -->
+    <div style="margin-bottom:20px;padding:20px 24px;background:linear-gradient(135deg,rgba(237,28,36,.08),transparent);border:1px solid rgba(237,28,36,.25);border-left:4px solid var(--red);border-radius:var(--radius);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff">${clientCompany.name.charAt(0)}</div>
+      <div style="flex:1;min-width:200px">
+        <div style="font-weight:800;font-size:20px;line-height:1.1">${escapeHtml(clientCompany.name)}</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:4px">Trabalho dedicado pela equipe TGT · ${target?`<b style="color:var(--txt)">${fH(target)}h/mês</b> de pacote contratado`:'Operação sob demanda'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700;margin-bottom:3px">${curMonth.split('-').reverse().slice(0,2).join('/')}</div>
+        <div style="font-size:22px;font-weight:800;color:var(--red);font-family:var(--mono)">${fH(hMes)}<span style="font-size:13px;color:var(--txt3);font-weight:400">h investidas</span></div>
+      </div>
     </div>
-    <div class="cards">
-      <div class="card"><div class="cl">Horas consumidas</div><div class="cv">${fH(totalH)}</div>${target?`<div class="pbar"><div class="pbar-fill ${pct>100?'pbar-red':pct>80?'pbar-amber':'pbar-green'}" style="width:${Math.min(pct,100)}%"></div></div><div class="cs">${pct.toFixed(0)}% do pacote</div>`:''}</div>
-      <div class="card card-blue"><div class="cl">Lançamentos</div><div class="cv">${myEntries.length}</div></div>
-      <div class="card card-green"><div class="cl">Atividades</div><div class="cv">${Object.keys(byAction).length}</div></div>
+    
+    <!-- HERO METRICS — 4 grandes -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">AÇÕES EXECUTADAS</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${totalAcoes}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px"><b style="color:var(--prod)">+${acoesEsteMes}</b> este mês</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--pack);border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">HORAS DEDICADAS</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${fH(totalH).replace('h','')}<span style="font-size:14px;color:var(--txt3);font-weight:400">h</span></div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">${diasComAtividade} dia${diasComAtividade!==1?'s':''} com atividade</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--prod);border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">PRODUÇÕES ENTREGUES</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${avEntregues.length}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">${avEmAndamento.length} em andamento · ${avPlanejadas.length} planejada${avPlanejadas.length!==1?'s':''}</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${slaPct===null?'var(--txt3)':slaPct>=85?'var(--prod)':slaPct>=60?'var(--pack)':'var(--red)'};border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">SLA DE PRAZO</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px;color:${slaPct===null?'var(--txt3)':slaPct>=85?'var(--prod)':slaPct>=60?'var(--pack)':'var(--red)'}">${slaPct===null?'—':slaPct.toFixed(0)+'%'}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">${slaCount===0?'sem produções fechadas':`${slaOk} de ${slaCount} no prazo`}</div>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <div class="tbl"><div class="tbl-h"><h3>Por Atividade</h3></div><div class="tbl-r"><table><thead><tr><th>Ação</th><th class="rt">Horas</th><th class="rt">%</th></tr></thead>
-      <tbody>${baSorted.map(([n,h])=>`<tr><td>${n}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(h)}</td><td class="rt">${totalH>0?(h/totalH*100).toFixed(0):0}%</td></tr>`).join('')}</tbody></table></div></div>
-      <div class="tbl"><div class="tbl-h"><h3>Por Função</h3></div><div class="tbl-r"><table><thead><tr><th>Área</th><th class="rt">Horas</th><th class="rt">%</th></tr></thead>
-      <tbody>${bfSorted.map(([n,h])=>`<tr><td>${n}</td><td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(h)}</td><td class="rt">${totalH>0?(h/totalH*100).toFixed(0):0}%</td></tr>`).join('')}</tbody></table></div></div>
+    
+    <!-- LINHA DE ORGULHO / PROGRESS DO MÊS -->
+    ${target?`
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px">
+        <div style="font-size:13px;font-weight:700">Consumo deste mês</div>
+        <div style="font-size:12px;color:var(--txt2)"><b style="color:var(--red);font-family:var(--mono);font-size:14px">${fH(hMes)}</b> de <b style="font-family:var(--mono);font-size:14px">${target}h</b> · <span style="color:${pct>100?'var(--red)':pct>=85?'var(--prod)':pct>=60?'var(--pack)':'var(--txt3)'};font-weight:700">${pct.toFixed(0)}%</span></div>
+      </div>
+      <div style="height:10px;background:var(--bg3);border-radius:5px;overflow:hidden;position:relative">
+        <div style="position:absolute;inset:0;width:${Math.min(100,pct)}%;background:${pct>100?'var(--red)':pct>=85?'var(--prod)':pct>=60?'var(--pack)':'var(--red)'};transition:width .3s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--txt3)">
+        <span>${diasMes} dia${diasMes!==1?'s':''} com atividade este mês</span>
+        <span>${acoesEsteMes} ações executadas no período</span>
+      </div>
+    </div>`:''}
+    
+    <!-- GRID PRINCIPAL: Por Atividade + Por Área -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="tbl">
+        <div class="tbl-h"><h3>Por Atividade</h3><span style="font-size:11px;color:var(--txt3)">${baSorted.length} categoria${baSorted.length!==1?'s':''}</span></div>
+        <div class="tbl-r"><table><thead><tr><th>Atividade</th><th class="rt">Entregas</th><th class="rt">Horas</th><th class="rt">%</th></tr></thead>
+        <tbody>${baSorted.length===0?'<tr><td colspan="4" class="empty">Sem atividades no período</td></tr>':baSorted.map(([n,d])=>`<tr>
+          <td style="font-weight:600">${escapeHtml(n)}</td>
+          <td class="rt" style="font-family:var(--mono);color:var(--prod);font-weight:700">${d.count}</td>
+          <td class="rt" style="font-family:var(--mono);font-weight:700">${fH(d.hours)}</td>
+          <td class="rt" style="color:var(--txt3)">${totalH>0?(d.hours/totalH*100).toFixed(0):0}%</td>
+        </tr>`).join('')}</tbody></table></div>
+      </div>
+      <div class="tbl">
+        <div class="tbl-h"><h3>Por Área da Equipe</h3><span style="font-size:11px;color:var(--txt3)">${arSorted.length} área${arSorted.length!==1?'s':''} envolvida${arSorted.length!==1?'s':''}</span></div>
+        <div class="tbl-r"><table><thead><tr><th>Área</th><th class="rt">Ações</th><th class="rt">Horas</th><th class="rt">%</th></tr></thead>
+        <tbody>${arSorted.length===0?'<tr><td colspan="4" class="empty">Sem dados</td></tr>':arSorted.map(([n,d])=>`<tr>
+          <td style="font-weight:600">${escapeHtml(n)}</td>
+          <td class="rt" style="font-family:var(--mono);color:var(--prod);font-weight:700">${d.count}</td>
+          <td class="rt" style="font-family:var(--mono);font-weight:700">${fH(d.hours)}</td>
+          <td class="rt" style="color:var(--txt3)">${totalH>0?(d.hours/totalH*100).toFixed(0):0}%</td>
+        </tr>`).join('')}</tbody></table></div>
+      </div>
+    </div>
+    
+    <!-- PRODUÇÕES AV -->
+    ${myAV.length>0?`
+    <div class="tbl"><div class="tbl-h">
+      <h3>Produções Audiovisuais</h3>
+      <span style="font-size:11px;color:var(--txt3)">${avEntregues.length} entregue${avEntregues.length!==1?'s':''} · ${avEmAndamento.length} em produção</span>
+    </div>
+    <div class="tbl-r"><table><thead><tr>
+      <th>Projeto</th><th>Tipo</th><th>Status</th><th class="rt">Prazo</th><th class="rt">Entrega</th>
+    </tr></thead><tbody>
+    ${[...avEntregues,...avEmAndamento,...avPlanejadas].slice(0,12).map(r=>{
+      const c=avStColor(r.status);
+      const entregueData=r.delivered_at?new Date(r.delivered_at).toLocaleDateString('pt-BR'):'—';
+      const noPrazo=r.delivered_at&&r.desired_deadline&&(r.delivered_at||'').substring(0,10)<=r.desired_deadline;
+      return `<tr>
+        <td style="font-weight:600">${escapeHtml(r.title||'—')}</td>
+        <td style="font-size:11px;color:var(--txt2)">${PROD_TYPES[r.prod_type]||r.prod_type||'—'}</td>
+        <td><span style="display:inline-block;padding:3px 10px;border-radius:11px;font-size:10px;font-weight:700;background:${c.bg};border:1px solid ${c.border};color:${c.color}">${AV_STATUSES[r.status]||r.status}</span></td>
+        <td class="rt" style="font-size:11px;color:var(--txt2)">${r.desired_deadline?fD(r.desired_deadline):'—'}</td>
+        <td class="rt" style="font-size:11px;font-weight:600;color:${noPrazo?'var(--prod)':'var(--txt2)'}">${entregueData}${noPrazo?' ✓':''}</td>
+      </tr>`;
+    }).join('')}
+    ${myAV.length>12?`<tr><td colspan="5" style="text-align:center;font-size:11px;color:var(--txt3);padding:8px">+ ${myAV.length-12} produções anteriores no histórico</td></tr>`:''}
+    </tbody></table></div>
+    </div>`:''}
+    
+    <!-- RODAPÉ COM CONTEXTO -->
+    <div style="margin-top:20px;padding:14px 18px;background:rgba(69,94,110,.05);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--txt2);line-height:1.6">
+      <div style="font-size:10px;color:var(--red);font-weight:700;letter-spacing:1.2px;margin-bottom:6px">SOBRE OS DADOS DESTE PAINEL</div>
+      As ações e horas registradas refletem a dedicação real da equipe TGT ao projeto. Cada lançamento representa uma sessão de trabalho dedicada — design, planejamento, edição, gestão e captação de mídia. O SLA mede o cumprimento dos prazos acordados nas produções audiovisuais.
     </div>`;
 }
 
