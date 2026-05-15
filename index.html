@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.47';
+const HUB_VERSION='0.47.1';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -6574,12 +6574,25 @@ async function pgClientView(el){
   // Renomeei "byProject" → mantém structure mas adiciona entries array
   // ═══════════════════════════════════════════════════════════════
   // (Recalcula byProject incluindo entries para drilldown)
+  // v0.47.1: agrupa por monday_item_id quando existir; fallback descrição normalizada
+  // ═══════════════════════════════════════════════════════════════
+  const normDesc=(s)=>(s||'').toLowerCase().trim().replace(/s\s*$/,'');
+  const projKey=(e)=>{
+    if(e.monday_item_id)return 'm:'+e.monday_item_id;
+    const d=(e.description||'').trim();
+    if(!d)return null;
+    return 'd:'+normDesc(d);
+  };
+  // Quando agrupado por item Monday, escolhe o nome mais "longo/verboso" como display
+  // (evita "Embalagem" sobrescrever "Embalagens - Chacomer")
+  const pickName=(curr,next)=>!curr||(next&&next.length>curr.length)?next:curr;
+  
   const projDetail={};
   contractEntries.forEach(e=>{
-    const desc=(e.description||'').trim();
-    if(!desc)return;
-    const key=desc.toLowerCase();
-    if(!projDetail[key])projDetail[key]={name:desc,hours:0,count:0,lastDate:'',actions:new Set(),entries:[],contract_type:e.monday_contract_type||null};
+    const key=projKey(e);if(!key)return;
+    const desc=(e.description||'').trim()||'(sem descrição)';
+    if(!projDetail[key])projDetail[key]={name:desc,hours:0,count:0,lastDate:'',actions:new Set(),entries:[],contract_type:e.monday_contract_type||null,monday_item_id:e.monday_item_id||null};
+    projDetail[key].name=pickName(projDetail[key].name,desc);
     projDetail[key].hours+=e.hours||0;
     projDetail[key].count++;
     if(e.action)projDetail[key].actions.add(e.action);
@@ -6591,10 +6604,10 @@ async function pgClientView(el){
   // Projetos EXTRAS (Launch Pack etc.) — separados
   const projExtra={};
   extraEntries.forEach(e=>{
-    const desc=(e.description||'').trim();
-    if(!desc)return;
-    const key=desc.toLowerCase();
-    if(!projExtra[key])projExtra[key]={name:desc,hours:0,count:0,lastDate:'',actions:new Set(),entries:[],contract_type:e.monday_contract_type||null};
+    const key=projKey(e);if(!key)return;
+    const desc=(e.description||'').trim()||'(sem descrição)';
+    if(!projExtra[key])projExtra[key]={name:desc,hours:0,count:0,lastDate:'',actions:new Set(),entries:[],contract_type:e.monday_contract_type||null,monday_item_id:e.monday_item_id||null};
+    projExtra[key].name=pickName(projExtra[key].name,desc);
     projExtra[key].hours+=e.hours||0;
     projExtra[key].count++;
     if(e.action)projExtra[key].actions.add(e.action);
