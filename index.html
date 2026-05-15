@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.45';
+const HUB_VERSION='0.46';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -975,6 +975,27 @@ async function sbGet(table,params=''){
   const r=await fetch(`${SB_URL}/${table}?${params}`,{headers:HDR_R});
   if(!r.ok)throw new Error(`GET ${table}: ${r.status}`);return r.json();
 }
+
+// sbGetAll — pagina automaticamente até esgotar (Range headers).
+// USE PARA TABELAS QUE PODEM EXCEDER 1000 ROWS (tt_time_entries, etc).
+// PostgREST trunca silenciosamente em 1000 rows por default — sem paginação você
+// PERDE DADOS sem nenhum aviso. Esta função busca em batches de 1000 até pegar tudo.
+async function sbGetAll(table,params=''){
+  const PAGE=1000;
+  let start=0,all=[];
+  for(let i=0;i<50;i++){ // safety cap: 50k rows
+    const end=start+PAGE-1;
+    const r=await fetch(`${SB_URL}/${table}?${params}`,{
+      headers:{...HDR_R,'Range-Unit':'items','Range':`${start}-${end}`}
+    });
+    if(!r.ok)throw new Error(`GET ${table}: ${r.status}`);
+    const batch=await r.json();
+    all=all.concat(batch);
+    if(batch.length<PAGE)break; // chegou ao fim
+    start+=PAGE;
+  }
+  return all;
+}
 async function sbPost(table,data){
   const r=await fetch(`${SB_URL}/${table}`,{method:'POST',headers:HDR,body:JSON.stringify(data)});
   if(!r.ok)throw new Error(`POST ${table}: ${r.status}`);return r.json();
@@ -1123,12 +1144,12 @@ async function loadEntries(){
     params=`member_id=eq.${S.user.id}&${params}`;
   }
   
-  S.entries=await sbGet('tt_time_entries',params);
+  S.entries=await sbGetAll('tt_time_entries',params);
   
   // Also always load running entries (except for clients)
   if(!isCli()){
     try{
-      const runningEntries=await sbGet('tt_time_entries','is_running=eq.true');
+      const runningEntries=await sbGetAll('tt_time_entries','is_running=eq.true');
       runningEntries.forEach(r=>{if(!S.entries.find(e=>e.id===r.id))S.entries.push(r)});
     }catch(e){}
   }
@@ -2427,7 +2448,7 @@ async function pgAudit(el){
   const since=new Date(Date.now()-30*86400000).toISOString();
   let autoClosed=[];
   try{
-    autoClosed=await sbGet('tt_time_entries',`auto_closed=eq.true&started_at=gte.${since}&order=started_at.desc`);
+    autoClosed=await sbGetAll('tt_time_entries',`auto_closed=eq.true&started_at=gte.${since}&order=started_at.desc`);
   }catch(e){autoClosed=[]}
   
   // Agrupa por membro
