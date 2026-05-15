@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.46';
+const HUB_VERSION='0.47';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -954,6 +954,74 @@ function canSeeClient(clientId){
   return ids===null||ids.includes(clientId);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MONDAY CLASSIFICATION HELPERS (Tag rules + Phase rules)
+// ═══════════════════════════════════════════════════════════════
+
+// Retorna a regra de tag aplicável a uma entry (baseado em monday_contract_type do cliente)
+// Retorna {behavior, display_label, display_color} ou null se não houver regra
+function getEntryTagRule(entry){
+  if(!entry||!entry.client_id)return null;
+  const tag=entry.monday_contract_type;
+  if(!tag)return null;
+  const rules=S.client_tag_rules||[];
+  return rules.find(r=>r.client_id===entry.client_id && r.tag_value===tag) || null;
+}
+
+// Filtra entries pelo behavior da regra (count_hours = vai pro banco; show_only = só lista)
+// Se viewer é client: respeita o behavior; admin/account: tudo conta como horas (mas tag separa visualmente)
+function filterEntriesByBehavior(entries,behavior,asClient){
+  return entries.filter(e=>{
+    const rule=getEntryTagRule(e);
+    if(!rule){
+      // Sem regra → comportamento padrão "count_hours"
+      return behavior==='count_hours';
+    }
+    if(asClient){
+      // Cliente vê só conforme behavior da regra
+      if(behavior==='count_hours')return rule.behavior==='count_hours';
+      if(behavior==='show_only')return rule.behavior==='show_only';
+      return false;
+    }else{
+      // Admin/account: tudo é considerado quando behavior=count_hours; show_only não aparece (filtro só interno)
+      // Aqui agrupamos: count_hours retorna TUDO (count + show_only), permitindo separação visual
+      return true;
+    }
+  });
+}
+
+// Soma horas separadas por contract_type para um cliente em um período
+// Retorna {totalContracted, totalExtra, byTag:[{tag,label,color,hours,count,behavior}]}
+function bucketEntriesByContract(entries,asClient){
+  const buckets={};
+  let totalContracted=0, totalExtra=0;
+  entries.forEach(e=>{
+    const tag=e.monday_contract_type||'(não classificado)';
+    const rule=getEntryTagRule(e);
+    const behavior=rule?rule.behavior:'count_hours';
+    const label=rule?rule.display_label||tag:tag;
+    const color=rule?rule.display_color:'#9D9D9C';
+    if(!buckets[tag])buckets[tag]={tag,label,color,behavior,hours:0,count:0};
+    buckets[tag].hours+=(e.hours||0);
+    buckets[tag].count+=1;
+    if(behavior==='count_hours')totalContracted+=(e.hours||0);
+    else if(behavior==='show_only')totalExtra+=(e.hours||0);
+  });
+  return{totalContracted,totalExtra,byTag:Object.values(buckets).sort((a,b)=>b.hours-a.hours)};
+}
+
+// Classifica uma entry numa fase canônica via group_title (Backlog/Sprint/Approval/Done)
+function classifyEntryPhase(entry){
+  if(!entry||!entry.monday_group_title)return null;
+  const rules=(S.client_phase_rules||[]).filter(r=>r.client_id===entry.client_id);
+  for(const r of rules){
+    try{
+      if(new RegExp(r.group_pattern,'i').test(entry.monday_group_title))return{phase:r.phase,label:r.display_label,color:r.display_color};
+    }catch(e){}
+  }
+  return null;
+}
+
 function getDateRange(){
   const now=new Date(),y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
   const day=s=>s.toISOString().substring(0,10);
@@ -1123,6 +1191,10 @@ async function loadData(){
     try{S.client_member_plans=await sbGet('tt_client_member_plans','')}catch(e){S.client_member_plans=[]}
     // Extras (BV/Lançamento extra)
     try{S.extras=await sbGet('tt_extras','order=created_at.desc')}catch(e){S.extras=[]}
+    // Regras de classificação Monday (Tag + Phase por cliente)
+    try{S.client_tag_rules=await sbGet('tt_client_tag_rules','order=sort_order')}catch(e){S.client_tag_rules=[]}
+    try{S.client_phase_rules=await sbGet('tt_client_phase_rules','order=sort_order')}catch(e){S.client_phase_rules=[]}
+    try{S.client_monday_snapshot=await sbGet('tt_client_monday_snapshot','order=sort_order')}catch(e){S.client_monday_snapshot=[]}
   }catch(e){console.error('loadData:',e);toast('Erro ao carregar dados','error')}
 }
 
@@ -2108,7 +2180,7 @@ async function pgDashMy(el){
   const byClient={};my.forEach(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const n=c?c.name:'Outros';byClient[n]=(byClient[n]||0)+(e.hours||0)});
   const bcSorted=Object.entries(byClient).sort((a,b)=>b[1]-a[1]);
   // By action
-  const byAction={};my.forEach(e=>{const a=e.action||'Sem categoria';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  const byAction={};my.forEach(e=>{const a=e.action||e.monday_item_type||'Não categorizado';byAction[a]=(byAction[a]||0)+(e.hours||0)});
   const baSorted=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
   
   // Pending approvals for this account
@@ -6452,13 +6524,88 @@ async function pgClientView(el){
   });
   const projectsSorted=Object.values(byProject).sort((a,b)=>b.hours-a.hours);
   
-  // Cor por status AV (mais limpo que st-pill geral)
+  // ─── COR POR STATUS AV (mais limpo que st-pill geral) ───
   const avStColor=(st)=>{
     if(st==='delivered')return{bg:'rgba(74,222,128,.15)',border:'rgba(74,222,128,.5)',color:'var(--prod)'};
     if(['scheduled','in_capture','in_edit','in_review'].includes(st))return{bg:'rgba(245,158,11,.12)',border:'rgba(245,158,11,.4)',color:'var(--pack)'};
     if(['budget_sent','account_approved'].includes(st))return{bg:'rgba(69,94,110,.12)',border:'rgba(69,94,110,.4)',color:'var(--t1)'};
     return{bg:'var(--bg3)',border:'var(--border)',color:'var(--txt3)'};
   };
+  
+  // ═══════════════════════════════════════════════════════════════
+  // NOVO v0.47: CONTRACT BUCKETING — separa horas de contrato base
+  // (Pack Fee, etc.) de projetos "extras" (Launch Pack, etc.)
+  // ═══════════════════════════════════════════════════════════════
+  const bucket=bucketEntriesByContract(entriesEsteMes,true /*asClient*/);
+  // Para a visão cliente, "totalH" deve refletir apenas as horas do CONTRATO
+  // (mas mantemos myEntries como universo total para listagens)
+  const hMesContratado=bucket.totalContracted;
+  const hMesExtra=bucket.totalExtra;
+  // Entries que ENTRAM no banco de horas
+  const contractEntries=filterEntriesByBehavior(myEntries,'count_hours',true);
+  const contractEntriesEsteMes=filterEntriesByBehavior(entriesEsteMes,'count_hours',true);
+  // Entries marcadas como "show_only" (projetos extras)
+  const extraEntries=filterEntriesByBehavior(myEntries,'show_only',true);
+  const extraEntriesEsteMes=filterEntriesByBehavior(entriesEsteMes,'show_only',true);
+  
+  // Recalcula pct baseado em horas CONTRATADAS apenas
+  const pctContract=target>0?hMesContratado/target*100:0;
+  
+  // ═══════════════════════════════════════════════════════════════
+  // NOVO v0.47: MONDAY PHASE COUNTS (snapshot)
+  // ═══════════════════════════════════════════════════════════════
+  const mondaySnapshot=(S.client_monday_snapshot||[]).filter(s=>s.client_id===S.user.client_id);
+  // Agrega por fase canônica (em caso de múltiplos boards do mesmo cliente)
+  const phaseCounts={backlog:0,sprint:0,approval:0,done:0};
+  const phaseMeta={
+    backlog:{label:'No Backlog',color:'#9D9D9C',icon:'📥'},
+    sprint:{label:'Em desenvolvimento',color:'#FDAB3D',icon:'⚙'},
+    approval:{label:'Em aprovação',color:'#9D50DD',icon:'👁'},
+    done:{label:'Finalizados',color:'#00C875',icon:'✓'}
+  };
+  mondaySnapshot.forEach(s=>{
+    if(phaseCounts[s.phase]!==undefined)phaseCounts[s.phase]+=(s.item_count||0);
+    if(s.display_label)phaseMeta[s.phase]={...phaseMeta[s.phase],label:s.display_label,color:s.display_color||phaseMeta[s.phase].color};
+  });
+  const hasMondayPhases=mondaySnapshot.length>0;
+  
+  // ═══════════════════════════════════════════════════════════════
+  // NOVO v0.47: PROJETOS — agora com dados pra dropdown expansível
+  // Renomeei "byProject" → mantém structure mas adiciona entries array
+  // ═══════════════════════════════════════════════════════════════
+  // (Recalcula byProject incluindo entries para drilldown)
+  const projDetail={};
+  contractEntries.forEach(e=>{
+    const desc=(e.description||'').trim();
+    if(!desc)return;
+    const key=desc.toLowerCase();
+    if(!projDetail[key])projDetail[key]={name:desc,hours:0,count:0,lastDate:'',actions:new Set(),entries:[],contract_type:e.monday_contract_type||null};
+    projDetail[key].hours+=e.hours||0;
+    projDetail[key].count++;
+    if(e.action)projDetail[key].actions.add(e.action);
+    const d=(e.started_at||'').substring(0,10);
+    if(d>projDetail[key].lastDate)projDetail[key].lastDate=d;
+    projDetail[key].entries.push(e);
+  });
+  const projectsContract=Object.values(projDetail).sort((a,b)=>b.hours-a.hours);
+  // Projetos EXTRAS (Launch Pack etc.) — separados
+  const projExtra={};
+  extraEntries.forEach(e=>{
+    const desc=(e.description||'').trim();
+    if(!desc)return;
+    const key=desc.toLowerCase();
+    if(!projExtra[key])projExtra[key]={name:desc,hours:0,count:0,lastDate:'',actions:new Set(),entries:[],contract_type:e.monday_contract_type||null};
+    projExtra[key].hours+=e.hours||0;
+    projExtra[key].count++;
+    if(e.action)projExtra[key].actions.add(e.action);
+    const d=(e.started_at||'').substring(0,10);
+    if(d>projExtra[key].lastDate)projExtra[key].lastDate=d;
+    projExtra[key].entries.push(e);
+  });
+  const projectsExtra=Object.values(projExtra).sort((a,b)=>b.hours-a.hours);
+  
+  // Toggle de projeto expandido (state global no S)
+  if(!S._expandedProj)S._expandedProj={};
   
   el.innerHTML=datePillsHTML()+`
     <!-- HERO HEADER -->
@@ -6474,8 +6621,33 @@ async function pgClientView(el){
       </div>
     </div>
     
-    <!-- HERO METRICS — 4 grandes -->
+    <!-- HERO METRICS — Visão do Monday (Backlog/Sprint/Aprovação/Finalizados) -->
+    ${hasMondayPhases?`
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${phaseMeta.backlog.color};border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">${phaseMeta.backlog.icon} ${phaseMeta.backlog.label.toUpperCase()}</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px;color:${phaseMeta.backlog.color}">${phaseCounts.backlog}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">solicita${phaseCounts.backlog!==1?'ções':'ção'} aguardando início</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${phaseMeta.sprint.color};border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">${phaseMeta.sprint.icon} ${phaseMeta.sprint.label.toUpperCase()}</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px;color:${phaseMeta.sprint.color}">${phaseCounts.sprint}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">${phaseCounts.sprint===1?'item ativo na equipe':'itens ativos na equipe'}</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${phaseMeta.approval.color};border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">${phaseMeta.approval.icon} ${phaseMeta.approval.label.toUpperCase()}</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px;color:${phaseMeta.approval.color}">${phaseCounts.approval}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">aguardando seu retorno</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${phaseMeta.done.color};border-radius:10px;padding:16px">
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">${phaseMeta.done.icon} ${phaseMeta.done.label.toUpperCase()}</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px;color:${phaseMeta.done.color}">${phaseCounts.done}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">entregue${phaseCounts.done!==1?'s':''} em 2026</div>
+      </div>
+    </div>
+    `:`
+    <!-- Fallback se não há snapshot Monday: usar contadores de horas -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:10px;padding:16px">
         <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">AÇÕES EXECUTADAS</div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${totalAcoes}</div>
@@ -6483,38 +6655,95 @@ async function pgClientView(el){
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--pack);border-radius:10px;padding:16px">
         <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">HORAS DEDICADAS</div>
-        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${Math.floor(totalH)}<span style="font-size:14px;color:var(--txt3);font-weight:400">h</span>${Math.round((totalH-Math.floor(totalH))*60)>0?`<span style="font-size:18px;font-weight:700;color:var(--txt2);margin-left:4px">${Math.round((totalH-Math.floor(totalH))*60)}<span style="font-size:11px;color:var(--txt3);font-weight:400">m</span></span>`:''}</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${fH(totalH)}</div>
         <div style="font-size:11px;color:var(--txt3);margin-top:5px">${diasComAtividade} dia${diasComAtividade!==1?'s':''} com atividade</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--prod);border-radius:10px;padding:16px">
-        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">PRODUÇÕES ENTREGUES</div>
-        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${avEntregues.length}</div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:5px">${avEmAndamento.length} em andamento · ${avPlanejadas.length} planejada${avPlanejadas.length!==1?'s':''}</div>
-      </div>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${slaPct===null?'var(--txt3)':slaPct>=85?'var(--prod)':slaPct>=60?'var(--pack)':'var(--red)'};border-radius:10px;padding:16px">
-        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">SLA DE PRAZO</div>
-        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px;color:${slaPct===null?'var(--txt3)':slaPct>=85?'var(--prod)':slaPct>=60?'var(--pack)':'var(--red)'}">${slaPct===null?'—':slaPct.toFixed(0)+'%'}</div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:5px">${slaCount===0?'sem produções fechadas':`${slaOk} de ${slaCount} no prazo`}</div>
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">PROJETOS NO PERÍODO</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${projectsContract.length+projectsExtra.length}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:5px">${projectsContract.length} no contrato${projectsExtra.length>0?` · ${projectsExtra.length} extra${projectsExtra.length!==1?'s':''}`:''}</div>
       </div>
     </div>
+    `}
     
-    <!-- LINHA DE ORGULHO / PROGRESS DO MÊS -->
+    <!-- PROGRESSO DO MÊS (apenas horas contratadas) -->
     ${target?`
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:10px">
-        <div style="font-size:13px;font-weight:700">Consumo deste mês</div>
-        <div style="font-size:12px;color:var(--txt2)"><b style="color:var(--red);font-family:var(--mono);font-size:14px">${fH(hMes)}</b> de <b style="font-family:var(--mono);font-size:14px">${target}h</b> · <span style="color:${pct>100?'var(--red)':pct>=85?'var(--prod)':pct>=60?'var(--pack)':'var(--txt3)'};font-weight:700">${pct.toFixed(0)}%</span></div>
+        <div style="font-size:13px;font-weight:700">Consumo deste mês <span style="font-size:11px;font-weight:500;color:var(--txt3);margin-left:6px">banco de horas do contrato</span></div>
+        <div style="font-size:12px;color:var(--txt2)"><b style="color:var(--red);font-family:var(--mono);font-size:14px">${fH(hMesContratado)}</b> de <b style="font-family:var(--mono);font-size:14px">${target}h</b> · <span style="color:${pctContract>100?'var(--red)':pctContract>=85?'var(--prod)':pctContract>=60?'var(--pack)':'var(--txt3)'};font-weight:700">${pctContract.toFixed(0)}%</span></div>
       </div>
       <div style="height:10px;background:var(--bg3);border-radius:5px;overflow:hidden;position:relative">
-        <div style="position:absolute;inset:0;width:${Math.min(100,pct)}%;background:${pct>100?'var(--red)':pct>=85?'var(--prod)':pct>=60?'var(--pack)':'var(--red)'};transition:width .3s"></div>
+        <div style="position:absolute;inset:0;width:${Math.min(100,pctContract)}%;background:${pctContract>100?'var(--red)':pctContract>=85?'var(--prod)':pctContract>=60?'var(--pack)':'var(--red)'};transition:width .3s"></div>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--txt3)">
         <span>${diasMes} dia${diasMes!==1?'s':''} com atividade este mês</span>
-        <span>${acoesEsteMes} ações executadas no período</span>
+        <span>${contractEntriesEsteMes.length} ação${contractEntriesEsteMes.length!==1?'ões':''} executada${contractEntriesEsteMes.length!==1?'s':''} no contrato</span>
       </div>
+      ${hMesExtra>0?`
+      <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);font-size:11px;color:var(--txt2);display:flex;justify-content:space-between;align-items:center">
+        <span>+ <b style="color:var(--prod)">${fH(hMesExtra)}</b> em projetos extras${extraEntriesEsteMes.length>0?` · ${extraEntriesEsteMes.length} ação${extraEntriesEsteMes.length!==1?'ões':''}`:''}</span>
+        <span style="color:var(--txt3);font-style:italic">fora do banco de horas</span>
+      </div>`:''}
     </div>`:''}
     
-    <!-- GRID PRINCIPAL: Por Atividade + Por Área -->
+    <!-- DONUT: Distribuição de horas por projeto (top 8 no mês) -->
+    ${(()=>{
+      const projThisMonth={};
+      contractEntriesEsteMes.forEach(e=>{
+        const desc=(e.description||'').trim()||'(sem descrição)';
+        projThisMonth[desc]=(projThisMonth[desc]||0)+(e.hours||0);
+      });
+      const sorted=Object.entries(projThisMonth).sort((a,b)=>b[1]-a[1]);
+      if(sorted.length===0)return'';
+      const top=sorted.slice(0,8);
+      const restHours=sorted.slice(8).reduce((s,[,h])=>s+h,0);
+      if(restHours>0)top.push(['Outros projetos',restHours]);
+      const totalRing=top.reduce((s,[,h])=>s+h,0)||1;
+      // Paleta circular consistente
+      const palette=['#ED1C24','#F59E0B','#4ADE80','#9D50DD','#66CCFF','#FF5AC4','#FDAB3D','#5559DF','#9D9D9C'];
+      // Gerar arcos SVG (cumulative offset)
+      let cumPct=0;
+      const arcs=top.map((p,i)=>{
+        const pct=p[1]/totalRing;
+        const dashArr=`${(pct*100).toFixed(2)} ${(100-pct*100).toFixed(2)}`;
+        const offset=-cumPct*100;
+        const color=palette[i%palette.length];
+        cumPct+=pct;
+        return `<circle r="15.9" cx="21" cy="21" fill="transparent" stroke="${color}" stroke-width="6" stroke-dasharray="${dashArr}" stroke-dashoffset="${offset}" transform="rotate(-90 21 21)"></circle>`;
+      }).join('');
+      return `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h3 style="margin:0;font-size:14px">Distribuição de horas por projeto <span style="font-weight:500;color:var(--txt3);margin-left:6px;font-size:11px">no mês atual</span></h3>
+          <span style="font-size:11px;color:var(--txt3)">${sorted.length} projeto${sorted.length!==1?'s':''} ativo${sorted.length!==1?'s':''}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:180px 1fr;gap:24px;align-items:center">
+          <div style="position:relative">
+            <svg viewBox="0 0 42 42" style="width:180px;height:180px;transform:rotate(0deg)">
+              <circle r="15.9" cx="21" cy="21" fill="transparent" stroke="var(--bg3)" stroke-width="6"></circle>
+              ${arcs}
+              <text x="21" y="20" text-anchor="middle" style="font-size:5px;font-weight:800;fill:var(--txt);font-family:var(--mono)">${fH(totalRing)}</text>
+              <text x="21" y="25" text-anchor="middle" style="font-size:2.5px;fill:var(--txt3);font-weight:600;letter-spacing:.3px">no mês</text>
+            </svg>
+          </div>
+          <div>
+            ${top.map((p,i)=>{
+              const color=palette[i%palette.length];
+              const pct=(p[1]/totalRing*100).toFixed(0);
+              return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+                <span style="width:10px;height:10px;border-radius:2px;background:${color};flex-shrink:0"></span>
+                <span style="flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p[0])}">${escapeHtml(p[0])}</span>
+                <span style="font-family:var(--mono);font-weight:700;color:var(--txt2)">${fH(p[1])}</span>
+                <span style="font-family:var(--mono);color:var(--txt3);min-width:36px;text-align:right">${pct}%</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>`;
+    })()}
+    
+    <!-- GRID: Por Atividade + Por Área -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
       <div class="tbl">
         <div class="tbl-h"><h3>Por Atividade</h3><span style="font-size:11px;color:var(--txt3)">${baSorted.length} categoria${baSorted.length!==1?'s':''}</span></div>
@@ -6538,28 +6767,107 @@ async function pgClientView(el){
       </div>
     </div>
     
-    <!-- PROJETOS / ITENS TOCADOS NO PERÍODO -->
-    ${projectsSorted.length>0?`
+    <!-- PROJETOS DO CONTRATO (expansíveis) -->
+    ${projectsContract.length>0?`
     <div class="tbl" style="margin-bottom:16px">
       <div class="tbl-h">
-        <h3>Projetos acessados no período</h3>
-        <span style="font-size:11px;color:var(--txt3)">${projectsSorted.length} item${projectsSorted.length!==1?'s':''} · ${projectsSorted.reduce((s,p)=>s+p.count,0)} ações</span>
+        <h3>Projetos do contrato</h3>
+        <span style="font-size:11px;color:var(--txt3)">${projectsContract.length} projeto${projectsContract.length!==1?'s':''} · ${projectsContract.reduce((s,p)=>s+p.count,0)} ações · ${fH(projectsContract.reduce((s,p)=>s+p.hours,0))}</span>
       </div>
       <div class="tbl-r"><table><thead><tr>
-        <th>Projeto / Item</th><th>Atividades</th><th class="rt">Ações</th><th class="rt">Horas</th><th class="rt">Último toque</th>
+        <th style="width:24px"></th><th>Projeto / Item</th><th>Atividades</th><th class="rt">Ações</th><th class="rt">Horas</th><th class="rt">Último toque</th>
       </tr></thead><tbody>
-      ${projectsSorted.slice(0,30).map(p=>{
+      ${projectsContract.slice(0,30).map(p=>{
         const acts=Array.from(p.actions).slice(0,3);
         const moreActs=p.actions.size>3?` <span style="color:var(--txt3)">+${p.actions.size-3}</span>`:'';
-        return `<tr>
-          <td style="font-weight:600;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+        const key=p.name.toLowerCase().replace(/[^a-z0-9]/g,'_').substring(0,40);
+        const expanded=S._expandedProj[key];
+        // Sort entries by date desc
+        const sortedEntries=[...p.entries].sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||''));
+        return `<tr style="cursor:pointer" onclick="S._expandedProj['${key}']=!S._expandedProj['${key}'];renderPage()">
+          <td style="font-family:var(--mono);color:var(--txt3);font-size:11px;text-align:center;width:24px;padding:0">${expanded?'▼':'▶'}</td>
+          <td style="font-weight:600;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
           <td>${acts.map(a=>`<span class="bg" style="background:rgba(69,94,110,.12);color:var(--t1);font-size:10px;margin-right:3px">${escapeHtml(a)}</span>`).join('')}${moreActs}</td>
           <td class="rt" style="font-family:var(--mono);color:var(--prod);font-weight:700">${p.count}</td>
           <td class="rt" style="font-family:var(--mono);font-weight:700">${fH(p.hours)}</td>
           <td class="rt" style="font-size:11px;color:var(--txt2);font-family:var(--mono)">${p.lastDate?fD(p.lastDate):'—'}</td>
-        </tr>`;
+        </tr>
+        ${expanded?`<tr><td colspan="6" style="padding:0;background:rgba(0,0,0,.03)">
+          <div style="padding:8px 16px 12px 40px">
+            <div style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1px;margin-bottom:6px">LANÇAMENTOS DESTE PROJETO</div>
+            <table style="width:100%;font-size:11px"><thead><tr style="border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:4px 8px;color:var(--txt3);font-weight:600">Data</th>
+              <th style="text-align:left;padding:4px 8px;color:var(--txt3);font-weight:600">Atividade</th>
+              <th style="text-align:left;padding:4px 8px;color:var(--txt3);font-weight:600">Quem trabalhou</th>
+              <th style="text-align:right;padding:4px 8px;color:var(--txt3);font-weight:600">Horas</th>
+            </tr></thead><tbody>
+            ${sortedEntries.slice(0,50).map(e=>{
+              const m=S.members.find(mm=>mm.id===e.member_id);
+              const memName=m?m.name.split(' ').slice(0,2).join(' '):'—';
+              const action=e.action||e.monday_item_type||'Sem categoria';
+              return `<tr><td style="padding:4px 8px;font-family:var(--mono);color:var(--txt2)">${fD((e.started_at||'').substring(0,10))}</td>
+                <td style="padding:4px 8px">${escapeHtml(action)}</td>
+                <td style="padding:4px 8px;color:var(--txt2)">${escapeHtml(memName)}</td>
+                <td style="padding:4px 8px;text-align:right;font-family:var(--mono);font-weight:700">${fH(e.hours||0)}</td></tr>`;
+            }).join('')}
+            ${sortedEntries.length>50?`<tr><td colspan="4" style="padding:6px;text-align:center;color:var(--txt3);font-style:italic">+ ${sortedEntries.length-50} lançamentos anteriores</td></tr>`:''}
+            </tbody></table>
+          </div>
+        </td></tr>`:''}`;
       }).join('')}
-      ${projectsSorted.length>30?`<tr><td colspan="5" style="text-align:center;font-size:11px;color:var(--txt3);padding:8px">+ ${projectsSorted.length-30} projetos adicionais no período</td></tr>`:''}
+      ${projectsContract.length>30?`<tr><td colspan="6" style="text-align:center;font-size:11px;color:var(--txt3);padding:8px">+ ${projectsContract.length-30} projetos adicionais no período</td></tr>`:''}
+      </tbody></table></div>
+    </div>`:''}
+    
+    <!-- PROJETOS EXTRAS (Launch Pack, fora do contrato) -->
+    ${projectsExtra.length>0?`
+    <div class="tbl" style="margin-bottom:16px;border-left:3px solid var(--prod)">
+      <div class="tbl-h">
+        <h3 style="color:var(--prod)">Projetos extras (fora do banco de horas)</h3>
+        <span style="font-size:11px;color:var(--txt3)">${projectsExtra.length} projeto${projectsExtra.length!==1?'s':''} · ${projectsExtra.reduce((s,p)=>s+p.count,0)} ações · ${fH(projectsExtra.reduce((s,p)=>s+p.hours,0))}</span>
+      </div>
+      <div style="padding:8px 16px;background:rgba(74,222,128,.04);font-size:11px;color:var(--txt2);border-bottom:1px solid var(--border)">
+        Estes projetos foram entregues como esforço adicional, fora do banco de horas mensal do contrato.
+      </div>
+      <div class="tbl-r"><table><thead><tr>
+        <th style="width:24px"></th><th>Projeto / Item</th><th>Atividades</th><th class="rt">Ações</th><th class="rt">Horas</th><th class="rt">Último toque</th>
+      </tr></thead><tbody>
+      ${projectsExtra.slice(0,20).map(p=>{
+        const acts=Array.from(p.actions).slice(0,3);
+        const moreActs=p.actions.size>3?` <span style="color:var(--txt3)">+${p.actions.size-3}</span>`:'';
+        const key='X_'+p.name.toLowerCase().replace(/[^a-z0-9]/g,'_').substring(0,40);
+        const expanded=S._expandedProj[key];
+        const sortedEntries=[...p.entries].sort((a,b)=>(b.started_at||'').localeCompare(a.started_at||''));
+        return `<tr style="cursor:pointer" onclick="S._expandedProj['${key}']=!S._expandedProj['${key}'];renderPage()">
+          <td style="font-family:var(--mono);color:var(--txt3);font-size:11px;text-align:center;padding:0">${expanded?'▼':'▶'}</td>
+          <td style="font-weight:600;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+          <td>${acts.map(a=>`<span class="bg" style="background:rgba(74,222,128,.12);color:var(--prod);font-size:10px;margin-right:3px">${escapeHtml(a)}</span>`).join('')}${moreActs}</td>
+          <td class="rt" style="font-family:var(--mono);color:var(--prod);font-weight:700">${p.count}</td>
+          <td class="rt" style="font-family:var(--mono);font-weight:700">${fH(p.hours)}</td>
+          <td class="rt" style="font-size:11px;color:var(--txt2);font-family:var(--mono)">${p.lastDate?fD(p.lastDate):'—'}</td>
+        </tr>
+        ${expanded?`<tr><td colspan="6" style="padding:0;background:rgba(74,222,128,.04)">
+          <div style="padding:8px 16px 12px 40px">
+            <div style="font-size:10px;color:var(--prod);font-weight:700;letter-spacing:1px;margin-bottom:6px">LANÇAMENTOS DESTE PROJETO EXTRA</div>
+            <table style="width:100%;font-size:11px"><thead><tr style="border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:4px 8px;color:var(--txt3);font-weight:600">Data</th>
+              <th style="text-align:left;padding:4px 8px;color:var(--txt3);font-weight:600">Atividade</th>
+              <th style="text-align:left;padding:4px 8px;color:var(--txt3);font-weight:600">Quem trabalhou</th>
+              <th style="text-align:right;padding:4px 8px;color:var(--txt3);font-weight:600">Horas</th>
+            </tr></thead><tbody>
+            ${sortedEntries.slice(0,50).map(e=>{
+              const m=S.members.find(mm=>mm.id===e.member_id);
+              const memName=m?m.name.split(' ').slice(0,2).join(' '):'—';
+              const action=e.action||e.monday_item_type||'Sem categoria';
+              return `<tr><td style="padding:4px 8px;font-family:var(--mono);color:var(--txt2)">${fD((e.started_at||'').substring(0,10))}</td>
+                <td style="padding:4px 8px">${escapeHtml(action)}</td>
+                <td style="padding:4px 8px;color:var(--txt2)">${escapeHtml(memName)}</td>
+                <td style="padding:4px 8px;text-align:right;font-family:var(--mono);font-weight:700">${fH(e.hours||0)}</td></tr>`;
+            }).join('')}
+            </tbody></table>
+          </div>
+        </td></tr>`:''}`;
+      }).join('')}
       </tbody></table></div>
     </div>`:''}
     
@@ -6591,7 +6899,7 @@ async function pgClientView(el){
     <!-- RODAPÉ COM CONTEXTO -->
     <div style="margin-top:20px;padding:14px 18px;background:rgba(69,94,110,.05);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--txt2);line-height:1.6">
       <div style="font-size:10px;color:var(--red);font-weight:700;letter-spacing:1.2px;margin-bottom:6px">SOBRE OS DADOS DESTE PAINEL</div>
-      As ações e horas registradas refletem a dedicação real da equipe TGT ao projeto. Cada lançamento representa uma sessão de trabalho dedicada — design, planejamento, edição, gestão e captação de mídia. O SLA mede o cumprimento dos prazos acordados nas produções audiovisuais.
+      As ações e horas registradas refletem a dedicação real da equipe TGT ao projeto. Cada lançamento representa uma sessão de trabalho dedicada — design, planejamento, edição, gestão e captação de mídia. Os contadores de Backlog, Em desenvolvimento, Aprovação e Finalizados refletem o status atual dos projetos no nosso sistema de gestão.
     </div>`;
 }
 
@@ -7288,7 +7596,7 @@ function renderPersonDetail(personId){
   // Por cliente
   const byClient={};myE.forEach(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const n=c?c.name:'?';byClient[n]=(byClient[n]||0)+(e.hours||0)});
   // Por ação
-  const byAction={};myE.forEach(e=>{const a=e.action||'Sem ação';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  const byAction={};myE.forEach(e=>{const a=e.action||e.monday_item_type||'Não categorizado';byAction[a]=(byAction[a]||0)+(e.hours||0)});
   // Por dia (últimos 30)
   const byDay={};myE.forEach(e=>{const d=(e.started_at||'').substring(0,10);byDay[d]=(byDay[d]||0)+(e.hours||0)});
   const dayKeys=Object.keys(byDay).sort();
@@ -7393,7 +7701,7 @@ function renderClientDetail(clientId){
   // Por pessoa
   const byPerson={};myE.forEach(e=>{const m=S.members.find(mm=>mm.id===e.member_id);const n=m?m.name.split(' ')[0]:'?';byPerson[n]=(byPerson[n]||0)+(e.hours||0)});
   // Por ação
-  const byAction={};myE.forEach(e=>{const a=e.action||'Sem ação';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  const byAction={};myE.forEach(e=>{const a=e.action||e.monday_item_type||'Não categorizado';byAction[a]=(byAction[a]||0)+(e.hours||0)});
   // Por dia
   const byDay={};myE.forEach(e=>{const d=(e.started_at||'').substring(0,10);byDay[d]=(byDay[d]||0)+(e.hours||0)});
   const dayKeys=Object.keys(byDay).sort();
@@ -7501,7 +7809,7 @@ function renderTeamDetail(team){
   // Por cliente
   const byClient={};myE.forEach(e=>{const c=S.clients.find(cl=>cl.id===e.client_id);const n=c?c.name:'?';byClient[n]=(byClient[n]||0)+(e.hours||0)});
   // Por ação
-  const byAction={};myE.forEach(e=>{const a=e.action||'Sem ação';byAction[a]=(byAction[a]||0)+(e.hours||0)});
+  const byAction={};myE.forEach(e=>{const a=e.action||e.monday_item_type||'Não categorizado';byAction[a]=(byAction[a]||0)+(e.hours||0)});
   
   setTimeout(()=>{
     if($('chart-tperson-'+team)){
