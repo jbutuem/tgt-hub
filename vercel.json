@@ -1,9 +1,15 @@
 {
   "framework": null,
-  "buildCommand": null,
   "outputDirectory": ".",
-  "installCommand": null,
-  "devCommand": null,
-  "cleanUrls": false,
-  "trailingSlash": false
+  "functions": {
+    "api/monday-snapshot-refresh.js": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/monday-snapshot-refresh",
+      "schedule": "0 9 * * *"
+    }
+  ]
 }

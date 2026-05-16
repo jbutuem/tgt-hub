@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.47.1';
+const HUB_VERSION='0.48.1';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -1195,6 +1195,7 @@ async function loadData(){
     try{S.client_tag_rules=await sbGet('tt_client_tag_rules','order=sort_order')}catch(e){S.client_tag_rules=[]}
     try{S.client_phase_rules=await sbGet('tt_client_phase_rules','order=sort_order')}catch(e){S.client_phase_rules=[]}
     try{S.client_monday_snapshot=await sbGet('tt_client_monday_snapshot','order=sort_order')}catch(e){S.client_monday_snapshot=[]}
+    try{S.monday_hot_items=await sbGetAll('tt_monday_hot_items','order=hours_invested.desc')}catch(e){S.monday_hot_items=[]}
   }catch(e){console.error('loadData:',e);toast('Erro ao carregar dados','error')}
 }
 
@@ -1366,6 +1367,15 @@ function buildNav(){
   h+=`<div class="sb-section">Tempo</div>`;
   h+=`<div class="sb-item" data-p="timer" onclick="nav('timer')">${ICONS.timer} Timer</div>`;
   h+=`<div class="sb-item" data-p="entries" onclick="nav('entries')">${ICONS.entries} Lançamentos</div>`;
+  // Radar Operacional — admin/account: visão de projetos quentes + prazos críticos
+  if(isA()||isAcc()){
+    // Badge: total de atrasados + próximos 3 dias
+    const today=new Date().toISOString().substring(0,10);
+    const in3d=new Date(Date.now()+3*86400000).toISOString().substring(0,10);
+    const hot=(S.monday_hot_items||[]).filter(h=>!h.is_done && h.deadline_date && (h.deadline_date<today || h.deadline_date<=in3d));
+    const radarBadge=hot.length?`<span class="sb-badge" style="background:#F59E0B">${hot.length}</span>`:'';
+    h+=`<div class="sb-item" data-p="radar" onclick="nav('radar')">🎯 Radar Operacional ${radarBadge}</div>`;
+  }
   
   // DASHBOARD section
   h+=`<div class="sb-section">Dashboard</div>`;
@@ -1475,7 +1485,7 @@ async function renderPage(){
   el.innerHTML='<div class="loading"><div class="spin"></div> Carregando...</div>';
   try{
     const pages={
-      timer:pgTimer,entries:pgEntries,
+      timer:pgTimer,entries:pgEntries,radar:pgRadar,
       'd-my':pgDashMy,'d-adm':pgDashAdm,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,'d-audit':pgAudit,
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
@@ -2166,6 +2176,233 @@ async function saveEditEntry(){
     toast('Lançamento atualizado');
     renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// ═══════════════════════════════════════════════
+// RADAR OPERACIONAL — Visão de projetos quentes + prazos críticos
+// Foco: ajudar account/admin a entender onde o time está sendo consumido
+// ═══════════════════════════════════════════════
+async function pgRadar(el){
+  if(!(isA()||isAcc())){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
+  
+  const items=S.monday_hot_items||[];
+  const today=new Date().toISOString().substring(0,10);
+  const in7d=new Date(Date.now()+7*86400000).toISOString().substring(0,10);
+  const in3d=new Date(Date.now()+3*86400000).toISOString().substring(0,10);
+  
+  // Account vê só itens dos clientes do seu time; Admin vê tudo
+  const visibleItems=items.filter(it=>{
+    if(isA())return true;
+    return canSeeClient(it.client_id);
+  });
+  
+  // ── Buckets de criticidade ─────────────────────────
+  // 🔴 CRÍTICO: pendente + prazo passou
+  // 🟠 URGENTE: pendente + prazo nos próximos 3 dias
+  // 🟡 PRÓXIMO: pendente + prazo nos próximos 7 dias
+  // 🔵 PESADO: 8h+ investidas, sem prazo conhecido OU prazo distante
+  // 🟢 FINALIZADO: is_done
+  const critico=visibleItems.filter(it=>!it.is_done && it.deadline_date && it.deadline_date<today);
+  const urgente=visibleItems.filter(it=>!it.is_done && it.deadline_date && it.deadline_date>=today && it.deadline_date<=in3d);
+  const proximo=visibleItems.filter(it=>!it.is_done && it.deadline_date && it.deadline_date>in3d && it.deadline_date<=in7d);
+  const pesado=visibleItems.filter(it=>!it.is_done && (!it.deadline_date || it.deadline_date>in7d) && (it.hours_invested||0)>=4)
+                          .sort((a,b)=>(b.hours_invested||0)-(a.hours_invested||0));
+  const finalizado=visibleItems.filter(it=>it.is_done);
+  
+  // Total de horas por categoria
+  const sumH=arr=>arr.reduce((s,it)=>s+(it.hours_invested||0),0);
+  
+  // ── Filtros (state) ────────────────────────────────
+  if(!window._radarFilters)window._radarFilters={client:'all',team:'all',view:'priority'};
+  const RF=window._radarFilters;
+  
+  // Helper: nome cliente
+  const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
+  
+  // Helper: cor do prazo
+  const deadlinePill=(date,done)=>{
+    if(!date)return `<span style="color:var(--txt3);font-size:11px">—</span>`;
+    if(done)return `<span style="font-size:11px;color:var(--prod);font-family:var(--mono)">${fD(date)} ✓</span>`;
+    const d=new Date(date+'T00:00:00');
+    const today=new Date();today.setHours(0,0,0,0);
+    const diff=Math.round((d-today)/86400000);
+    let bg='var(--bg3)',color='var(--txt2)',label=fD(date);
+    if(diff<0){bg='rgba(237,28,36,.18)';color='var(--red)';label=`${fD(date)} · -${Math.abs(diff)}d`}
+    else if(diff===0){bg='rgba(245,158,11,.2)';color='var(--pack)';label=`${fD(date)} · HOJE`}
+    else if(diff<=3){bg='rgba(245,158,11,.15)';color='var(--pack)';label=`${fD(date)} · ${diff}d`}
+    else if(diff<=7){bg='rgba(253,171,61,.12)';color='#FDAB3D';label=`${fD(date)} · ${diff}d`}
+    return `<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:${bg};color:${color};font-size:11px;font-weight:700;font-family:var(--mono)">${label}</span>`;
+  };
+  
+  // Helper: render linha de item
+  const renderItem=(it)=>{
+    const cli=clientName(it.client_id);
+    const resp=(it.responsible_names||[]).slice(0,2).map(n=>n.split(' ').slice(0,2).join(' ')).join(', ');
+    const moreResp=(it.responsible_names||[]).length>2?` +${it.responsible_names.length-2}`:'';
+    return `<tr style="cursor:pointer" onclick="window.open('${it.item_url||'#'}','_blank')">
+      <td style="font-weight:600;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(it.item_name||'(sem nome)')}">${escapeHtml(it.item_name||'(sem nome)')}</td>
+      <td style="font-size:11px;color:var(--txt2)">${escapeHtml(cli)}</td>
+      <td>${it.status_label?`<span class="bg" style="background:rgba(69,94,110,.12);color:var(--t1);font-size:10px">${escapeHtml(it.status_label)}</span>`:'—'}</td>
+      <td>${deadlinePill(it.deadline_date,it.is_done)}</td>
+      <td class="rt" style="font-family:var(--mono);font-weight:700">${fH(it.hours_invested||0)}</td>
+      <td class="rt" style="font-family:var(--mono);color:var(--txt3)">${it.entries_count||0}</td>
+      <td style="font-size:11px;color:var(--txt2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml((it.responsible_names||[]).join(', '))}">${escapeHtml(resp||'—')}${moreResp}</td>
+    </tr>`;
+  };
+  
+  // ── Top consumidores de horas (TOP 8) ──────────────
+  const topHours=[...visibleItems].filter(it=>!it.is_done).sort((a,b)=>(b.hours_invested||0)-(a.hours_invested||0)).slice(0,8);
+  
+  // ── Cabeçalho ───────────────────────────────────────
+  el.innerHTML=`
+    <div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#ED1C24);display:flex;align-items:center;justify-content:center;font-size:22px">🎯</div>
+          <div>
+            <h2 style="margin:0;font-size:22px;line-height:1.1">Radar Operacional</h2>
+            <div style="font-size:12px;color:var(--txt3);margin-top:2px">Onde o time está sendo consumido · prazos críticos · pontos de atenção</div>
+          </div>
+        </div>
+        <div style="flex:1"></div>
+        <button onclick="refreshRadar(this)" class="btn btn-sec btn-sm" style="font-size:11px">🔄 Atualizar agora</button>
+        <div style="font-size:10px;color:var(--txt3);text-align:right;font-family:var(--mono)">
+          ${visibleItems.length} itens · ${visibleItems.length>0?fH(sumH(visibleItems)):'0h'} investidas · últimos 60 dias
+        </div>
+      </div>
+    </div>
+    
+    <!-- 4 BUCKETS DE CRITICIDADE -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
+      <div style="background:linear-gradient(135deg,rgba(237,28,36,.08),transparent);border:1px solid rgba(237,28,36,.3);border-left:4px solid var(--red);border-radius:10px;padding:14px">
+        <div style="font-size:9px;color:var(--red);letter-spacing:1.5px;font-weight:800">🔴 ATRASADOS</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:var(--red)">${critico.length}</div>
+        <div style="font-size:11px;color:var(--txt2);margin-top:5px">${critico.length===0?'tudo no prazo':`${fH(sumH(critico))} já investidas`}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(245,158,11,.08),transparent);border:1px solid rgba(245,158,11,.3);border-left:4px solid var(--pack);border-radius:10px;padding:14px">
+        <div style="font-size:9px;color:var(--pack);letter-spacing:1.5px;font-weight:800">🟠 URGENTE · 3 DIAS</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:var(--pack)">${urgente.length}</div>
+        <div style="font-size:11px;color:var(--txt2);margin-top:5px">${urgente.length===0?'sem urgências':`${fH(sumH(urgente))} já investidas`}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(253,171,61,.06),transparent);border:1px solid rgba(253,171,61,.3);border-left:4px solid #FDAB3D;border-radius:10px;padding:14px">
+        <div style="font-size:9px;color:#FDAB3D;letter-spacing:1.5px;font-weight:800">🟡 PRÓXIMOS · 7 DIAS</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:#FDAB3D">${proximo.length}</div>
+        <div style="font-size:11px;color:var(--txt2);margin-top:5px">${proximo.length===0?'tranquilo':`${fH(sumH(proximo))} já investidas`}</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(85,89,223,.08),transparent);border:1px solid rgba(85,89,223,.3);border-left:4px solid #5559DF;border-radius:10px;padding:14px">
+        <div style="font-size:9px;color:#5559DF;letter-spacing:1.5px;font-weight:800">🔵 PESADOS · 4H+</div>
+        <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:#5559DF">${pesado.length}</div>
+        <div style="font-size:11px;color:var(--txt2);margin-top:5px">${pesado.length===0?'sem concentração':`${fH(sumH(pesado))} totais`}</div>
+      </div>
+    </div>
+    
+    <!-- TOP 8 CONSUMIDORES DE HORAS (visualização horizontal) -->
+    ${topHours.length>0?`
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0;font-size:14px">🔥 Top consumidores de horas <span style="font-weight:500;color:var(--txt3);font-size:11px;margin-left:6px">— onde o time está sendo investido</span></h3>
+      </div>
+      ${(()=>{
+        const maxH=Math.max(...topHours.map(it=>it.hours_invested||0))||1;
+        return topHours.map((it,i)=>{
+          const w=(it.hours_invested||0)/maxH*100;
+          const cli=clientName(it.client_id);
+          const isAtraso=!it.is_done && it.deadline_date && it.deadline_date<today;
+          const barColor=isAtraso?'var(--red)':(i<3?'var(--pack)':'var(--t1)');
+          return `<div style="display:grid;grid-template-columns:32px 1fr 80px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="window.open('${it.item_url||'#'}','_blank')">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--txt3);text-align:center">#${i+1}</div>
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(it.item_name||'')}">${escapeHtml((it.item_name||'(sem nome)').substring(0,80))}</span>
+                <span style="font-size:10px;color:var(--txt3);white-space:nowrap">${escapeHtml(cli)}${it.deadline_date?` · ${deadlinePill(it.deadline_date,it.is_done).replace(/<[^>]+>/g,'')}`:''}</span>
+              </div>
+              <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;position:relative">
+                <div style="position:absolute;inset:0;width:${w}%;background:${barColor};transition:width .3s"></div>
+              </div>
+            </div>
+            <div style="font-family:var(--mono);font-weight:800;font-size:13px;text-align:right">${fH(it.hours_invested||0)}</div>
+          </div>`;
+        }).join('');
+      })()}
+    </div>`:''}
+    
+    <!-- TABELA CRÍTICOS -->
+    ${critico.length>0?`
+    <div class="tbl" style="margin-bottom:14px;border-left:3px solid var(--red)">
+      <div class="tbl-h"><h3 style="color:var(--red)">🔴 Atrasados — ${critico.length}</h3><span style="font-size:11px;color:var(--txt3)">prazo no Monday já passou e item não está finalizado</span></div>
+      <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
+      <tbody>${critico.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')).map(renderItem).join('')}</tbody></table></div>
+    </div>`:''}
+    
+    <!-- TABELA URGENTES -->
+    ${urgente.length>0?`
+    <div class="tbl" style="margin-bottom:14px;border-left:3px solid var(--pack)">
+      <div class="tbl-h"><h3 style="color:var(--pack)">🟠 Urgentes — próximos 3 dias</h3><span style="font-size:11px;color:var(--txt3)">${urgente.length} item${urgente.length!==1?'s':''} com entrega muito próxima</span></div>
+      <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
+      <tbody>${urgente.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')).map(renderItem).join('')}</tbody></table></div>
+    </div>`:''}
+    
+    <!-- TABELA PRÓXIMOS -->
+    ${proximo.length>0?`
+    <div class="tbl" style="margin-bottom:14px;border-left:3px solid #FDAB3D">
+      <div class="tbl-h"><h3 style="color:#FDAB3D">🟡 Próximos — 4 a 7 dias</h3><span style="font-size:11px;color:var(--txt3)">${proximo.length} item${proximo.length!==1?'s':''} no horizonte semanal</span></div>
+      <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
+      <tbody>${proximo.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')).map(renderItem).join('')}</tbody></table></div>
+    </div>`:''}
+    
+    <!-- TABELA PESADOS sem prazo -->
+    ${pesado.length>0?`
+    <div class="tbl" style="margin-bottom:14px;border-left:3px solid #5559DF">
+      <div class="tbl-h"><h3 style="color:#5559DF">🔵 Pesados sem prazo crítico — 4h+ investidas</h3><span style="font-size:11px;color:var(--txt3)">${pesado.length} item${pesado.length!==1?'s':''} consumindo equipe sem entrega marcada (ou prazo distante)</span></div>
+      <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
+      <tbody>${pesado.slice(0,25).map(renderItem).join('')}</tbody></table></div>
+    </div>`:''}
+    
+    <!-- FINALIZADOS RECENTES (collapse) -->
+    ${finalizado.length>0?`
+    <div class="tbl" style="margin-bottom:14px;opacity:.75">
+      <div class="tbl-h"><h3 style="color:var(--prod)">🟢 Finalizados recentes — ${finalizado.length}</h3><span style="font-size:11px;color:var(--txt3)">${fH(sumH(finalizado))} entregues</span></div>
+      <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
+      <tbody>${finalizado.sort((a,b)=>(b.last_activity_at||'').localeCompare(a.last_activity_at||'')).slice(0,15).map(renderItem).join('')}</tbody></table></div>
+    </div>`:''}
+    
+    <!-- ESTADO VAZIO -->
+    ${visibleItems.length===0?`<div class="empty" style="padding:60px 20px;text-align:center">
+      <div style="font-size:48px;margin-bottom:12px">🎯</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:6px">Nenhum item com horas TGT</div>
+      <div style="font-size:12px;color:var(--txt3)">O Radar mostra projetos do Monday com horas investidas pelo time nos últimos 60 dias.</div>
+    </div>`:''}
+    
+    <!-- INFO RODAPÉ -->
+    <div style="margin-top:18px;padding:12px 14px;background:rgba(69,94,110,.05);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--txt3);line-height:1.5">
+      <b style="color:var(--txt2)">Como funciona:</b> O Radar agrupa itens do Monday com horas TGT lançadas nos últimos 60 dias, cruzando com as datas de entrega configuradas em cada board (Prazo de Entrega, Cronograma, Data, Data de Publicação). Os buckets são calculados em tempo real a partir da data atual.<br>
+      <b style="color:var(--txt2)">Atualização automática:</b> O snapshot do Monday é atualizado em tempo real via webhook quando há mudanças nas colunas de status, prazo, prioridade ou responsáveis. Também há refresh diário automático às 9h. Use o botão "🔄 Atualizar agora" para forçar uma sincronização manual a qualquer momento.<br>
+      Último snapshot: <b>${items.length>0?fD((items[0].updated_at||today).substring(0,10)):today}</b>${items.length>0&&items[0].updated_at?` às ${items[0].updated_at.substring(11,16)}`:''}.
+    </div>`;
+}
+
+// Disparar refresh do snapshot Monday → atualiza tt_monday_hot_items
+async function refreshRadar(btn){
+  const orig=btn.innerHTML;
+  btn.innerHTML='⏳ Atualizando…';
+  btn.disabled=true;
+  try{
+    const r=await fetch('/api/monday-snapshot-refresh',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({force:true})
+    });
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    const j=await r.json();
+    toast(`Snapshot atualizado · ${j.upserted||0} itens`,'success');
+    // Recarrega tt_monday_hot_items
+    S.monday_hot_items=await sbGetAll('tt_monday_hot_items','order=hours_invested.desc');
+    renderPage();
+  }catch(e){
+    toast('Erro: '+e.message,'error');
+    btn.innerHTML=orig;
+    btn.disabled=false;
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -6082,19 +6319,110 @@ async function pgMembers(el){
   if(!isA()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   const ativos=S.members.filter(isMemberActive).length;
   const inativos=S.members.length-ativos;
-  // Ordena: ativos primeiro, depois inativos no fim
-  const sorted=[...S.members].sort((a,b)=>{
+  
+  // ─── FILTROS (state global em window._mbFilters) ─────────────
+  if(!window._mbFilters)window._mbFilters={role:'all',team:'all',status:'active',sort:'team',search:''};
+  const F=window._mbFilters;
+  
+  // Aplicar filtros
+  let filtered=S.members.filter(m=>{
+    // Status
+    if(F.status==='active' && !isMemberActive(m))return false;
+    if(F.status==='inactive' && isMemberActive(m))return false;
+    // Role
+    if(F.role!=='all' && m.access_level!==F.role)return false;
+    // Team (só para não-clientes)
+    if(F.team!=='all'){
+      if(m.access_level==='client')return false;
+      const ts=getTeamsOfMember(m.id);
+      const inTeam=ts.some(mt=>mt.team===F.team) || m.team===F.team;
+      if(!inTeam)return false;
+    }
+    // Search
+    if(F.search){
+      const q=F.search.toLowerCase();
+      const hay=`${m.name||''} ${m.email||''} ${m.job_title||''}`.toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  });
+  
+  // Ordenação
+  filtered.sort((a,b)=>{
+    if(F.sort==='alpha')return (a.name||'').localeCompare(b.name||'');
+    if(F.sort==='role'){
+      const order={admin:1,account:2,prod_leader:3,user:4,client:5};
+      const oa=order[a.access_level]||9, ob=order[b.access_level]||9;
+      if(oa!==ob)return oa-ob;
+      return (a.name||'').localeCompare(b.name||'');
+    }
+    // default 'team': ativos primeiro, depois por time, depois alfa
     if(isMemberActive(a)&&!isMemberActive(b))return -1;
     if(!isMemberActive(a)&&isMemberActive(b))return 1;
-    return (a.team||'').localeCompare(b.team||'')||a.name.localeCompare(b.name);
+    return (a.team||'').localeCompare(b.team||'')||(a.name||'').localeCompare(b.name||'');
   });
+  
+  // Contadores por categoria (sobre TODOS os ativos pra mostrar nos chips)
+  const allActive=S.members.filter(isMemberActive);
+  const countByRole={
+    all:allActive.length,
+    user:allActive.filter(m=>m.access_level==='user').length,
+    account:allActive.filter(m=>m.access_level==='account').length,
+    admin:allActive.filter(m=>m.access_level==='admin').length,
+    prod_leader:allActive.filter(m=>m.access_level==='prod_leader').length,
+    client:allActive.filter(m=>m.access_level==='client').length
+  };
+  
+  const roleChip=(val,label,color)=>`<button onclick="window._mbFilters.role='${val}';renderPage()" style="padding:6px 12px;border-radius:14px;background:${F.role===val?color:'var(--bg3)'};color:${F.role===val?'#fff':'var(--txt2)'};border:1px solid ${F.role===val?color:'var(--border)'};font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px">${label} <span style="background:${F.role===val?'rgba(255,255,255,.25)':'var(--bg2)'};padding:1px 6px;border-radius:8px;font-family:var(--mono);font-size:10px">${countByRole[val]||0}</span></button>`;
+  
+  const teamOptions=['T1','T3','T4','T5','PACK','PROD','ADM'];
+  const sortOptions=[['team','Time'],['alpha','A-Z'],['role','Nível']];
+  
   el.innerHTML=`
+    <!-- FILTROS -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
+        <span style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1.2px;margin-right:4px">CATEGORIA</span>
+        ${roleChip('all','Todos','var(--red)')}
+        ${roleChip('user','User','#455E6E')}
+        ${roleChip('account','Account','#9D50DD')}
+        ${roleChip('admin','Admin','#ED1C24')}
+        ${roleChip('prod_leader','Líder Prod','#FDAB3D')}
+        ${roleChip('client','Clientes','#00C875')}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1.2px">TIME</span>
+          <select class="f-sel" style="padding:5px 10px;font-size:12px;min-width:80px" onchange="window._mbFilters.team=this.value;renderPage()">
+            <option value="all" ${F.team==='all'?'selected':''}>Todos</option>
+            ${teamOptions.map(t=>`<option value="${t}" ${F.team===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1.2px">STATUS</span>
+          <select class="f-sel" style="padding:5px 10px;font-size:12px" onchange="window._mbFilters.status=this.value;renderPage()">
+            <option value="active" ${F.status==='active'?'selected':''}>Ativos</option>
+            <option value="inactive" ${F.status==='inactive'?'selected':''}>Inativos</option>
+            <option value="all" ${F.status==='all'?'selected':''}>Todos</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:10px;color:var(--txt3);font-weight:700;letter-spacing:1.2px">ORDEM</span>
+          <select class="f-sel" style="padding:5px 10px;font-size:12px" onchange="window._mbFilters.sort=this.value;renderPage()">
+            ${sortOptions.map(([v,l])=>`<option value="${v}" ${F.sort===v?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <input type="text" placeholder="Buscar por nome, email ou função…" value="${escapeHtml(F.search||'')}" oninput="clearTimeout(window._mbSrch);window._mbSrch=setTimeout(()=>{window._mbFilters.search=this.value;renderPage()},250)" style="flex:1;min-width:220px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--txt);font-size:12px">
+        ${F.role!=='all'||F.team!=='all'||F.status!=='active'||F.sort!=='team'||F.search?`<button onclick="window._mbFilters={role:'all',team:'all',status:'active',sort:'team',search:''};renderPage()" style="padding:5px 10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--txt2);font-size:11px;cursor:pointer">Limpar</button>`:''}
+      </div>
+    </div>
+    
     <div class="tbl"><div class="tbl-h">
-      <h3>Equipe — ${ativos} ativos${inativos?` · <span style="color:var(--txt3);font-weight:500">${inativos} inativo${inativos>1?'s':''}</span>`:''}</h3>
+      <h3>Equipe — ${filtered.length} ${filtered.length===1?'pessoa':'pessoas'}${filtered.length!==S.members.length?` <span style="font-size:11px;font-weight:500;color:var(--txt3);margin-left:4px">de ${S.members.length} total · ${ativos} ativos${inativos?` · ${inativos} inativo${inativos>1?'s':''}`:''}</span>`:''}</h3>
       <button class="btn btn-r btn-sm" onclick="showMemberModal()">${ICONS.plus} Adicionar</button>
     </div>
     <div class="tbl-r"><table><thead><tr><th>Status</th><th>Nome</th><th>Time</th><th>Função</th><th>Nível</th><th class="rt">Cap</th><th class="rt">R$/h</th><th>Email</th><th style="text-align:center">QC</th><th></th></tr></thead>
-    <tbody>${sorted.map(m=>{
+    <tbody>${filtered.length===0?`<tr><td colspan="10" class="empty">Nenhuma pessoa encontrada com esses filtros</td></tr>`:filtered.map(m=>{
       const active=isMemberActive(m);
       const cli=m.client_id?S.clients.find(c=>c.id===m.client_id):null;
       const ts=getTeamsOfMember(m.id);
