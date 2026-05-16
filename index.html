@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.48.1';
+const HUB_VERSION='0.49.0';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -2191,9 +2191,28 @@ async function pgRadar(el){
   const in3d=new Date(Date.now()+3*86400000).toISOString().substring(0,10);
   
   // Account vê só itens dos clientes do seu time; Admin vê tudo
-  const visibleItems=items.filter(it=>{
+  const baseItems=items.filter(it=>{
     if(isA())return true;
     return canSeeClient(it.client_id);
+  });
+  
+  // ── Filtros (state) ────────────────────────────────
+  if(!window._radarFilters)window._radarFilters={client:'all',team:'all',person:'all'};
+  const RF=window._radarFilters;
+  
+  // Helpers para nomes/lookups
+  const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
+  const teamOfClient=(id)=>{const c=S.clients.find(c=>c.id===id);return c?(c.team||''):''};
+  
+  // ── Aplicar filtros ────────────────────────────────
+  const visibleItems=baseItems.filter(it=>{
+    if(RF.client!=='all' && it.client_id!==RF.client)return false;
+    if(RF.team!=='all' && teamOfClient(it.client_id)!==RF.team)return false;
+    if(RF.person!=='all'){
+      const names=it.responsible_names||[];
+      if(!names.some(n=>n.toLowerCase().includes(RF.person.toLowerCase())))return false;
+    }
+    return true;
   });
   
   // ── Buckets de criticidade ─────────────────────────
@@ -2212,12 +2231,37 @@ async function pgRadar(el){
   // Total de horas por categoria
   const sumH=arr=>arr.reduce((s,it)=>s+(it.hours_invested||0),0);
   
-  // ── Filtros (state) ────────────────────────────────
-  if(!window._radarFilters)window._radarFilters={client:'all',team:'all',view:'priority'};
-  const RF=window._radarFilters;
+  // ── Opções de filtro ───────────────────────────────
+  // Clientes presentes nos baseItems
+  const clientsInItems=[...new Set(baseItems.map(it=>it.client_id).filter(Boolean))]
+    .map(id=>({id,name:clientName(id),team:teamOfClient(id)}))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  // Times únicos
+  const teamsInItems=[...new Set(clientsInItems.map(c=>c.team).filter(Boolean))].sort();
+  // Pessoas: extrai responsible_names únicos
+  const peopleSet=new Set();
+  baseItems.forEach(it=>(it.responsible_names||[]).forEach(n=>{if(n&&n.trim())peopleSet.add(n.trim())}));
+  const peopleInItems=[...peopleSet].sort();
   
-  // Helper: nome cliente
-  const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
+  // ── Persistência: salva filtros no localStorage ─────
+  window._radarSaveFilters=()=>{try{localStorage.setItem('radar_filters',JSON.stringify(RF))}catch(e){}};
+  // Carrega ao primeiro acesso
+  if(!window._radarFiltersLoaded){
+    try{const s=localStorage.getItem('radar_filters');if(s){Object.assign(RF,JSON.parse(s))}}catch(e){}
+    window._radarFiltersLoaded=true;
+  }
+  
+  // Handler para mudar filtro e re-renderizar
+  window._radarSetFilter=(key,val)=>{
+    RF[key]=val;
+    window._radarSaveFilters();
+    renderPage();
+  };
+  window._radarResetFilters=()=>{
+    window._radarFilters={client:'all',team:'all',person:'all'};
+    try{localStorage.removeItem('radar_filters')}catch(e){}
+    renderPage();
+  };
   
   // Helper: cor do prazo
   const deadlinePill=(date,done)=>{
@@ -2253,9 +2297,24 @@ async function pgRadar(el){
   // ── Top consumidores de horas (TOP 8) ──────────────
   const topHours=[...visibleItems].filter(it=>!it.is_done).sort((a,b)=>(b.hours_invested||0)-(a.hours_invested||0)).slice(0,8);
   
+  // ── Armazena buckets globalmente para o modal ──────
+  window._radarBuckets={
+    critico:critico.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')),
+    urgente:urgente.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')),
+    proximo:proximo.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')),
+    pesado:pesado,
+    finalizado:finalizado.sort((a,b)=>(b.last_activity_at||'').localeCompare(a.last_activity_at||''))
+  };
+  
   // ── Cabeçalho ───────────────────────────────────────
+  // Conta filtros ativos
+  const activeFilters=[RF.client,RF.team,RF.person].filter(v=>v!=='all').length;
+  
+  // Filtro de Time: só pra ADM (Account não escolhe time, vê tudo do seu time)
+  const showTeamFilter=isA();
+  
   el.innerHTML=`
-    <div style="margin-bottom:16px">
+    <div style="margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#ED1C24);display:flex;align-items:center;justify-content:center;font-size:22px">🎯</div>
@@ -2272,29 +2331,56 @@ async function pgRadar(el){
       </div>
     </div>
     
-    <!-- 4 BUCKETS DE CRITICIDADE -->
+    <!-- BARRA DE FILTROS -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:10px;color:var(--txt3);letter-spacing:1px;font-weight:700">FILTROS</div>
+      ${showTeamFilter?`
+        <select onchange="_radarSetFilter('team',this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:5px 8px;border-radius:6px;font-size:11px;cursor:pointer">
+          <option value="all"${RF.team==='all'?' selected':''}>Todos os times</option>
+          ${teamsInItems.map(t=>`<option value="${escapeHtml(t)}"${RF.team===t?' selected':''}>Time: ${escapeHtml(t)}</option>`).join('')}
+        </select>`:''}
+      <select onchange="_radarSetFilter('client',this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:5px 8px;border-radius:6px;font-size:11px;cursor:pointer;max-width:220px">
+        <option value="all"${RF.client==='all'?' selected':''}>Todos os clientes</option>
+        ${clientsInItems.filter(c=>RF.team==='all'||c.team===RF.team).map(c=>`<option value="${c.id}"${RF.client===c.id?' selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+      </select>
+      <select onchange="_radarSetFilter('person',this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:5px 8px;border-radius:6px;font-size:11px;cursor:pointer;max-width:200px">
+        <option value="all"${RF.person==='all'?' selected':''}>Todas as pessoas</option>
+        ${peopleInItems.map(p=>`<option value="${escapeHtml(p)}"${RF.person===p?' selected':''}>${escapeHtml(p)}</option>`).join('')}
+      </select>
+      ${activeFilters>0?`<button onclick="_radarResetFilters()" class="btn btn-sec btn-sm" style="font-size:10px;padding:4px 10px">✕ Limpar (${activeFilters})</button>`:''}
+      <div style="flex:1"></div>
+      ${activeFilters>0?`<span style="font-size:10px;color:var(--pack);font-weight:600">${visibleItems.length} de ${baseItems.length} itens</span>`:''}
+    </div>
+    
+    <!-- 4 BUCKETS DE CRITICIDADE (clicáveis) -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
-      <div style="background:linear-gradient(135deg,rgba(237,28,36,.08),transparent);border:1px solid rgba(237,28,36,.3);border-left:4px solid var(--red);border-radius:10px;padding:14px">
+      <div onclick="radarOpenBucket('critico')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(237,28,36,.08),transparent);border:1px solid rgba(237,28,36,.3);border-left:4px solid var(--red);border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
         <div style="font-size:9px;color:var(--red);letter-spacing:1.5px;font-weight:800">🔴 ATRASADOS</div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:var(--red)">${critico.length}</div>
         <div style="font-size:11px;color:var(--txt2);margin-top:5px">${critico.length===0?'tudo no prazo':`${fH(sumH(critico))} já investidas`}</div>
+        ${critico.length>0?`<div style="font-size:9px;color:var(--red);margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
       </div>
-      <div style="background:linear-gradient(135deg,rgba(245,158,11,.08),transparent);border:1px solid rgba(245,158,11,.3);border-left:4px solid var(--pack);border-radius:10px;padding:14px">
+      <div onclick="radarOpenBucket('urgente')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(245,158,11,.08),transparent);border:1px solid rgba(245,158,11,.3);border-left:4px solid var(--pack);border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
         <div style="font-size:9px;color:var(--pack);letter-spacing:1.5px;font-weight:800">🟠 URGENTE · 3 DIAS</div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:var(--pack)">${urgente.length}</div>
         <div style="font-size:11px;color:var(--txt2);margin-top:5px">${urgente.length===0?'sem urgências':`${fH(sumH(urgente))} já investidas`}</div>
+        ${urgente.length>0?`<div style="font-size:9px;color:var(--pack);margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
       </div>
-      <div style="background:linear-gradient(135deg,rgba(253,171,61,.06),transparent);border:1px solid rgba(253,171,61,.3);border-left:4px solid #FDAB3D;border-radius:10px;padding:14px">
+      <div onclick="radarOpenBucket('proximo')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(253,171,61,.06),transparent);border:1px solid rgba(253,171,61,.3);border-left:4px solid #FDAB3D;border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
         <div style="font-size:9px;color:#FDAB3D;letter-spacing:1.5px;font-weight:800">🟡 PRÓXIMOS · 7 DIAS</div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:#FDAB3D">${proximo.length}</div>
         <div style="font-size:11px;color:var(--txt2);margin-top:5px">${proximo.length===0?'tranquilo':`${fH(sumH(proximo))} já investidas`}</div>
+        ${proximo.length>0?`<div style="font-size:9px;color:#FDAB3D;margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
       </div>
-      <div style="background:linear-gradient(135deg,rgba(85,89,223,.08),transparent);border:1px solid rgba(85,89,223,.3);border-left:4px solid #5559DF;border-radius:10px;padding:14px">
+      <div onclick="radarOpenBucket('pesado')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(85,89,223,.08),transparent);border:1px solid rgba(85,89,223,.3);border-left:4px solid #5559DF;border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
         <div style="font-size:9px;color:#5559DF;letter-spacing:1.5px;font-weight:800">🔵 PESADOS · 4H+</div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:#5559DF">${pesado.length}</div>
         <div style="font-size:11px;color:var(--txt2);margin-top:5px">${pesado.length===0?'sem concentração':`${fH(sumH(pesado))} totais`}</div>
+        ${pesado.length>0?`<div style="font-size:9px;color:#5559DF;margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
       </div>
     </div>
+    
+    <style>.rdr-card:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(0,0,0,.18)}</style>
     
     <!-- TOP 8 CONSUMIDORES DE HORAS (visualização horizontal) -->
     ${topHours.length>0?`
@@ -2403,6 +2489,91 @@ async function refreshRadar(btn){
     btn.innerHTML=orig;
     btn.disabled=false;
   }
+}
+
+// Abre modal com lista completa dos itens do bucket clicado
+function radarOpenBucket(bucketKey){
+  const buckets=window._radarBuckets||{};
+  const items=buckets[bucketKey]||[];
+  const META={
+    critico:{title:'🔴 Atrasados',color:'var(--red)',sub:'prazo no Monday já passou e item não está finalizado'},
+    urgente:{title:'🟠 Urgentes — próximos 3 dias',color:'var(--pack)',sub:'itens com entrega muito próxima'},
+    proximo:{title:'🟡 Próximos — 4 a 7 dias',color:'#FDAB3D',sub:'itens no horizonte semanal'},
+    pesado:{title:'🔵 Pesados — 4h+ investidas',color:'#5559DF',sub:'itens consumindo equipe sem prazo crítico'},
+    finalizado:{title:'🟢 Finalizados recentes',color:'var(--prod)',sub:'itens já entregues nos últimos 60 dias'}
+  };
+  const meta=META[bucketKey]||{title:'Itens',color:'var(--txt1)',sub:''};
+  
+  const clientName=(id)=>{const c=(S.clients||[]).find(c=>c.id===id);return c?c.name:'—'};
+  const todayD=new Date().toISOString().substring(0,10);
+  
+  // Pílula de prazo (cópia da local de pgRadar)
+  const deadlinePill=(date,done)=>{
+    if(!date)return `<span style="color:var(--txt3);font-size:11px">sem prazo</span>`;
+    if(done)return `<span style="font-size:11px;color:var(--prod);font-family:var(--mono)">${fD(date)} ✓</span>`;
+    const d=new Date(date+'T00:00:00');
+    const today=new Date();today.setHours(0,0,0,0);
+    const diff=Math.round((d-today)/86400000);
+    let bg='var(--bg3)',color='var(--txt2)',label=fD(date);
+    if(diff<0){bg='rgba(237,28,36,.18)';color='var(--red)';label=`${fD(date)} · -${Math.abs(diff)}d`}
+    else if(diff===0){bg='rgba(245,158,11,.2)';color='var(--pack)';label=`${fD(date)} · HOJE`}
+    else if(diff<=3){bg='rgba(245,158,11,.15)';color='var(--pack)';label=`${fD(date)} · ${diff}d`}
+    else if(diff<=7){bg='rgba(253,171,61,.12)';color='#FDAB3D';label=`${fD(date)} · ${diff}d`}
+    return `<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:${bg};color:${color};font-size:11px;font-weight:700;font-family:var(--mono)">${label}</span>`;
+  };
+  
+  const totalH=items.reduce((s,it)=>s+(it.hours_invested||0),0);
+  
+  // Linha expandida do modal: card grande, mais espaço para nome + cliente + responsáveis
+  const renderCard=(it)=>{
+    const cli=clientName(it.client_id);
+    const resp=(it.responsible_names||[]).join(', ')||'—';
+    const url=it.item_url||'#';
+    return `<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${meta.color};border-radius:8px;padding:12px 14px;margin-bottom:8px;display:grid;grid-template-columns:1fr 130px 70px 80px;gap:12px;align-items:center">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical" title="${escapeHtml(it.item_name||'(sem nome)')}">${escapeHtml(it.item_name||'(sem nome)')}</div>
+        <div style="font-size:11px;color:var(--txt2);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="color:var(--t1);font-weight:600">${escapeHtml(cli)}</span>
+          ${it.status_label?`<span style="background:rgba(69,94,110,.12);padding:1px 6px;border-radius:8px;font-size:10px">${escapeHtml(it.status_label)}</span>`:''}
+          ${it.group_title?`<span style="color:var(--txt3);font-size:10px">· ${escapeHtml(it.group_title)}</span>`:''}
+        </div>
+        <div style="font-size:10px;color:var(--txt3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(resp)}">👤 ${escapeHtml(resp)}</div>
+      </div>
+      <div style="text-align:center">${deadlinePill(it.deadline_date,it.is_done)}</div>
+      <div style="text-align:right;font-family:var(--mono);font-weight:800;font-size:14px;color:var(--txt1)">${fH(it.hours_invested||0)}</div>
+      <div style="text-align:right">
+        <a href="${url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;background:${meta.color};color:#fff;text-decoration:none;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap" title="Abrir no Monday">Monday ↗</a>
+      </div>
+    </div>`;
+  };
+  
+  const mod=document.createElement('div');
+  mod.className='modal-ov';
+  mod.onclick=(e)=>{if(e.target===mod)mod.remove()};
+  mod.innerHTML=`<div class="modal" style="max-width:980px;width:96vw;max-height:88vh;display:flex;flex-direction:column">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px">
+      <div>
+        <h2 style="margin:0;font-size:20px;color:${meta.color}">${meta.title}</h2>
+        <div style="font-size:12px;color:var(--txt3);margin-top:3px">${meta.sub}</div>
+      </div>
+      <div style="flex:1"></div>
+      <div style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--txt2)">
+        <div style="font-size:18px;font-weight:800;color:${meta.color}">${items.length}</div>
+        <div>itens · ${fH(totalH)} investidas</div>
+      </div>
+      <button onclick="this.closest('.modal-ov').remove()" class="btn btn-sec btn-sm" style="font-size:14px;padding:6px 10px">✕</button>
+    </div>
+    <div style="padding:14px 22px 8px;display:grid;grid-template-columns:1fr 130px 70px 80px;gap:12px;font-size:10px;letter-spacing:1px;color:var(--txt3);font-weight:700;border-bottom:1px solid var(--border);margin-bottom:10px">
+      <div>PROJETO / CLIENTE / RESPONSÁVEIS</div>
+      <div style="text-align:center">PRAZO</div>
+      <div style="text-align:right">HORAS</div>
+      <div style="text-align:right">LINK</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:0 22px 22px">
+      ${items.length===0?'<div class="empty" style="padding:40px 20px;text-align:center;color:var(--txt3)">Nenhum item nesta categoria com os filtros atuais.</div>':items.map(renderCard).join('')}
+    </div>
+  </div>`;
+  document.body.appendChild(mod);
 }
 
 // ═══════════════════════════════════════════════
