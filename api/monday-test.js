@@ -1,24 +1,17 @@
-// /api/monday-test.js
-// Endpoint de diagnóstico: faz UMA chamada ao Monday e retorna o erro cru
-// Uso: GET /api/monday-test?itemId=11954850316
+// /api/monday-test.js — TOKEN HARDCODED TEMPORARIAMENTE
 
-const MONDAY_TOKEN = process.env.MONDAY_API_TOKEN;
+const MONDAY_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUxNzY3OTcwMSwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwiaWFkIjoiMjAyNS0wOC0xN1QwMTozNzo1OS4wMTNaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTk5NjU2MzgsInJnbiI6InVzZTEifQ.z1ECf7jCEGC2j_UGqtX2h_NkTAw';
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   
-  const itemId = req.query?.itemId || '11954850316';
-  
-  // Diagnóstico 1: token está setado?
   const tokenInfo = {
-    token_set: !!MONDAY_TOKEN,
-    token_length: MONDAY_TOKEN ? MONDAY_TOKEN.length : 0,
-    token_prefix: MONDAY_TOKEN ? MONDAY_TOKEN.substring(0, 20) + '...' : null
+    length: MONDAY_TOKEN.length,
+    starts_with: MONDAY_TOKEN.substring(0, 30),
+    ends_with: MONDAY_TOKEN.substring(MONDAY_TOKEN.length - 30)
   };
 
-  // Diagnóstico 2: fazer chamada simples ao Monday
   try {
-    const query = `query { items(ids: [${itemId}]) { id name column_values { id type text } } }`;
     const r = await fetch('https://api.monday.com/v2', {
       method: 'POST',
       headers: {
@@ -26,26 +19,18 @@ module.exports = async (req, res) => {
         'Authorization': MONDAY_TOKEN,
         'API-Version': '2024-10'
       },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({ query: 'query { me { id name } }' })
     });
-    const statusCode = r.status;
-    const responseText = await r.text();
-    let parsed;
-    try { parsed = JSON.parse(responseText); } catch (e) { parsed = null; }
-    
+    const text = await r.text();
     return res.status(200).json({
       tokenInfo,
-      monday_response: {
-        status: statusCode,
-        raw_text_preview: responseText.substring(0, 1500),
-        parsed: parsed
-      }
+      monday_status: r.status,
+      monday_body: text
     });
   } catch (e) {
     return res.status(200).json({
       tokenInfo,
-      fetch_error: e.message,
-      stack: e.stack?.substring(0, 500)
+      error: e.message
     });
   }
 };
