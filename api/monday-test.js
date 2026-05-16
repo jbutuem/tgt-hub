@@ -1,30 +1,26 @@
-// /api/monday-test.js — token em pedaços anti-corte
-
-const P1 = 'eyJhbGciOiJIUzI1NiJ9.';
-const P2A = 'eyJ0aWQiOjUxNzY3OTcwMSwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwi';
-const P2B = 'aWFkIjoiMjAyNS0wOC0xN1QwMTozNzo1OS4wMTNaIiwicGVyIjoibWU6';
-const P2C = 'd3JpdGUiLCJhY3RpZCI6MTk5NjU2MzgsInJnbiI6InVzZTEifQ.';
-const P3 = 'z1ECf7jCEGC2j_UGqtX2h_NkTAw';
-const MONDAY_TOKEN = P1 + P2A + P2B + P2C + P3;
+// /api/monday-test.js — usa APENAS env var
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   
+  const TOKEN = process.env.MONDAY_API_TOKEN;
   const tokenInfo = {
-    length: MONDAY_TOKEN.length,
-    p1_len: P1.length,
-    p2a_len: P2A.length,
-    p2b_len: P2B.length,
-    p2c_len: P2C.length,
-    p3_len: P3.length
+    set: !!TOKEN,
+    length: TOKEN ? TOKEN.length : 0,
+    starts_with: TOKEN ? TOKEN.substring(0, 30) : null,
+    ends_with: TOKEN ? TOKEN.substring(TOKEN.length - 30) : null
   };
+
+  if (!TOKEN) {
+    return res.status(200).json({ tokenInfo, error: 'No token' });
+  }
 
   try {
     const r = await fetch('https://api.monday.com/v2', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': MONDAY_TOKEN,
+        'Authorization': TOKEN,
         'API-Version': '2024-10'
       },
       body: JSON.stringify({ query: 'query { me { id name } }' })
@@ -36,9 +32,6 @@ module.exports = async (req, res) => {
       monday_body: text
     });
   } catch (e) {
-    return res.status(200).json({
-      tokenInfo,
-      error: e.message
-    });
+    return res.status(200).json({ tokenInfo, error: e.message });
   }
 };
