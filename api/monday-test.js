@@ -1,14 +1,22 @@
-// /api/monday-test.js — TOKEN HARDCODED TEMPORARIAMENTE
+// /api/monday-test.js — token em pedaços anti-corte
 
-const MONDAY_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjUxNzY3OTcwMSwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwiaWFkIjoiMjAyNS0wOC0xN1QwMTozNzo1OS4wMTNaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTk5NjU2MzgsInJnbiI6InVzZTEifQ.z1ECf7jCEGC2j_UGqtX2h_NkTAw';
+const P1 = 'eyJhbGciOiJIUzI1NiJ9.';
+const P2A = 'eyJ0aWQiOjUxNzY3OTcwMSwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwi';
+const P2B = 'aWFkIjoiMjAyNS0wOC0xN1QwMTozNzo1OS4wMTNaIiwicGVyIjoibWU6';
+const P2C = 'd3JpdGUiLCJhY3RpZCI6MTk5NjU2MzgsInJnbiI6InVzZTEifQ.';
+const P3 = 'z1ECf7jCEGC2j_UGqtX2h_NkTAw';
+const MONDAY_TOKEN = P1 + P2A + P2B + P2C + P3;
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   
   const tokenInfo = {
     length: MONDAY_TOKEN.length,
-    starts_with: MONDAY_TOKEN.substring(0, 30),
-    ends_with: MONDAY_TOKEN.substring(MONDAY_TOKEN.length - 30)
+    p1_len: P1.length,
+    p2a_len: P2A.length,
+    p2b_len: P2B.length,
+    p2c_len: P2C.length,
+    p3_len: P3.length
   };
 
   try {
