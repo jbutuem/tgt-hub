@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.50.1';
+const HUB_VERSION='0.51.0';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -2646,7 +2646,7 @@ async function pgPerformance(el){
   const isPerfRunning=running&&running.source==='performance_panel';
   
   // Filtros/state local
-  if(!window._psFilters)window._psFilters={search:'',mode:'all'}; // mode: all | trafego | producao
+  if(!window._psFilters)window._psFilters={search:'',mode:'all'};
   const PF=window._psFilters;
   
   // Agrupa campanhas por board_type e cliente
@@ -2658,8 +2658,7 @@ async function pgPerformance(el){
     campsByBoardClient[c.board_type][cid].camps.push(c);
   });
   
-  // Lista de TODOS os clientes ativos (independente de terem campanha)
-  // Filtra: account vê só seu time; admin vê tudo
+  // Clientes ativos visíveis pelo usuário
   const allClients=(S.clients||[]).filter(c=>{
     if(!c.is_active)return false;
     if(isA())return true;
@@ -2668,50 +2667,68 @@ async function pgPerformance(el){
   });
   
   const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
-  const sH=arr=>arr.reduce((s,it)=>s+(it.hours_invested||0),0);
   
-  // Render bloco de cliente com dropdown de campanhas + botão
-  // Aceita cliente que NÃO TEM campanhas — nesse caso só mostra "Manutenção/Supervisão"
-  const renderClientRow=(clientId,boardType,campData)=>{
-    const isUnmapped=clientId==='_unmapped';
-    const cliN=isUnmapped?`<span style="color:var(--pack);font-style:italic">${escapeHtml(campData?.labelMonday||'(sem cliente)')}</span>`:escapeHtml(clientName(clientId));
-    const campsList=campData?.camps||[];
-    const sortedCamps=[...campsList].sort((a,b)=>(a.item_name||'').localeCompare(b.item_name||''));
-    const activeHere=isPerfRunning&&(
-      (running.client_id===clientId&&sortedCamps.find(c=>String(c.monday_item_id)===String(running.monday_item_id))) ||
-      (running.client_id===clientId&&!running.monday_item_id) // Manutenção/Supervisão
-    );
-    const selectId=`ps-${boardType}-${clientId||'unmapped'}`;
-    const isCurrentlySupervisao=activeHere&&!running.monday_item_id;
-    
-    return `<div class="ps-row ${activeHere?'ps-active':''}" data-client="${clientId}" data-board="${boardType}">
-      <div class="ps-cli">${cliN}${campsList.length>0?`<span style="font-size:10px;color:var(--txt3);font-weight:400;margin-left:6px">· ${campsList.length} campanha${campsList.length!==1?'s':''}</span>`:`<span style="font-size:10px;color:var(--txt3);font-weight:400;margin-left:6px">· só supervisão</span>`}</div>
-      <select id="${selectId}" class="ps-sel" ${activeHere?'disabled':''}>
-        <option value="">— Selecione campanha ou supervisão —</option>
-        <option value="__general__"${isCurrentlySupervisao?' selected':''}>⚙️ Manutenção/Supervisão (geral do cliente)</option>
-        ${sortedCamps.map(c=>`<option value="${c.monday_item_id}"${activeHere&&String(c.monday_item_id)===String(running.monday_item_id)?' selected':''}>${escapeHtml(c.item_name||'')}${c.status_label?` · ${escapeHtml(c.status_label)}`:''}</option>`).join('')}
-      </select>
-      ${activeHere?
-        `<button onclick="performanceStop()" class="btn btn-sm" style="background:var(--red);color:#fff;min-width:90px">⏹ Parar</button>`:
-        `<button onclick="performanceStart('${selectId}','${clientId}','${boardType}','${escapeHtml(campData?.labelMonday||'')}')" class="btn btn-sec btn-sm" style="min-width:90px">▶ Iniciar</button>`
-      }
+  // Soma horas de hoje no painel
+  const todayBR=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const myToday=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running&&e.source==='performance_panel'&&(e.started_at||'').substring(0,10)===todayBR);
+  const totalToday=myToday.reduce((s,e)=>s+(e.hours||0),0);
+  
+  // ──────────────── PROGRAM BAR (estilo ON AIR) ────────────────
+  let programBar='';
+  if(isPerfRunning){
+    const startMs=new Date(running.started_at).getTime();
+    const ageSec=Math.floor((Date.now()-startMs)/1000);
+    const camp=camps.find(c=>String(c.monday_item_id)===String(running.monday_item_id));
+    const cliN=running.client_id?clientName(running.client_id):'GERAL';
+    const itemName=camp?camp.item_name:(running.description||'Manutenção/Supervisão');
+    const boardLbl=camp?(camp.board_type==='trafego'?'TRÁFEGO':'PRODUÇÃO'):'SUPERVISÃO';
+    programBar=`<div class="sw-program">
+      <div class="sw-program-left">
+        <span class="sw-led sw-led-red sw-pulse"></span>
+        <div>
+          <div class="sw-program-label">ON AIR · ${escapeHtml(boardLbl)}</div>
+          <div class="sw-program-title">${escapeHtml(cliN)} <span class="sw-sep">›</span> ${escapeHtml(itemName)}</div>
+        </div>
+      </div>
+      <div class="sw-program-right">
+        <div class="sw-counter" id="sw-elapsed">${formatElapsed(ageSec)}</div>
+        <button onclick="performanceStop()" class="sw-btn-stop">⏹ STOP</button>
+      </div>
     </div>`;
-  };
+    if(window._psTickInterval)clearInterval(window._psTickInterval);
+    window._psTickInterval=setInterval(()=>{
+      const lb=$('sw-elapsed');if(!lb)return clearInterval(window._psTickInterval);
+      const cur=Math.floor((Date.now()-startMs)/1000);
+      lb.textContent=formatElapsed(cur);
+    },1000);
+  }else{
+    if(window._psTickInterval){clearInterval(window._psTickInterval);window._psTickInterval=null}
+    programBar=`<div class="sw-program sw-program-off">
+      <div class="sw-program-left">
+        <span class="sw-led sw-led-off"></span>
+        <div>
+          <div class="sw-program-label">PROGRAM</div>
+          <div class="sw-program-title sw-dim">— sem timer ativo —</div>
+        </div>
+      </div>
+      <div class="sw-program-right">
+        <div class="sw-counter sw-dim">00:00:00</div>
+      </div>
+    </div>`;
+  }
   
-  // Para cada board_type, monta a lista combinada de clientes (mapeados + Hub + não-mapeados)
-  const buildBoardSection=(boardType)=>{
+  // ──────────────── BOTÕES DE CLIENTE (estilo switcher) ────────────────
+  // Para cada board_type, monta a grade
+  const buildBoardGrid=(boardType,colorHex,boardLabel,boardEmoji)=>{
     const haveCamps=campsByBoardClient[boardType]||{};
-    // União: todos os clientes ativos + clientes não-mapeados que tem campanhas
     const allCids=new Set();
     allClients.forEach(c=>allCids.add(c.id));
-    // Não-mapeados (campData.labelMonday existe mas client_id é null)
     let hasUnmapped=false;
     Object.keys(haveCamps).forEach(cid=>{
       if(cid==='_unmapped')hasUnmapped=true;
       else allCids.add(cid);
     });
     
-    // Filtra por busca, se houver
     const sortedCids=[...allCids].sort((a,b)=>clientName(a).localeCompare(clientName(b)));
     const filteredCids=PF.search?sortedCids.filter(cid=>{
       const cn=clientName(cid).toLowerCase();
@@ -2722,144 +2739,466 @@ async function pgPerformance(el){
     
     const totalCamps=Object.values(haveCamps).reduce((s,o)=>s+(o.camps?.length||0),0);
     
-    let html=filteredCids.map(cid=>renderClientRow(cid,boardType,haveCamps[cid])).join('');
+    // Gera botões — cada cliente é um "canal"
+    const buttons=filteredCids.map((cid,idx)=>{
+      const cli=S.clients.find(c=>c.id===cid);
+      const cliN=cli?cli.name:'—';
+      const campsList=(haveCamps[cid]?.camps||[]);
+      const hasCamps=campsList.length>0;
+      const isActive=isPerfRunning&&running.client_id===cid&&(boardType===(camps.find(c=>String(c.monday_item_id)===String(running.monday_item_id))?.board_type)||(!running.monday_item_id&&window._psLastBoardType===boardType));
+      const channelNum=String(idx+1).padStart(2,'0');
+      
+      // Iniciais do cliente pra ícone
+      const ini=cliN.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+      
+      return `<button 
+        class="sw-channel ${isActive?'sw-channel-on':''}" 
+        onclick="performanceShowCampaigns('${cid}','${boardType}',${idx})"
+        data-board="${boardType}"
+        data-client="${cid}">
+        <div class="sw-channel-top">
+          <span class="sw-channel-num">${channelNum}</span>
+          ${isActive?'<span class="sw-led-mini sw-led-red sw-pulse"></span>':hasCamps?`<span class="sw-channel-count">${campsList.length}</span>`:'<span class="sw-channel-dot"></span>'}
+        </div>
+        <div class="sw-channel-ini">${ini}</div>
+        <div class="sw-channel-name">${escapeHtml(cliN)}</div>
+        ${hasCamps?`<div class="sw-channel-sub">${campsList.length} camp.</div>`:`<div class="sw-channel-sub sw-channel-sub-dim">supervisão</div>`}
+      </button>`;
+    }).join('');
+    
+    // Tratamento dos não-mapeados
+    let unmappedHtml='';
     if(hasUnmapped&&haveCamps._unmapped){
-      // Filtro: só se PF.search bater no label ou nome de campanha
-      const showUnmapped=!PF.search||(
-        (haveCamps._unmapped.labelMonday||'').toLowerCase().includes(PF.search.toLowerCase())||
-        (haveCamps._unmapped.camps||[]).some(c=>(c.item_name||'').toLowerCase().includes(PF.search.toLowerCase()))
-      );
-      if(showUnmapped)html+=renderClientRow('_unmapped',boardType,haveCamps._unmapped);
+      const u=haveCamps._unmapped;
+      const showU=!PF.search||(u.labelMonday||'').toLowerCase().includes(PF.search.toLowerCase())||(u.camps||[]).some(c=>(c.item_name||'').toLowerCase().includes(PF.search.toLowerCase()));
+      if(showU){
+        const isActive=isPerfRunning&&running.client_id===null;
+        const channelNum=String(filteredCids.length+1).padStart(2,'0');
+        unmappedHtml=`<button 
+          class="sw-channel sw-channel-unmapped ${isActive?'sw-channel-on':''}"
+          onclick="performanceShowCampaigns('_unmapped','${boardType}',${filteredCids.length})">
+          <div class="sw-channel-top">
+            <span class="sw-channel-num">${channelNum}</span>
+            <span class="sw-channel-count" style="background:rgba(245,158,11,.25);color:#F59E0B">${u.camps.length}</span>
+          </div>
+          <div class="sw-channel-ini" style="color:#F59E0B">?</div>
+          <div class="sw-channel-name" style="color:#F59E0B">${escapeHtml(u.labelMonday||'sem label')}</div>
+          <div class="sw-channel-sub">não mapeado</div>
+        </button>`;
+      }
     }
-    return {html,totalClients:filteredCids.length,totalCamps,hasUnmapped};
+    
+    return {
+      html:`<div class="sw-board">
+        <div class="sw-board-header" style="--accent:${colorHex}">
+          <span class="sw-board-emoji">${boardEmoji}</span>
+          <span class="sw-board-label">${boardLabel}</span>
+          <span class="sw-board-stats">${filteredCids.length} canal${filteredCids.length!==1?'s':''} · ${totalCamps} ativo${totalCamps!==1?'s':''}</span>
+        </div>
+        <div class="sw-channels">${buttons}${unmappedHtml}</div>
+      </div>`,
+      count:filteredCids.length+(hasUnmapped?1:0)
+    };
   };
   
-  const traf=buildBoardSection('trafego');
-  const prod=buildBoardSection('producao');
+  const traf=buildBoardGrid('trafego','#FF6B35','TRÁFEGO &amp; PERFORMANCE','📡');
+  const prod=buildBoardGrid('producao','#5559DF','PRODUÇÃO','🎬');
   
-  // Soma horas de hoje no painel
-  const todayBR=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
-  const myToday=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running&&e.source==='performance_panel'&&(e.started_at||'').substring(0,10)===todayBR);
-  const totalToday=myToday.reduce((s,e)=>s+(e.hours||0),0);
-  
-  // Timer ao vivo no topo
-  let activeBlock='';
-  if(isPerfRunning){
-    const startMs=new Date(running.started_at).getTime();
-    const ageSec=Math.floor((Date.now()-startMs)/1000);
-    const camp=camps.find(c=>String(c.monday_item_id)===String(running.monday_item_id));
-    const cliN=running.client_id?clientName(running.client_id):'(geral)';
-    const itemName=camp?camp.item_name:(running.description||'Manutenção/Supervisão');
-    activeBlock=`<div style="background:linear-gradient(135deg,rgba(0,200,117,.1),rgba(0,200,117,.02));border:1px solid rgba(0,200,117,.4);border-left:4px solid var(--prod);border-radius:10px;padding:16px 18px;margin-bottom:14px">
-      <div style="display:flex;align-items:center;gap:14px">
-        <div style="font-size:36px">⏱</div>
-        <div style="flex:1">
-          <div style="font-size:10px;letter-spacing:1.5px;color:var(--prod);font-weight:800;margin-bottom:3px">▶ TIMER ATIVO</div>
-          <div style="font-size:15px;font-weight:700">${escapeHtml(cliN)} · ${escapeHtml(itemName)}</div>
-          <div style="font-size:11px;color:var(--txt3);margin-top:3px">iniciado ${new Date(running.started_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} · rodando há <b id="ps-elapsed" style="font-family:var(--mono)">${formatElapsed(ageSec)}</b></div>
-        </div>
-        <button onclick="performanceStop()" class="btn" style="background:var(--red);color:#fff">⏹ Parar</button>
-      </div>
-    </div>`;
-    if(window._psTickInterval)clearInterval(window._psTickInterval);
-    window._psTickInterval=setInterval(()=>{
-      const lb=$('ps-elapsed');if(!lb)return clearInterval(window._psTickInterval);
-      const cur=Math.floor((Date.now()-startMs)/1000);
-      lb.textContent=formatElapsed(cur);
-    },1000);
-  }else{
-    if(window._psTickInterval){clearInterval(window._psTickInterval);window._psTickInterval=null}
-  }
-  
-  // Mensagem se nenhuma campanha
   const noCamps=camps.length===0;
   
   el.innerHTML=`
-    <div style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#5559DF,#ED1C24);display:flex;align-items:center;justify-content:center;font-size:22px">🚀</div>
-        <div>
-          <h2 style="margin:0;font-size:22px;line-height:1.1">Painel Performance</h2>
-          <div style="font-size:12px;color:var(--txt3);margin-top:2px">Selecione cliente + campanha · timer único · sincroniza com Monday</div>
-        </div>
-      </div>
-      <div style="flex:1"></div>
-      <div style="text-align:right;font-family:var(--mono);font-size:11px">
-        <div style="font-size:18px;font-weight:800;color:var(--prod)">${fH(totalToday)}</div>
-        <div style="color:var(--txt3)">hoje · ${myToday.length} lançamento${myToday.length!==1?'s':''}</div>
-      </div>
-      <button onclick="performanceRefreshCampaigns(this)" class="btn btn-sec btn-sm" style="font-size:11px">🔄 Atualizar campanhas</button>
-    </div>
-    
-    ${activeBlock}
-    
-    <!-- BUSCA + STATS -->
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <input type="text" placeholder="🔍 Buscar cliente ou campanha..." value="${escapeHtml(PF.search||'')}" oninput="window._psFilters.search=this.value;clearTimeout(window._psSearchTO);window._psSearchTO=setTimeout(()=>renderPage(),250)" style="flex:1;min-width:200px;background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:7px 11px;border-radius:6px;font-size:12px">
-      ${PF.search?`<button onclick="window._psFilters.search='';renderPage()" class="btn btn-sec btn-sm" style="font-size:10px">✕ Limpar</button>`:''}
-      <div style="font-size:10px;color:var(--txt3);font-family:var(--mono)">
-        <span style="color:var(--t1);font-weight:700">${traf.totalClients}</span> tráfego · <span style="color:#5559DF;font-weight:700">${prod.totalClients}</span> produção · <span style="font-weight:700">${camps.filter(c=>c.is_active).length}</span> campanhas
-      </div>
-    </div>
-    
-    ${noCamps?`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-left:4px solid var(--pack);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px">
-      ⚠️ Nenhuma campanha carregada ainda. Clique em <b>🔄 Atualizar campanhas</b> acima para sincronizar com o Monday.
-    </div>`:''}
-    
     <style>
-      .ps-row{display:grid;grid-template-columns:220px 1fr 110px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);transition:background .15s}
-      .ps-row:last-child{border-bottom:none}
-      .ps-row:hover{background:rgba(69,94,110,.04)}
-      .ps-row.ps-active{background:rgba(0,200,117,.06);border-left:3px solid var(--prod)}
-      .ps-cli{font-weight:600;font-size:13px;color:var(--txt1);display:flex;align-items:center;flex-wrap:wrap}
-      .ps-sel{background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;max-width:100%}
-      .ps-sel:disabled{opacity:.6;cursor:not-allowed}
-      @media (max-width:768px){.ps-row{grid-template-columns:1fr;gap:6px;padding:10px 12px}}
+      /* ═══════════════ SWITCHER STYLE — ATEM MINI INSPIRED ═══════════════ */
+      .sw-deck{
+        background:linear-gradient(180deg,#0a0a0c 0%,#15161a 100%);
+        border:1px solid #2a2c30;
+        border-radius:14px;
+        padding:18px;
+        margin-bottom:14px;
+        box-shadow:0 4px 20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
+        position:relative;
+        overflow:hidden;
+      }
+      .sw-deck::before{
+        content:'';position:absolute;top:0;left:0;right:0;height:1px;
+        background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);
+      }
+      
+      /* ── HEADER (brand + status) ── */
+      .sw-header{
+        display:flex;align-items:center;gap:14px;margin-bottom:14px;
+        padding-bottom:12px;border-bottom:1px solid #2a2c30;
+      }
+      .sw-brand{display:flex;align-items:center;gap:10px}
+      .sw-brand-icon{
+        width:38px;height:38px;border-radius:8px;
+        background:linear-gradient(135deg,#ED1C24,#FF6B35);
+        display:flex;align-items:center;justify-content:center;font-size:18px;
+        box-shadow:0 2px 8px rgba(237,28,36,.4);
+      }
+      .sw-brand-text h2{margin:0;font-size:18px;color:#fff;letter-spacing:.5px;font-weight:800}
+      .sw-brand-text .sw-sub{font-size:10px;color:#888;letter-spacing:2px;text-transform:uppercase;margin-top:2px;font-weight:600}
+      .sw-mini-stats{
+        display:flex;gap:18px;margin-left:auto;
+        font-family:var(--mono);font-size:11px;
+      }
+      .sw-stat{text-align:center}
+      .sw-stat .v{font-size:18px;font-weight:800;color:#fff;line-height:1}
+      .sw-stat .v.red{color:#ED1C24}
+      .sw-stat .v.green{color:#00c875}
+      .sw-stat .l{font-size:9px;color:#666;letter-spacing:1.5px;margin-top:3px;text-transform:uppercase}
+      
+      /* ── PROGRAM BAR ── */
+      .sw-program{
+        display:flex;align-items:center;gap:14px;
+        background:linear-gradient(180deg,#1f0606,#140404);
+        border:1px solid #4a1414;
+        border-radius:10px;
+        padding:14px 18px;
+        box-shadow:inset 0 2px 12px rgba(237,28,36,.15),0 0 30px rgba(237,28,36,.1);
+        margin-bottom:14px;
+      }
+      .sw-program-off{
+        background:linear-gradient(180deg,#1a1b1f,#0f1014);
+        border:1px solid #2a2c30;
+        box-shadow:inset 0 2px 8px rgba(0,0,0,.4);
+      }
+      .sw-program-left{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
+      .sw-program-label{
+        font-size:9px;color:#ED1C24;letter-spacing:3px;font-weight:900;
+        text-transform:uppercase;text-shadow:0 0 8px rgba(237,28,36,.6);
+      }
+      .sw-program-off .sw-program-label{color:#666;text-shadow:none}
+      .sw-program-title{
+        font-size:16px;color:#fff;font-weight:700;margin-top:4px;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      }
+      .sw-sep{color:#666;margin:0 6px;font-weight:300}
+      .sw-dim{color:#555 !important}
+      .sw-program-right{display:flex;align-items:center;gap:12px;flex-shrink:0}
+      .sw-counter{
+        font-family:var(--mono);font-size:26px;font-weight:700;
+        color:#ED1C24;letter-spacing:2px;
+        text-shadow:0 0 10px rgba(237,28,36,.5);
+        font-variant-numeric:tabular-nums;
+      }
+      .sw-counter.sw-dim{color:#444;text-shadow:none}
+      
+      /* ── LEDs ── */
+      .sw-led{
+        display:inline-block;width:14px;height:14px;border-radius:50%;
+        flex-shrink:0;box-shadow:0 0 0 2px #0a0a0c,0 0 0 3px #2a2c30;
+      }
+      .sw-led-red{
+        background:radial-gradient(circle at 35% 30%,#ff6b6b,#ED1C24 50%,#8b0000);
+        box-shadow:0 0 12px rgba(237,28,36,.8),0 0 0 2px #0a0a0c,0 0 0 3px #4a1414;
+      }
+      .sw-led-off{background:radial-gradient(circle at 35% 30%,#444,#222)}
+      .sw-led-mini{width:8px;height:8px;border-radius:50%;display:inline-block}
+      .sw-led-mini.sw-led-red{
+        background:radial-gradient(circle at 35% 30%,#ff6b6b,#ED1C24 50%,#8b0000);
+        box-shadow:0 0 8px rgba(237,28,36,.9);
+      }
+      @keyframes sw-pulse{
+        0%,100%{opacity:1;transform:scale(1)}
+        50%{opacity:.5;transform:scale(.9)}
+      }
+      .sw-pulse{animation:sw-pulse 1.4s ease-in-out infinite}
+      
+      /* ── STOP BUTTON ── */
+      .sw-btn-stop{
+        background:linear-gradient(180deg,#ED1C24,#a01016);
+        color:#fff;border:none;padding:11px 22px;
+        border-radius:8px;font-weight:800;font-size:13px;
+        letter-spacing:2px;cursor:pointer;
+        box-shadow:0 3px 0 #6a0a0e,0 4px 10px rgba(237,28,36,.5);
+        transition:all .1s;
+      }
+      .sw-btn-stop:hover{transform:translateY(-1px);box-shadow:0 4px 0 #6a0a0e,0 6px 14px rgba(237,28,36,.6)}
+      .sw-btn-stop:active{transform:translateY(2px);box-shadow:0 1px 0 #6a0a0e,0 2px 6px rgba(237,28,36,.4)}
+      
+      /* ── BOARD SECTION ── */
+      .sw-board{margin-bottom:18px}
+      .sw-board-header{
+        display:flex;align-items:center;gap:10px;
+        background:linear-gradient(90deg,rgba(255,255,255,.04),transparent);
+        border-left:4px solid var(--accent);
+        padding:8px 14px;margin-bottom:12px;
+        border-radius:0 8px 8px 0;
+      }
+      .sw-board-emoji{font-size:18px}
+      .sw-board-label{
+        color:var(--accent);font-size:11px;letter-spacing:2.5px;
+        font-weight:900;text-transform:uppercase;
+        text-shadow:0 0 8px rgba(0,0,0,.5);
+      }
+      .sw-board-stats{
+        margin-left:auto;font-family:var(--mono);font-size:10px;
+        color:#888;letter-spacing:1px;
+      }
+      
+      /* ── CHANNEL GRID ── */
+      .sw-channels{
+        display:grid;
+        grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+        gap:8px;
+      }
+      .sw-channel{
+        background:linear-gradient(180deg,#2a2c34,#1c1e24);
+        border:1px solid #3a3d45;
+        border-radius:10px;
+        padding:10px 8px;
+        cursor:pointer;
+        text-align:center;
+        position:relative;
+        transition:all .12s;
+        box-shadow:0 2px 0 #14151a,0 4px 8px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.08);
+        font-family:inherit;
+        color:#fff;
+      }
+      .sw-channel:hover{
+        transform:translateY(-1px);
+        background:linear-gradient(180deg,#34373f,#22242a);
+        border-color:#4a4d55;
+        box-shadow:0 3px 0 #14151a,0 6px 14px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.1);
+      }
+      .sw-channel:active{transform:translateY(2px);box-shadow:0 0 0 #14151a,0 2px 4px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05)}
+      
+      .sw-channel-on{
+        background:linear-gradient(180deg,#ED1C24,#a01016) !important;
+        border-color:#ff4444 !important;
+        box-shadow:0 2px 0 #6a0a0e,0 4px 18px rgba(237,28,36,.55),inset 0 1px 0 rgba(255,255,255,.2) !important;
+        animation:sw-glow 1.8s ease-in-out infinite;
+      }
+      .sw-channel-on:hover{transform:none;background:linear-gradient(180deg,#FF2030,#a01016) !important}
+      @keyframes sw-glow{
+        0%,100%{box-shadow:0 2px 0 #6a0a0e,0 4px 18px rgba(237,28,36,.55),inset 0 1px 0 rgba(255,255,255,.2)}
+        50%{box-shadow:0 2px 0 #6a0a0e,0 4px 26px rgba(237,28,36,.8),inset 0 1px 0 rgba(255,255,255,.25)}
+      }
+      
+      .sw-channel-unmapped{
+        background:linear-gradient(180deg,#2a261e,#1c1810);
+        border-color:#4a3a1a;
+      }
+      
+      .sw-channel-top{
+        display:flex;justify-content:space-between;align-items:center;
+        margin-bottom:8px;
+      }
+      .sw-channel-num{
+        font-family:var(--mono);font-size:10px;color:#777;font-weight:700;
+        letter-spacing:1px;
+      }
+      .sw-channel-on .sw-channel-num{color:rgba(255,255,255,.7)}
+      .sw-channel-count{
+        background:rgba(85,89,223,.25);color:#9aa0ff;
+        font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;
+        font-family:var(--mono);
+      }
+      .sw-channel-on .sw-channel-count{background:rgba(255,255,255,.25);color:#fff}
+      .sw-channel-dot{
+        width:6px;height:6px;border-radius:50%;background:#444;display:inline-block;
+      }
+      .sw-channel-ini{
+        font-size:22px;font-weight:900;letter-spacing:1px;
+        color:#fff;margin:2px 0 4px;line-height:1;
+        text-shadow:0 1px 2px rgba(0,0,0,.4);
+      }
+      .sw-channel-name{
+        font-size:11px;font-weight:600;color:#ccc;
+        line-height:1.2;
+        overflow:hidden;text-overflow:ellipsis;
+        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+        min-height:28px;
+      }
+      .sw-channel-on .sw-channel-name{color:#fff}
+      .sw-channel-sub{
+        font-size:9px;color:#888;letter-spacing:.5px;
+        margin-top:4px;text-transform:uppercase;font-weight:600;
+      }
+      .sw-channel-sub-dim{color:#555}
+      .sw-channel-on .sw-channel-sub{color:rgba(255,255,255,.75)}
+      
+      /* ── SEARCH BAR ── */
+      .sw-search-bar{
+        background:#1a1c20;border:1px solid #2a2c30;
+        border-radius:8px;padding:8px 12px;margin-bottom:14px;
+        display:flex;align-items:center;gap:10px;
+      }
+      .sw-search-input{
+        flex:1;background:transparent;border:none;color:#fff;
+        font-size:13px;outline:none;font-family:inherit;
+      }
+      .sw-search-input::placeholder{color:#666}
+      .sw-search-clear{
+        background:#2a2c34;color:#999;border:none;padding:4px 10px;
+        border-radius:5px;font-size:10px;cursor:pointer;font-weight:700;
+      }
+      .sw-search-clear:hover{background:#3a3d45;color:#fff}
+      
+      /* ── REFRESH BUTTON ── */
+      .sw-refresh{
+        background:linear-gradient(180deg,#2a2c34,#1c1e24);
+        border:1px solid #3a3d45;color:#aaa;
+        padding:7px 14px;border-radius:7px;
+        font-size:11px;cursor:pointer;font-weight:700;
+        letter-spacing:1px;
+        box-shadow:0 2px 0 #14151a;
+        transition:all .1s;
+      }
+      .sw-refresh:hover{background:linear-gradient(180deg,#34373f,#22242a);color:#fff}
+      .sw-refresh:active{transform:translateY(2px);box-shadow:none}
+      
+      /* ── NO CAMPS WARNING ── */
+      .sw-warning{
+        background:linear-gradient(180deg,rgba(245,158,11,.12),rgba(245,158,11,.04));
+        border:1px solid rgba(245,158,11,.4);
+        border-left:4px solid #F59E0B;
+        border-radius:8px;padding:12px 16px;margin-bottom:14px;
+        color:#F59E0B;font-size:12px;font-weight:600;
+      }
+      
+      /* ── INFO FOOTER ── */
+      .sw-info{
+        background:#15161a;border:1px solid #2a2c30;
+        border-radius:8px;padding:12px 14px;margin-top:14px;
+        font-size:11px;color:#888;line-height:1.6;
+      }
+      .sw-info b{color:#ccc}
+      
+      /* Responsive */
+      @media (max-width:640px){
+        .sw-channels{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
+        .sw-channel{padding:8px 6px}
+        .sw-channel-ini{font-size:18px}
+        .sw-mini-stats{gap:10px}
+      }
     </style>
     
-    <!-- TRÁFEGO -->
-    <div style="margin-bottom:18px">
-      <h3 style="font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;color:var(--t1)">
-        <span style="background:rgba(69,94,110,.15);padding:3px 10px;border-radius:12px;font-size:10px;letter-spacing:1.5px;color:var(--t1);font-weight:700">🎯 TRÁFEGO &amp; PERFORMANCE</span>
-        <span style="font-weight:400;color:var(--txt3);font-size:11px">${traf.totalClients} cliente${traf.totalClients!==1?'s':''}${traf.totalCamps?` · ${traf.totalCamps} campanha${traf.totalCamps!==1?'s':''} ativa${traf.totalCamps!==1?'s':''}`:''}</span>
-      </h3>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
-        ${traf.html||'<div class="empty" style="padding:30px 20px;text-align:center;color:var(--txt3);font-size:12px">Nenhum cliente encontrado.</div>'}
+    <div class="sw-deck">
+      <div class="sw-header">
+        <div class="sw-brand">
+          <div class="sw-brand-icon">🎛</div>
+          <div class="sw-brand-text">
+            <h2>PAINEL PERFORMANCE</h2>
+            <div class="sw-sub">Switcher · multi-cliente · sincronia monday</div>
+          </div>
+        </div>
+        <div class="sw-mini-stats">
+          <div class="sw-stat">
+            <div class="v green">${fH(totalToday)}</div>
+            <div class="l">HOJE</div>
+          </div>
+          <div class="sw-stat">
+            <div class="v">${myToday.length}</div>
+            <div class="l">LANÇ.</div>
+          </div>
+          <div class="sw-stat">
+            <div class="v ${isPerfRunning?'red':''}">${isPerfRunning?'ON':'OFF'}</div>
+            <div class="l">STATUS</div>
+          </div>
+        </div>
+        <button onclick="performanceRefreshCampaigns(this)" class="sw-refresh">🔄 SYNC</button>
       </div>
+      
+      ${programBar}
+      
+      ${noCamps?`<div class="sw-warning">⚠ Nenhuma campanha carregada. Clique em <b>SYNC</b> para sincronizar com Monday.</div>`:''}
+      
+      <div class="sw-search-bar">
+        <span style="color:#666;font-size:14px">🔍</span>
+        <input type="text" class="sw-search-input" placeholder="Buscar cliente ou campanha..." value="${escapeHtml(PF.search||'')}" oninput="window._psFilters.search=this.value;clearTimeout(window._psSearchTO);window._psSearchTO=setTimeout(()=>renderPage(),250)">
+        ${PF.search?'<button class="sw-search-clear" onclick="window._psFilters.search=\'\';renderPage()">✕ LIMPAR</button>':''}
+      </div>
+      
+      ${traf.html}
+      ${prod.html}
     </div>
     
-    <!-- PRODUÇÃO -->
-    <div style="margin-bottom:18px">
-      <h3 style="font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;color:#5559DF">
-        <span style="background:rgba(85,89,223,.15);padding:3px 10px;border-radius:12px;font-size:10px;letter-spacing:1.5px;color:#5559DF;font-weight:700">🎬 PRODUÇÃO</span>
-        <span style="font-weight:400;color:var(--txt3);font-size:11px">${prod.totalClients} cliente${prod.totalClients!==1?'s':''}${prod.totalCamps?` · ${prod.totalCamps} item${prod.totalCamps!==1?'s':''} ativo${prod.totalCamps!==1?'s':''}`:''}</span>
-      </h3>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
-        ${prod.html||'<div class="empty" style="padding:30px 20px;text-align:center;color:var(--txt3);font-size:12px">Nenhum cliente encontrado.</div>'}
-      </div>
-    </div>
-    
-    <!-- INFO RODAPÉ -->
-    <div style="margin-top:18px;padding:12px 14px;background:rgba(69,94,110,.05);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--txt3);line-height:1.5">
-      <b style="color:var(--txt2)">Como funciona:</b> Cada cliente ativo aparece nas duas seções. Escolha cliente + campanha (ou Manutenção/Supervisão para tempo genérico) e clique em <b>▶ Iniciar</b>. O timer começa no Hub e adiciona seu nome na coluna "Executando" do card no Monday (se for uma campanha específica). Se já houver outro timer rodando, ele é parado automaticamente.<br>
-      <b style="color:var(--txt2)">Manutenção/Supervisão:</b> Use quando o tempo for de gestão geral do cliente, não vinculado a uma campanha específica. O lançamento entra no banco com action="Manutenção/Supervisão" e sem item Monday.<br>
-      <b style="color:var(--txt2)">Atualização das campanhas:</b> A lista é sincronizada com o Monday a cada 15 minutos (ou pelo botão "🔄 Atualizar campanhas").
+    <div class="sw-info">
+      <b>Como usar:</b> Toque no canal do cliente desejado. Abrirá um diálogo para escolher a campanha específica ou Manutenção/Supervisão geral. Quando ativo, o canal fica <b style="color:#ED1C24">vermelho pulsante</b> e o tempo é sincronizado com o card no Monday automaticamente. Toque em <b>⏹ STOP</b> para encerrar.
     </div>`;
 }
 
-function formatElapsed(sec){
-  const h=Math.floor(sec/3600);
-  const m=Math.floor((sec%3600)/60);
-  const s=sec%60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+// Mostra um modal compacto pra escolher a campanha do canal clicado
+function performanceShowCampaigns(clientId,boardType,channelIdx){
+  if(!isWithinWorkday()){toast(workdayWindowMsg(),'error');return}
+  const camps=S.performance_campaigns||[];
+  const campsForClient=camps.filter(c=>c.board_type===boardType&&((c.client_id===clientId)||(clientId==='_unmapped'&&c.client_id===null)));
+  const isUnmapped=clientId==='_unmapped';
+  const labelMonday=campsForClient[0]?.client_label_monday||'';
+  const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
+  const cliN=isUnmapped?labelMonday:clientName(clientId);
+  const boardLbl=boardType==='trafego'?'📡 Tráfego':'🎬 Produção';
+  const boardColor=boardType==='trafego'?'#FF6B35':'#5559DF';
+  
+  // Já tem timer rodando? aviso especial
+  const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+  
+  const m=document.createElement('div');
+  m.className='modal-ov';
+  m.onclick=(e)=>{if(e.target===m)m.remove()};
+  m.innerHTML=`<div class="modal" style="max-width:540px;background:#15161a;border:1px solid #2a2c30">
+    <div style="padding:16px 20px;border-bottom:1px solid #2a2c30;display:flex;align-items:center;gap:12px">
+      <div style="background:${boardColor};width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px">${String(channelIdx+1).padStart(2,'0')}</div>
+      <div style="flex:1">
+        <div style="font-size:10px;color:${boardColor};letter-spacing:2px;font-weight:800;text-transform:uppercase">${boardLbl}</div>
+        <div style="font-size:18px;font-weight:800;color:#fff;margin-top:2px">${escapeHtml(cliN)}</div>
+      </div>
+      <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c30;color:#aaa;border:none;width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700">✕</button>
+    </div>
+    
+    ${existing?`<div style="margin:14px 20px 0;padding:10px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:7px;color:#F59E0B;font-size:11px">
+      ⚠ Timer já está rodando. Iniciar outro vai parar o atual automaticamente.
+    </div>`:''}
+    
+    <div style="padding:16px 20px">
+      <div style="font-size:10px;color:#666;letter-spacing:2px;font-weight:700;margin-bottom:10px">ESCOLHA O QUE EXECUTAR</div>
+      
+      <!-- Manutenção/Supervisão sempre disponível -->
+      <button onclick="performanceStartDirect('__general__','${clientId}','${boardType}','${escapeHtml(labelMonday)}')" 
+        style="display:block;width:100%;background:linear-gradient(180deg,#2a2c34,#1c1e24);border:1px solid #3a3d45;color:#fff;padding:12px 14px;border-radius:8px;cursor:pointer;text-align:left;font-family:inherit;margin-bottom:8px;transition:all .12s"
+        onmouseover="this.style.background='linear-gradient(180deg,#34373f,#22242a)';this.style.borderColor='#4a4d55'"
+        onmouseout="this.style.background='linear-gradient(180deg,#2a2c34,#1c1e24)';this.style.borderColor='#3a3d45'">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:20px">⚙️</span>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:13px">Manutenção / Supervisão</div>
+            <div style="font-size:10px;color:#888;margin-top:2px">Tempo geral do cliente · sem campanha específica</div>
+          </div>
+          <span style="color:#666;font-size:18px">▶</span>
+        </div>
+      </button>
+      
+      ${campsForClient.length>0?`
+        <div style="font-size:10px;color:#666;letter-spacing:2px;font-weight:700;margin:14px 0 8px">CAMPANHAS ATIVAS (${campsForClient.length})</div>
+        ${campsForClient.sort((a,b)=>(a.item_name||'').localeCompare(b.item_name||'')).map(c=>`
+          <button onclick="performanceStartDirect('${c.monday_item_id}','${clientId}','${boardType}','${escapeHtml(labelMonday)}')"
+            style="display:block;width:100%;background:linear-gradient(180deg,#2a2c34,#1c1e24);border:1px solid #3a3d45;color:#fff;padding:11px 14px;border-radius:8px;cursor:pointer;text-align:left;font-family:inherit;margin-bottom:6px;transition:all .12s"
+            onmouseover="this.style.background='linear-gradient(180deg,${boardColor}22,#1c1e24)';this.style.borderColor='${boardColor}'"
+            onmouseout="this.style.background='linear-gradient(180deg,#2a2c34,#1c1e24)';this.style.borderColor='#3a3d45'">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:12px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${escapeHtml(c.item_name||'(sem nome)')}</div>
+                ${c.status_label?`<div style="font-size:9px;color:#888;margin-top:3px;letter-spacing:.5px;text-transform:uppercase;font-weight:600">${escapeHtml(c.status_label)}</div>`:''}
+              </div>
+              <span style="color:${boardColor};font-size:16px;font-weight:700">▶</span>
+            </div>
+          </button>
+        `).join('')}
+      `:`<div style="font-size:11px;color:#666;padding:14px 0;text-align:center;font-style:italic">Nenhuma campanha cadastrada para este cliente.<br>Use <b style="color:#ccc">Manutenção/Supervisão</b> acima.</div>`}
+    </div>
+  </div>`;
+  document.body.appendChild(m);
 }
 
-// ── Ações do Painel Performance ──────────────────
-async function performanceStart(selectId,clientId,boardType,labelMonday){
+// Versão direta da performanceStart — recebe itemId diretamente (vinda do modal)
+async function performanceStartDirect(itemId,clientId,boardType,labelMonday){
   if(!isWithinWorkday()){toast(workdayWindowMsg(),'error');return}
-  const sel=$(selectId);if(!sel)return;
-  const itemId=sel.value;
   if(!itemId){toast('Selecione uma campanha (ou Manutenção/Supervisão)','error');return}
+  
+  // Fecha modal aberto
+  document.querySelectorAll('.modal-ov').forEach(el=>el.remove());
   
   // Para timer existente, se houver
   const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
@@ -2889,9 +3228,12 @@ async function performanceStart(selectId,clientId,boardType,labelMonday){
   }
   
   if(clientId==='_unmapped'&&itemId!=='__general__'){
-    toast('Cliente desta campanha não está mapeado no Hub. Configure tt_client_label_mapping.','error');
+    toast('Cliente desta campanha não está mapeado. Configure tt_client_label_mapping.','error');
     return;
   }
+  
+  // Guarda board_type pra exibir corretamente no caso de supervisão geral
+  window._psLastBoardType=boardType;
   
   try{
     const now=new Date().toISOString();
@@ -2911,17 +3253,25 @@ async function performanceStart(selectId,clientId,boardType,labelMonday){
     activeEntryId=res[0].id;timerStart=new Date();running=true;timerSec=0;
     lastActivityLocal=Date.now();
     
-    // Sync com Monday (adiciona nome dela na coluna "Executando")
+    // Sync com Monday (adiciona nome na coluna "Executando")
     if(monday_item_id&&monday_board_id){
       await hubTimerAction('start',monday_board_id,monday_item_id);
     }
     
-    toast(`Timer iniciado · ${item_name||action}`,'success');
+    toast(`▶ Timer iniciado · ${item_name||action}`,'success');
     startActivityTracking();
     await loadEntries();
     buildNav();renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
+
+function formatElapsed(sec){
+  const h=Math.floor(sec/3600);
+  const m=Math.floor((sec%3600)/60);
+  const s=sec%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
 
 async function performanceStop(){
   const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
