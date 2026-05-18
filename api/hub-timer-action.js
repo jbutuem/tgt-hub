@@ -1,5 +1,6 @@
 /* ============================================================
    /api/hub-timer-action.js — Vercel Serverless Function
+   v3 (2026-05-18) — adiciona boards de Tráfego e Produção do Painel Performance
    
    Endpoint chamado pelo HUB quando o usuário inicia/para timer
    pela interface web. Sincroniza a coluna People "Executando"
@@ -11,15 +12,12 @@
      monday_board_id: string,
      monday_item_id: string
    }
-   
-   start → adiciona o user na coluna People do card
-   stop  → remove o user da coluna People do card (mantém os outros)
    ============================================================ */
 
 const MONDAY_API = 'https://api.monday.com/v2';
-const MONDAY_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzODU1NzY3OCwiYWFpIjoxMSwidWlkIjo0MzE2OTUwOSwiaWFkIjoiMjAyNi0wMy0yN1QwOTo1Mzo0Ny4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY4NjczMjAsInJnbiI6InVzZTEifQ.Rcm5SgNkiGizjRY_z1ECf7jCEGC2j_UGqtX2h_NkTAw';
+const MONDAY_TOKEN = process.env.MONDAY_API_TOKEN;
 
-// Mapeamento board_id → exec_col (mesma estrutura do monday-timer.js)
+// Mapeamento board_id → exec_col
 const BOARDS = {
   '8067947432':  { exec_col: 'multiple_person_mm31syka' }, // NOU
   '18401417952': { exec_col: 'multiple_person_mm31gyg0' }, // NONO
@@ -43,8 +41,9 @@ const BOARDS = {
   '9356397361':  { exec_col: 'multiple_person_mm31yx0p' }, // UV-LINE
   '18395931952': { exec_col: 'multiple_person_mm312gh7' }, // GAROA PACKAGING
   '18411508578': { exec_col: 'multiple_person_mm31hm2w' }, // ADM TGT
+  // ── PAINEL PERFORMANCE — novos boards (v3) ──
   '18412983620': { exec_col: 'multiple_person_mm3axhyp' }, // TRÁFEGO & PERFORMANCE
-  '18405089667': { exec_col: 'multiple_person_mm3asaag' }, // TGT BOUTIQUE
+  '5809098456':  { exec_col: 'multiple_person_mm3fbw5f' }, // PRODUÇÃO TGT STUDIO
 };
 
 const MONDAY_HEADERS = {
@@ -62,7 +61,6 @@ async function mondayQuery(query) {
   return r.json();
 }
 
-// Lê o valor atual da coluna People de um card
 async function readPeopleColumn(itemId, columnId) {
   const q = `query{ items(ids:[${itemId}]){ column_values(ids:["${columnId}"]){ value } } }`;
   const r = await mondayQuery(q);
@@ -76,7 +74,6 @@ async function readPeopleColumn(itemId, columnId) {
   }
 }
 
-// Escreve o valor da coluna People (substitui completamente)
 async function writePeopleColumn(boardId, itemId, columnId, persons) {
   const newVal = JSON.stringify({ personsAndTeams: persons });
   const escapedVal = newVal.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -87,7 +84,7 @@ async function writePeopleColumn(boardId, itemId, columnId, persons) {
 export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
-      return res.status(200).json({ ok: true, message: 'Hub timer action endpoint ativo' });
+      return res.status(200).json({ ok: true, message: 'Hub timer action endpoint ativo v3' });
     }
     if (req.method !== 'POST') {
       res.setHeader('Allow', 'POST');
@@ -106,7 +103,7 @@ export default async function handler(req, res) {
 
     const boardCfg = BOARDS[String(monday_board_id)];
     if (!boardCfg) {
-      return res.status(200).json({ ok: false, error: 'Board não mapeado' });
+      return res.status(200).json({ ok: false, error: 'Board não mapeado: ' + monday_board_id });
     }
 
     const userIdStr = String(monday_user_id);
@@ -116,14 +113,12 @@ export default async function handler(req, res) {
     let changed = false;
 
     if (action === 'start') {
-      // Adiciona se ainda não estiver
       if (persons.find(p => String(p.id) === userIdStr)) {
         return res.status(200).json({ ok: true, action, skipped: true, reason: 'já está' });
       }
       newPersons = [...persons, { id: parseInt(userIdStr, 10), kind: 'person' }];
       changed = true;
     } else {
-      // stop: remove
       newPersons = persons.filter(p => String(p.id) !== userIdStr);
       if (newPersons.length === persons.length) {
         return res.status(200).json({ ok: true, action, skipped: true, reason: 'não estava' });
