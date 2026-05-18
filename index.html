@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.49.1';
+const HUB_VERSION='0.50.0';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -1168,6 +1168,14 @@ async function loadData(){
       sbGet('categories','order=name')
     ]);
     S.members=members;S.clients=clients;S.categories=cats;
+    // Re-sincroniza S.user com os dados mais frescos da tabela (pega novas flags como performance_panel_enabled)
+    if(S.user&&S.user.id){
+      const freshUser=members.find(m=>m.id===S.user.id);
+      if(freshUser){
+        S.user={...S.user,...freshUser};
+        localStorage.setItem('tgt_hub_user',JSON.stringify(S.user));
+      }
+    }
     // Load entries for date range
     await loadEntries();
     // Equipment
@@ -1196,6 +1204,10 @@ async function loadData(){
     try{S.client_phase_rules=await sbGet('tt_client_phase_rules','order=sort_order')}catch(e){S.client_phase_rules=[]}
     try{S.client_monday_snapshot=await sbGet('tt_client_monday_snapshot','order=sort_order')}catch(e){S.client_monday_snapshot=[]}
     try{S.monday_hot_items=await sbGetAll('tt_monday_hot_items','order=hours_invested.desc')}catch(e){S.monday_hot_items=[]}
+    // Painel Performance — só carrega se o usuário tem o toggle ativo
+    if(S.user.performance_panel_enabled){
+      try{S.performance_campaigns=await sbGetAll('tt_performance_campaigns','is_active=eq.true&order=board_type,item_name')}catch(e){S.performance_campaigns=[]}
+    }else{S.performance_campaigns=[]}
   }catch(e){console.error('loadData:',e);toast('Erro ao carregar dados','error')}
 }
 
@@ -1367,6 +1379,12 @@ function buildNav(){
   h+=`<div class="sb-section">Tempo</div>`;
   h+=`<div class="sb-item" data-p="timer" onclick="nav('timer')">${ICONS.timer} Timer</div>`;
   h+=`<div class="sb-item" data-p="entries" onclick="nav('entries')">${ICONS.entries} Lançamentos</div>`;
+  // Painel Performance — só pra quem tem performance_panel_enabled
+  if(S.user.performance_panel_enabled){
+    const runP=S.entries.find(e=>e.is_running&&e.member_id===S.user.id&&e.source==='performance_panel');
+    const badgeP=runP?`<span class="sb-badge" style="background:var(--prod)">▶</span>`:'';
+    h+=`<div class="sb-item" data-p="performance" onclick="nav('performance')">🚀 Painel Performance ${badgeP}</div>`;
+  }
   // Radar Operacional — admin/account: visão de projetos quentes + prazos críticos
   if(isA()||isAcc()){
     // Badge: total de atrasados + próximos 3 dias
@@ -1465,7 +1483,7 @@ function buildNav(){
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-audit':'Auditoria','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Meus Extras','extras-hist':'Meus Extras','extras-pagar':'Extras a Pagar',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM','my-score':'Meu Score',planning:'Planejamento Mensal',members:'Membros',clients:'Clientes',profile:'Meu Perfil',announcements:'Comunicados'};
+const TITLES={timer:'Timer',entries:'Lançamentos',performance:'Painel Performance','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-audit':'Auditoria','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Meus Extras','extras-hist':'Meus Extras','extras-pagar':'Extras a Pagar',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM','my-score':'Meu Score',planning:'Planejamento Mensal',members:'Membros',clients:'Clientes',profile:'Meu Perfil',announcements:'Comunicados'};
 
 function nav(page){
   curPage=page;
@@ -1485,7 +1503,7 @@ async function renderPage(){
   el.innerHTML='<div class="loading"><div class="spin"></div> Carregando...</div>';
   try{
     const pages={
-      timer:pgTimer,entries:pgEntries,radar:pgRadar,
+      timer:pgTimer,entries:pgEntries,radar:pgRadar,performance:pgPerformance,
       'd-my':pgDashMy,'d-adm':pgDashAdm,'d-client':pgDashClient,'d-team':pgDashTeam,'d-person':pgDashPerson,'d-finance':pgDashFinance,'d-audit':pgAudit,
       'd-client-view':pgClientView,'p-my-prods':pgClientProds,
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
@@ -2609,6 +2627,278 @@ function radarOpenBucket(bucketKey){
     el.style.boxShadow=origBoxShadow||'';
     el.style.transition='';
   },1600);
+}
+
+// ═══════════════════════════════════════════════
+// PAINEL PERFORMANCE (v0.50)
+// Timer dedicado para quem trabalha em múltiplos boards (Tráfego + Produção)
+// Permite escolher cliente + campanha e iniciar timer sincronizado com Monday
+// ═══════════════════════════════════════════════
+async function pgPerformance(el){
+  if(!S.user.performance_panel_enabled){
+    el.innerHTML='<div class="empty">Painel não habilitado para seu usuário. Solicite ao admin.</div>';
+    return;
+  }
+  const camps=S.performance_campaigns||[];
+  if(camps.length===0){
+    el.innerHTML=`<div class="empty" style="padding:60px 20px;text-align:center">
+      <div style="font-size:48px;margin-bottom:12px">🚀</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:6px">Nenhuma campanha ativa carregada ainda</div>
+      <div style="font-size:12px;color:var(--txt3);margin-bottom:18px">Aguarde a sincronização inicial ou clique abaixo para forçar.</div>
+      <button onclick="performanceRefreshCampaigns(this)" class="btn">🔄 Sincronizar campanhas do Monday</button>
+    </div>`;
+    return;
+  }
+  
+  // Timer ativo do usuário (de qualquer source)
+  const running=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+  const isPerfRunning=running&&running.source==='performance_panel';
+  
+  // Agrupa campanhas por board_type
+  const byType={trafego:[],producao:[]};
+  camps.forEach(c=>{if(byType[c.board_type])byType[c.board_type].push(c)});
+  
+  // Agrupa por cliente dentro de cada board
+  const groupByClient=(arr)=>{
+    const out={};
+    arr.forEach(c=>{
+      const cid=c.client_id||'_unmapped';
+      if(!out[cid])out[cid]=[];
+      out[cid].push(c);
+    });
+    return out;
+  };
+  
+  const trafegoByClient=groupByClient(byType.trafego);
+  const producaoByClient=groupByClient(byType.producao);
+  
+  const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
+  
+  // Render bloco de cliente com dropdown de campanhas + botão
+  const renderClientRow=(clientId,campsList,boardType,labelMonday)=>{
+    const cliN=clientId==='_unmapped'?`<span style="color:var(--pack);font-style:italic">${escapeHtml(labelMonday||'(sem cliente mapeado)')}</span>`:escapeHtml(clientName(clientId));
+    const sortedCamps=[...campsList].sort((a,b)=>(a.item_name||'').localeCompare(b.item_name||''));
+    // Está rodando alguma campanha deste cliente?
+    const activeHere=isPerfRunning&&running.client_id===clientId&&sortedCamps.find(c=>String(c.monday_item_id)===String(running.monday_item_id));
+    const selectId=`ps-${boardType}-${clientId||'unmapped'}`;
+    return `<div class="ps-row ${activeHere?'ps-active':''}" data-client="${clientId}">
+      <div class="ps-cli">${cliN}</div>
+      <select id="${selectId}" class="ps-sel" ${activeHere?'disabled':''}>
+        <option value="">— Selecione campanha —</option>
+        <option value="__general__"${activeHere&&running.monday_item_id===null?' selected':''}>⚙️ Manutenção/Supervisão (geral)</option>
+        ${sortedCamps.map(c=>`<option value="${c.monday_item_id}"${activeHere&&String(c.monday_item_id)===String(running.monday_item_id)?' selected':''}>${escapeHtml(c.item_name||'')}${c.status_label?` · ${escapeHtml(c.status_label)}`:''}</option>`).join('')}
+      </select>
+      ${activeHere?
+        `<button onclick="performanceStop()" class="btn btn-sm" style="background:var(--red);color:#fff;min-width:90px">⏹ Parar</button>`:
+        `<button onclick="performanceStart('${selectId}','${clientId}','${boardType}','${escapeHtml(labelMonday||'')}')" class="btn btn-sec btn-sm" style="min-width:90px">▶ Iniciar</button>`
+      }
+    </div>`;
+  };
+  
+  // Soma horas de hoje da Amanda no painel
+  const todayBR=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
+  const myToday=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running&&e.source==='performance_panel'&&(e.started_at||'').substring(0,10)===todayBR);
+  const totalToday=myToday.reduce((s,e)=>s+(e.hours||0),0);
+  
+  // Timer ao vivo no topo
+  let activeBlock='';
+  if(isPerfRunning){
+    const startMs=new Date(running.started_at).getTime();
+    const ageSec=Math.floor((Date.now()-startMs)/1000);
+    const camp=camps.find(c=>String(c.monday_item_id)===String(running.monday_item_id));
+    const cliN=running.client_id?clientName(running.client_id):'(geral)';
+    activeBlock=`<div style="background:linear-gradient(135deg,rgba(0,200,117,.1),rgba(0,200,117,.02));border:1px solid rgba(0,200,117,.4);border-left:4px solid var(--prod);border-radius:10px;padding:16px 18px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="font-size:36px">⏱</div>
+        <div style="flex:1">
+          <div style="font-size:10px;letter-spacing:1.5px;color:var(--prod);font-weight:800;margin-bottom:3px">▶ TIMER ATIVO</div>
+          <div style="font-size:15px;font-weight:700">${escapeHtml(cliN)} · ${escapeHtml(camp?camp.item_name:(running.description||'Manutenção/Supervisão'))}</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:3px">iniciado ${new Date(running.started_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} · rodando há <b id="ps-elapsed" style="font-family:var(--mono)">${formatElapsed(ageSec)}</b></div>
+        </div>
+        <button onclick="performanceStop()" class="btn" style="background:var(--red);color:#fff">⏹ Parar</button>
+      </div>
+    </div>`;
+    // Atualiza o "rodando há X" a cada segundo
+    if(window._psTickInterval)clearInterval(window._psTickInterval);
+    window._psTickInterval=setInterval(()=>{
+      const lb=$('ps-elapsed');if(!lb)return clearInterval(window._psTickInterval);
+      const cur=Math.floor((Date.now()-startMs)/1000);
+      lb.textContent=formatElapsed(cur);
+    },1000);
+  }else{
+    if(window._psTickInterval){clearInterval(window._psTickInterval);window._psTickInterval=null}
+  }
+  
+  el.innerHTML=`
+    <div style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#5559DF,#ED1C24);display:flex;align-items:center;justify-content:center;font-size:22px">🚀</div>
+        <div>
+          <h2 style="margin:0;font-size:22px;line-height:1.1">Painel Performance</h2>
+          <div style="font-size:12px;color:var(--txt3);margin-top:2px">Selecione cliente + campanha · timer único · sincroniza com Monday</div>
+        </div>
+      </div>
+      <div style="flex:1"></div>
+      <div style="text-align:right;font-family:var(--mono);font-size:11px">
+        <div style="font-size:18px;font-weight:800;color:var(--prod)">${fH(totalToday)}</div>
+        <div style="color:var(--txt3)">hoje · ${myToday.length} lançamento${myToday.length!==1?'s':''}</div>
+      </div>
+      <button onclick="performanceRefreshCampaigns(this)" class="btn btn-sec btn-sm" style="font-size:11px">🔄 Atualizar campanhas</button>
+    </div>
+    
+    ${activeBlock}
+    
+    <style>
+      .ps-row{display:grid;grid-template-columns:200px 1fr 110px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);transition:background .15s}
+      .ps-row:hover{background:rgba(69,94,110,.04)}
+      .ps-row.ps-active{background:rgba(0,200,117,.06);border-left:3px solid var(--prod)}
+      .ps-cli{font-weight:600;font-size:13px;color:var(--txt1)}
+      .ps-sel{background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+      .ps-sel:disabled{opacity:.6;cursor:not-allowed}
+      @media (max-width:768px){.ps-row{grid-template-columns:1fr;gap:6px;padding:10px 12px}}
+    </style>
+    
+    <!-- TRÁFEGO -->
+    ${byType.trafego.length>0?`
+    <div style="margin-bottom:18px">
+      <h3 style="font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;color:var(--t1)">
+        <span style="background:rgba(69,94,110,.15);padding:3px 10px;border-radius:12px;font-size:10px;letter-spacing:1.5px;color:var(--t1);font-weight:700">🎯 TRÁFEGO &amp; PERFORMANCE</span>
+        <span style="font-weight:400;color:var(--txt3);font-size:11px">${byType.trafego.length} campanha${byType.trafego.length!==1?'s':''} ativa${byType.trafego.length!==1?'s':''}</span>
+      </h3>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        ${Object.entries(trafegoByClient).sort((a,b)=>{
+          const an=a[0]==='_unmapped'?'zzz':clientName(a[0]);
+          const bn=b[0]==='_unmapped'?'zzz':clientName(b[0]);
+          return an.localeCompare(bn);
+        }).map(([cid,arr])=>renderClientRow(cid,arr,'trafego',arr[0]?.client_label_monday)).join('')}
+      </div>
+    </div>`:''}
+    
+    <!-- PRODUÇÃO -->
+    ${byType.producao.length>0?`
+    <div style="margin-bottom:18px">
+      <h3 style="font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;color:#5559DF">
+        <span style="background:rgba(85,89,223,.15);padding:3px 10px;border-radius:12px;font-size:10px;letter-spacing:1.5px;color:#5559DF;font-weight:700">🎬 PRODUÇÃO</span>
+        <span style="font-weight:400;color:var(--txt3);font-size:11px">${byType.producao.length} item${byType.producao.length!==1?'s':''} ativo${byType.producao.length!==1?'s':''}</span>
+      </h3>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        ${Object.entries(producaoByClient).sort((a,b)=>{
+          const an=a[0]==='_unmapped'?'zzz':clientName(a[0]);
+          const bn=b[0]==='_unmapped'?'zzz':clientName(b[0]);
+          return an.localeCompare(bn);
+        }).map(([cid,arr])=>renderClientRow(cid,arr,'producao',arr[0]?.client_label_monday)).join('')}
+      </div>
+    </div>`:''}
+    
+    <!-- INFO RODAPÉ -->
+    <div style="margin-top:18px;padding:12px 14px;background:rgba(69,94,110,.05);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--txt3);line-height:1.5">
+      <b style="color:var(--txt2)">Como funciona:</b> Escolha cliente + campanha e clique em <b>▶ Iniciar</b>. O timer começa no Hub e adiciona seu nome na coluna "Executando" do card no Monday. Se já houver outro timer rodando, ele é parado automaticamente.<br>
+      <b style="color:var(--txt2)">Manutenção/Supervisão:</b> Use quando o tempo for de gestão geral do cliente, não vinculado a uma campanha específica. O lançamento entra no banco com action="Manutenção/Supervisão" e sem item Monday.<br>
+      <b style="color:var(--txt2)">Atualização das campanhas:</b> A lista é sincronizada com o Monday a cada 5 minutos. Clique em "🔄 Atualizar campanhas" para forçar.
+    </div>`;
+}
+
+function formatElapsed(sec){
+  const h=Math.floor(sec/3600);
+  const m=Math.floor((sec%3600)/60);
+  const s=sec%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// ── Ações do Painel Performance ──────────────────
+async function performanceStart(selectId,clientId,boardType,labelMonday){
+  if(!isWithinWorkday()){toast(workdayWindowMsg(),'error');return}
+  const sel=$(selectId);if(!sel)return;
+  const itemId=sel.value;
+  if(!itemId){toast('Selecione uma campanha (ou Manutenção/Supervisão)','error');return}
+  
+  // Para timer existente, se houver
+  const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+  if(existing){
+    activeEntryId=existing.id;
+    await stopTimer(true);
+  }
+  
+  let monday_item_id=null;
+  let monday_board_id=null;
+  let item_name=null;
+  let action='Manutenção/Supervisão';
+  let desc='';
+  
+  if(itemId==='__general__'){
+    action='Manutenção/Supervisão';
+    desc=`Manutenção/Supervisão · ${clientId==='_unmapped'?labelMonday:S.clients.find(c=>c.id===clientId)?.name||'cliente'}`;
+    if(clientId==='_unmapped'){toast('Cliente não está mapeado no Hub — só registra como geral','info')}
+  }else{
+    const camp=S.performance_campaigns.find(c=>String(c.monday_item_id)===String(itemId));
+    if(!camp){toast('Campanha não encontrada','error');return}
+    monday_item_id=String(camp.monday_item_id);
+    monday_board_id=String(camp.monday_board_id);
+    item_name=camp.item_name;
+    action=boardType==='trafego'?'Campanha/Tráfego':'Produção AV';
+    desc=camp.item_name;
+  }
+  
+  if(clientId==='_unmapped'&&itemId!=='__general__'){
+    toast('Cliente desta campanha não está mapeado no Hub. Configure tt_client_label_mapping.','error');
+    return;
+  }
+  
+  try{
+    const now=new Date().toISOString();
+    const data={
+      member_id:S.user.id,
+      client_id:clientId==='_unmapped'?null:clientId,
+      action:action,
+      description:desc,
+      started_at:now,
+      is_running:true,
+      last_activity_at:now,
+      source:'performance_panel',
+      monday_item_id:monday_item_id,
+      monday_board_id:monday_board_id
+    };
+    const res=await sbPost('tt_time_entries',data);
+    activeEntryId=res[0].id;timerStart=new Date();running=true;timerSec=0;
+    lastActivityLocal=Date.now();
+    
+    // Sync com Monday (adiciona nome dela na coluna "Executando")
+    if(monday_item_id&&monday_board_id){
+      await hubTimerAction('start',monday_board_id,monday_item_id);
+    }
+    
+    toast(`Timer iniciado · ${item_name||action}`,'success');
+    startActivityTracking();
+    await loadEntries();
+    buildNav();renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function performanceStop(){
+  const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+  if(!existing){toast('Nenhum timer rodando','info');return}
+  activeEntryId=existing.id;
+  await stopTimer(false);
+  // stopTimer já faz buildNav+nav('timer') — força voltar pra performance
+  if(curPage!=='performance')nav('performance');
+}
+
+async function performanceRefreshCampaigns(btn){
+  const orig=btn.innerHTML;
+  btn.innerHTML='⏳ Sincronizando…';
+  btn.disabled=true;
+  try{
+    const r=await fetch('/api/performance-campaigns-refresh',{method:'GET'});
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    const j=await r.json();
+    toast(`Campanhas atualizadas · ${j.upserted||0} ativas`,'success');
+    S.performance_campaigns=await sbGetAll('tt_performance_campaigns','is_active=eq.true&order=board_type,item_name');
+    renderPage();
+  }catch(e){
+    toast('Erro: '+e.message,'error');
+    btn.innerHTML=orig;
+    btn.disabled=false;
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -6717,6 +7007,15 @@ function showMemberModal(id){
         </div>
       </label>
     </div>
+    <div class="f-field" style="margin-top:8px;padding:12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="mb-perf" ${m?.performance_panel_enabled===true?'checked':''} style="width:16px;height:16px;cursor:pointer;accent-color:#5559DF">
+        <div>
+          <div style="font-weight:600">🚀 Painel Performance</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px">Acesso ao painel de timer multi-cliente para boards de Tráfego e Produção (Amanda, accounts que revisam campanhas, etc.)</div>
+        </div>
+      </label>
+    </div>
     <div class="f-field" style="margin-top:8px;padding:12px;background:${isMemberActive(m)?'var(--bg2)':'rgba(237,28,36,.08)'};border-radius:var(--radius);border:1px solid ${isMemberActive(m)?'var(--border)':'rgba(237,28,36,.3)'}">
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
         <input type="checkbox" id="mb-active" ${!m||isMemberActive(m)?'checked':''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--prod)">
@@ -6807,6 +7106,7 @@ async function saveMember(){
     login_password:$('mb-pass')?.value||'TGTtime2026',
     client_id:role==='client'?($('mb-client-id')?.value||null):null,
     qc_reviewer:$('mb-qc')?.checked===true,
+    performance_panel_enabled:$('mb-perf')?.checked===true,
     is_active:$('mb-active')?.checked!==false
   };
   
