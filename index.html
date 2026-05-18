@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.49.0';
+const HUB_VERSION='0.49.1';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -2306,6 +2306,38 @@ async function pgRadar(el){
     finalizado:finalizado.sort((a,b)=>(b.last_activity_at||'').localeCompare(a.last_activity_at||''))
   };
   
+  // ── INSIGHTS para enriquecer cards e painel ─────────
+  const todayObj=new Date();todayObj.setHours(0,0,0,0);
+  const daysAgo=(d)=>{if(!d)return 0;const dt=new Date(d+'T00:00:00');return Math.round((todayObj-dt)/86400000)};
+  const daysUntil=(d)=>{if(!d)return null;const dt=new Date(d+'T00:00:00');return Math.round((dt-todayObj)/86400000)};
+  
+  // Mais atrasado
+  const maxAtraso=critico.length>0?Math.max(...critico.map(it=>daysAgo(it.deadline_date))):0;
+  const itemMaisAtrasado=critico.length>0?critico.reduce((a,b)=>daysAgo(a.deadline_date)>daysAgo(b.deadline_date)?a:b):null;
+  
+  // Cliente com mais atrasos
+  const atrasosPorCliente={};
+  critico.forEach(it=>{const k=it.client_id;atrasosPorCliente[k]=(atrasosPorCliente[k]||0)+1});
+  const clienteCritico=Object.entries(atrasosPorCliente).sort((a,b)=>b[1]-a[1])[0];
+  
+  // Próxima entrega (mais próxima)
+  const proxEntrega=[...urgente,...proximo].sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||''))[0];
+  const proxDias=proxEntrega?daysUntil(proxEntrega.deadline_date):null;
+  
+  // Pessoa mais sobrecarregada (pelos pendentes c/ prazo)
+  const pressaoPessoa={};
+  [...critico,...urgente,...proximo].forEach(it=>{
+    (it.responsible_names||[]).forEach(n=>{pressaoPessoa[n]=(pressaoPessoa[n]||0)+1});
+  });
+  const pessoaTop=Object.entries(pressaoPessoa).sort((a,b)=>b[1]-a[1])[0];
+  
+  // Maior consumidor "silencioso" (pesados sem prazo)
+  const maiorPesado=pesado.length>0?pesado[0]:null;
+  
+  // Velocidade: entregas dos últimos 14 dias vs 14d anteriores
+  const since14=new Date(Date.now()-14*86400000).toISOString().substring(0,10);
+  const entregas14d=finalizado.filter(it=>(it.last_activity_at||'').substring(0,10)>=since14).length;
+  
   // ── Cabeçalho ───────────────────────────────────────
   // Conta filtros ativos
   const activeFilters=[RF.client,RF.team,RF.person].filter(v=>v!=='all').length;
@@ -2352,35 +2384,99 @@ async function pgRadar(el){
       ${activeFilters>0?`<span style="font-size:10px;color:var(--pack);font-weight:600">${visibleItems.length} de ${baseItems.length} itens</span>`:''}
     </div>
     
-    <!-- 4 BUCKETS DE CRITICIDADE (clicáveis) -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
-      <div onclick="radarOpenBucket('critico')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(237,28,36,.08),transparent);border:1px solid rgba(237,28,36,.3);border-left:4px solid var(--red);border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
-        <div style="font-size:9px;color:var(--red);letter-spacing:1.5px;font-weight:800">🔴 ATRASADOS</div>
+    <!-- 4 BUCKETS DE CRITICIDADE (clicáveis com scroll suave) -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+      <div onclick="radarOpenBucket('critico')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(237,28,36,.08),transparent);border:1px solid rgba(237,28,36,.3);border-left:4px solid var(--red);border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s;position:relative">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="font-size:9px;color:var(--red);letter-spacing:1.5px;font-weight:800">🔴 ATRASADOS</div>
+          ${critico.length>0?`<div style="font-size:9px;color:var(--red);font-weight:700">↓ ROLAR</div>`:''}
+        </div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:var(--red)">${critico.length}</div>
-        <div style="font-size:11px;color:var(--txt2);margin-top:5px">${critico.length===0?'tudo no prazo':`${fH(sumH(critico))} já investidas`}</div>
-        ${critico.length>0?`<div style="font-size:9px;color:var(--red);margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
+        <div style="font-size:11px;color:var(--txt2);margin-top:5px">${critico.length===0?'tudo no prazo ✓':`${fH(sumH(critico))} já investidas`}</div>
+        ${critico.length>0?`
+          <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(237,28,36,.25);font-size:10px;color:var(--txt2);line-height:1.4">
+            ${itemMaisAtrasado?`<div style="display:flex;align-items:center;gap:4px"><span style="color:var(--red);font-weight:700">⚠</span> Maior: <b style="color:var(--red);font-family:var(--mono)">-${maxAtraso}d</b></div>`:''}
+            ${clienteCritico?`<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(clientName(clienteCritico[0]))}">📌 <b>${escapeHtml(clientName(clienteCritico[0]))}</b> · ${clienteCritico[1]} item${clienteCritico[1]>1?'s':''}</div>`:''}
+          </div>`:''}
       </div>
+      
       <div onclick="radarOpenBucket('urgente')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(245,158,11,.08),transparent);border:1px solid rgba(245,158,11,.3);border-left:4px solid var(--pack);border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
-        <div style="font-size:9px;color:var(--pack);letter-spacing:1.5px;font-weight:800">🟠 URGENTE · 3 DIAS</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="font-size:9px;color:var(--pack);letter-spacing:1.5px;font-weight:800">🟠 URGENTE · 3 DIAS</div>
+          ${urgente.length>0?`<div style="font-size:9px;color:var(--pack);font-weight:700">↓ ROLAR</div>`:''}
+        </div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:var(--pack)">${urgente.length}</div>
         <div style="font-size:11px;color:var(--txt2);margin-top:5px">${urgente.length===0?'sem urgências':`${fH(sumH(urgente))} já investidas`}</div>
-        ${urgente.length>0?`<div style="font-size:9px;color:var(--pack);margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
+        ${urgente.length>0?`
+          <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(245,158,11,.25);font-size:10px;color:var(--txt2);line-height:1.4">
+            ${proxEntrega?`<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(proxEntrega.item_name||'')}">⏰ Próxima: <b style="color:var(--pack);font-family:var(--mono)">${proxDias===0?'HOJE':proxDias===1?'amanhã':proxDias+'d'}</b></div><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt3);font-size:9px;margin-top:2px">${escapeHtml((proxEntrega.item_name||'').substring(0,40))}</div>`:''}
+          </div>`:''}
       </div>
+      
       <div onclick="radarOpenBucket('proximo')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(253,171,61,.06),transparent);border:1px solid rgba(253,171,61,.3);border-left:4px solid #FDAB3D;border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
-        <div style="font-size:9px;color:#FDAB3D;letter-spacing:1.5px;font-weight:800">🟡 PRÓXIMOS · 7 DIAS</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="font-size:9px;color:#FDAB3D;letter-spacing:1.5px;font-weight:800">🟡 PRÓXIMOS · 7 DIAS</div>
+          ${proximo.length>0?`<div style="font-size:9px;color:#FDAB3D;font-weight:700">↓ ROLAR</div>`:''}
+        </div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:#FDAB3D">${proximo.length}</div>
         <div style="font-size:11px;color:var(--txt2);margin-top:5px">${proximo.length===0?'tranquilo':`${fH(sumH(proximo))} já investidas`}</div>
-        ${proximo.length>0?`<div style="font-size:9px;color:#FDAB3D;margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
+        ${proximo.length>0?`
+          <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(253,171,61,.25);font-size:10px;color:var(--txt2);line-height:1.4">
+            <div>📅 Volume da semana: <b style="font-family:var(--mono)">${proximo.length} entrega${proximo.length>1?'s':''}</b></div>
+            ${(()=>{const c=[...new Set(proximo.map(it=>it.client_id))].length;return `<div style="color:var(--txt3);font-size:9px;margin-top:2px">distribuídas em ${c} cliente${c>1?'s':''}</div>`})()}
+          </div>`:''}
       </div>
+      
       <div onclick="radarOpenBucket('pesado')" class="rdr-card" style="cursor:pointer;background:linear-gradient(135deg,rgba(85,89,223,.08),transparent);border:1px solid rgba(85,89,223,.3);border-left:4px solid #5559DF;border-radius:10px;padding:14px;transition:transform .15s,box-shadow .15s">
-        <div style="font-size:9px;color:#5559DF;letter-spacing:1.5px;font-weight:800">🔵 PESADOS · 4H+</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="font-size:9px;color:#5559DF;letter-spacing:1.5px;font-weight:800">🔵 PESADOS · 4H+</div>
+          ${pesado.length>0?`<div style="font-size:9px;color:#5559DF;font-weight:700">↓ ROLAR</div>`:''}
+        </div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:5px;color:#5559DF">${pesado.length}</div>
         <div style="font-size:11px;color:var(--txt2);margin-top:5px">${pesado.length===0?'sem concentração':`${fH(sumH(pesado))} totais`}</div>
-        ${pesado.length>0?`<div style="font-size:9px;color:#5559DF;margin-top:6px;font-weight:700;letter-spacing:0.5px">VER LISTA →</div>`:''}
+        ${pesado.length>0&&maiorPesado?`
+          <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(85,89,223,.25);font-size:10px;color:var(--txt2);line-height:1.4">
+            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏋 Top: <b style="color:#5559DF;font-family:var(--mono)">${fH(maiorPesado.hours_invested||0)}</b></div>
+            <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt3);font-size:9px;margin-top:2px" title="${escapeHtml(maiorPesado.item_name||'')}">${escapeHtml((maiorPesado.item_name||'').substring(0,40))}</div>
+          </div>`:''}
       </div>
     </div>
     
     <style>.rdr-card:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(0,0,0,.18)}</style>
+    
+    <!-- PAINEL DE INSIGHTS (overview rápido para account/admin) -->
+    ${(critico.length>0||pessoaTop||entregas14d>0)?`
+    <div style="background:linear-gradient(135deg,rgba(69,94,110,.06),rgba(69,94,110,.02));border:1px solid rgba(69,94,110,.2);border-radius:10px;padding:12px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="font-size:10px;letter-spacing:1.5px;color:var(--t1);font-weight:800">💡 INSIGHTS</div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;flex:1">
+          ${critico.length>0&&itemMaisAtrasado?`
+          <div style="font-size:11px">
+            <span style="color:var(--txt3)">Maior atraso:</span>
+            <b style="color:var(--red);font-family:var(--mono);margin-left:4px">${maxAtraso}d</b>
+            <span style="color:var(--txt2);margin-left:4px" title="${escapeHtml(itemMaisAtrasado.item_name||'')}">· ${escapeHtml((itemMaisAtrasado.item_name||'').substring(0,35))}${(itemMaisAtrasado.item_name||'').length>35?'…':''}</span>
+          </div>`:''}
+          ${proxEntrega?`
+          <div style="font-size:11px">
+            <span style="color:var(--txt3)">Próxima entrega:</span>
+            <b style="color:var(--pack);font-family:var(--mono);margin-left:4px">${proxDias===0?'HOJE':proxDias===1?'AMANHÃ':'em '+proxDias+'d'}</b>
+            <span style="color:var(--txt2);margin-left:4px">· ${escapeHtml(clientName(proxEntrega.client_id))}</span>
+          </div>`:''}
+          ${pessoaTop?`
+          <div style="font-size:11px">
+            <span style="color:var(--txt3)">Mais pressão:</span>
+            <b style="color:var(--txt1);margin-left:4px">${escapeHtml(pessoaTop[0])}</b>
+            <span style="color:var(--txt2);margin-left:4px">· ${pessoaTop[1]} item${pessoaTop[1]>1?'s':''} c/ prazo</span>
+          </div>`:''}
+          ${entregas14d>0?`
+          <div style="font-size:11px">
+            <span style="color:var(--txt3)">Ritmo:</span>
+            <b style="color:var(--prod);font-family:var(--mono);margin-left:4px">${entregas14d}</b>
+            <span style="color:var(--txt2);margin-left:4px">entregas em 14 dias</span>
+          </div>`:''}
+        </div>
+      </div>
+    </div>`:''}
     
     <!-- TOP 8 CONSUMIDORES DE HORAS (visualização horizontal) -->
     ${topHours.length>0?`
@@ -2414,7 +2510,7 @@ async function pgRadar(el){
     
     <!-- TABELA CRÍTICOS -->
     ${critico.length>0?`
-    <div class="tbl" style="margin-bottom:14px;border-left:3px solid var(--red)">
+    <div id="rdr-tbl-critico" class="tbl rdr-tbl" style="margin-bottom:14px;border-left:3px solid var(--red);scroll-margin-top:80px">
       <div class="tbl-h"><h3 style="color:var(--red)">🔴 Atrasados — ${critico.length}</h3><span style="font-size:11px;color:var(--txt3)">prazo no Monday já passou e item não está finalizado</span></div>
       <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
       <tbody>${critico.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')).map(renderItem).join('')}</tbody></table></div>
@@ -2422,7 +2518,7 @@ async function pgRadar(el){
     
     <!-- TABELA URGENTES -->
     ${urgente.length>0?`
-    <div class="tbl" style="margin-bottom:14px;border-left:3px solid var(--pack)">
+    <div id="rdr-tbl-urgente" class="tbl rdr-tbl" style="margin-bottom:14px;border-left:3px solid var(--pack);scroll-margin-top:80px">
       <div class="tbl-h"><h3 style="color:var(--pack)">🟠 Urgentes — próximos 3 dias</h3><span style="font-size:11px;color:var(--txt3)">${urgente.length} item${urgente.length!==1?'s':''} com entrega muito próxima</span></div>
       <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
       <tbody>${urgente.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')).map(renderItem).join('')}</tbody></table></div>
@@ -2430,7 +2526,7 @@ async function pgRadar(el){
     
     <!-- TABELA PRÓXIMOS -->
     ${proximo.length>0?`
-    <div class="tbl" style="margin-bottom:14px;border-left:3px solid #FDAB3D">
+    <div id="rdr-tbl-proximo" class="tbl rdr-tbl" style="margin-bottom:14px;border-left:3px solid #FDAB3D;scroll-margin-top:80px">
       <div class="tbl-h"><h3 style="color:#FDAB3D">🟡 Próximos — 4 a 7 dias</h3><span style="font-size:11px;color:var(--txt3)">${proximo.length} item${proximo.length!==1?'s':''} no horizonte semanal</span></div>
       <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
       <tbody>${proximo.sort((a,b)=>(a.deadline_date||'').localeCompare(b.deadline_date||'')).map(renderItem).join('')}</tbody></table></div>
@@ -2438,10 +2534,10 @@ async function pgRadar(el){
     
     <!-- TABELA PESADOS sem prazo -->
     ${pesado.length>0?`
-    <div class="tbl" style="margin-bottom:14px;border-left:3px solid #5559DF">
+    <div id="rdr-tbl-pesado" class="tbl rdr-tbl" style="margin-bottom:14px;border-left:3px solid #5559DF;scroll-margin-top:80px">
       <div class="tbl-h"><h3 style="color:#5559DF">🔵 Pesados sem prazo crítico — 4h+ investidas</h3><span style="font-size:11px;color:var(--txt3)">${pesado.length} item${pesado.length!==1?'s':''} consumindo equipe sem entrega marcada (ou prazo distante)</span></div>
       <div class="tbl-r"><table><thead><tr><th>Projeto / Item</th><th>Cliente</th><th>Status</th><th>Prazo</th><th class="rt">Horas</th><th class="rt">Lanç.</th><th>Responsável</th></tr></thead>
-      <tbody>${pesado.slice(0,25).map(renderItem).join('')}</tbody></table></div>
+      <tbody>${pesado.map(renderItem).join('')}</tbody></table></div>
     </div>`:''}
     
     <!-- FINALIZADOS RECENTES (collapse) -->
@@ -2493,87 +2589,26 @@ async function refreshRadar(btn){
 
 // Abre modal com lista completa dos itens do bucket clicado
 function radarOpenBucket(bucketKey){
-  const buckets=window._radarBuckets||{};
-  const items=buckets[bucketKey]||[];
-  const META={
-    critico:{title:'🔴 Atrasados',color:'var(--red)',sub:'prazo no Monday já passou e item não está finalizado'},
-    urgente:{title:'🟠 Urgentes — próximos 3 dias',color:'var(--pack)',sub:'itens com entrega muito próxima'},
-    proximo:{title:'🟡 Próximos — 4 a 7 dias',color:'#FDAB3D',sub:'itens no horizonte semanal'},
-    pesado:{title:'🔵 Pesados — 4h+ investidas',color:'#5559DF',sub:'itens consumindo equipe sem prazo crítico'},
-    finalizado:{title:'🟢 Finalizados recentes',color:'var(--prod)',sub:'itens já entregues nos últimos 60 dias'}
-  };
-  const meta=META[bucketKey]||{title:'Itens',color:'var(--txt1)',sub:''};
-  
-  const clientName=(id)=>{const c=(S.clients||[]).find(c=>c.id===id);return c?c.name:'—'};
-  const todayD=new Date().toISOString().substring(0,10);
-  
-  // Pílula de prazo (cópia da local de pgRadar)
-  const deadlinePill=(date,done)=>{
-    if(!date)return `<span style="color:var(--txt3);font-size:11px">sem prazo</span>`;
-    if(done)return `<span style="font-size:11px;color:var(--prod);font-family:var(--mono)">${fD(date)} ✓</span>`;
-    const d=new Date(date+'T00:00:00');
-    const today=new Date();today.setHours(0,0,0,0);
-    const diff=Math.round((d-today)/86400000);
-    let bg='var(--bg3)',color='var(--txt2)',label=fD(date);
-    if(diff<0){bg='rgba(237,28,36,.18)';color='var(--red)';label=`${fD(date)} · -${Math.abs(diff)}d`}
-    else if(diff===0){bg='rgba(245,158,11,.2)';color='var(--pack)';label=`${fD(date)} · HOJE`}
-    else if(diff<=3){bg='rgba(245,158,11,.15)';color='var(--pack)';label=`${fD(date)} · ${diff}d`}
-    else if(diff<=7){bg='rgba(253,171,61,.12)';color='#FDAB3D';label=`${fD(date)} · ${diff}d`}
-    return `<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:${bg};color:${color};font-size:11px;font-weight:700;font-family:var(--mono)">${label}</span>`;
-  };
-  
-  const totalH=items.reduce((s,it)=>s+(it.hours_invested||0),0);
-  
-  // Linha expandida do modal: card grande, mais espaço para nome + cliente + responsáveis
-  const renderCard=(it)=>{
-    const cli=clientName(it.client_id);
-    const resp=(it.responsible_names||[]).join(', ')||'—';
-    const url=it.item_url||'#';
-    return `<div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid ${meta.color};border-radius:8px;padding:12px 14px;margin-bottom:8px;display:grid;grid-template-columns:1fr 130px 70px 80px;gap:12px;align-items:center">
-      <div style="min-width:0">
-        <div style="font-weight:700;font-size:13px;margin-bottom:4px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical" title="${escapeHtml(it.item_name||'(sem nome)')}">${escapeHtml(it.item_name||'(sem nome)')}</div>
-        <div style="font-size:11px;color:var(--txt2);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="color:var(--t1);font-weight:600">${escapeHtml(cli)}</span>
-          ${it.status_label?`<span style="background:rgba(69,94,110,.12);padding:1px 6px;border-radius:8px;font-size:10px">${escapeHtml(it.status_label)}</span>`:''}
-          ${it.group_title?`<span style="color:var(--txt3);font-size:10px">· ${escapeHtml(it.group_title)}</span>`:''}
-        </div>
-        <div style="font-size:10px;color:var(--txt3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(resp)}">👤 ${escapeHtml(resp)}</div>
-      </div>
-      <div style="text-align:center">${deadlinePill(it.deadline_date,it.is_done)}</div>
-      <div style="text-align:right;font-family:var(--mono);font-weight:800;font-size:14px;color:var(--txt1)">${fH(it.hours_invested||0)}</div>
-      <div style="text-align:right">
-        <a href="${url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;background:${meta.color};color:#fff;text-decoration:none;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap" title="Abrir no Monday">Monday ↗</a>
-      </div>
-    </div>`;
-  };
-  
-  const mod=document.createElement('div');
-  mod.className='modal-ov';
-  mod.onclick=(e)=>{if(e.target===mod)mod.remove()};
-  mod.innerHTML=`<div class="modal" style="max-width:980px;width:96vw;max-height:88vh;display:flex;flex-direction:column">
-    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px">
-      <div>
-        <h2 style="margin:0;font-size:20px;color:${meta.color}">${meta.title}</h2>
-        <div style="font-size:12px;color:var(--txt3);margin-top:3px">${meta.sub}</div>
-      </div>
-      <div style="flex:1"></div>
-      <div style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--txt2)">
-        <div style="font-size:18px;font-weight:800;color:${meta.color}">${items.length}</div>
-        <div>itens · ${fH(totalH)} investidas</div>
-      </div>
-      <button onclick="this.closest('.modal-ov').remove()" class="btn btn-sec btn-sm" style="font-size:14px;padding:6px 10px">✕</button>
-    </div>
-    <div style="padding:14px 22px 8px;display:grid;grid-template-columns:1fr 130px 70px 80px;gap:12px;font-size:10px;letter-spacing:1px;color:var(--txt3);font-weight:700;border-bottom:1px solid var(--border);margin-bottom:10px">
-      <div>PROJETO / CLIENTE / RESPONSÁVEIS</div>
-      <div style="text-align:center">PRAZO</div>
-      <div style="text-align:right">HORAS</div>
-      <div style="text-align:right">LINK</div>
-    </div>
-    <div style="flex:1;overflow-y:auto;padding:0 22px 22px">
-      ${items.length===0?'<div class="empty" style="padding:40px 20px;text-align:center;color:var(--txt3)">Nenhum item nesta categoria com os filtros atuais.</div>':items.map(renderCard).join('')}
-    </div>
-  </div>`;
-  document.body.appendChild(mod);
+  // Faz scroll suave até a tabela correspondente e dá um flash visual
+  const el=document.getElementById('rdr-tbl-'+bucketKey);
+  if(!el){
+    toast('Nenhum item nesta categoria com os filtros atuais.','info');
+    return;
+  }
+  // Scroll
+  el.scrollIntoView({behavior:'smooth',block:'start'});
+  // Flash de destaque
+  const origBoxShadow=el.style.boxShadow;
+  const origTransform=el.style.transform;
+  el.style.transition='box-shadow .4s, transform .3s';
+  el.style.boxShadow='0 0 0 3px rgba(245,158,11,.5), 0 10px 30px rgba(0,0,0,.25)';
+  setTimeout(()=>{
+    el.style.boxShadow='0 0 0 3px rgba(245,158,11,.2), 0 6px 18px rgba(0,0,0,.15)';
+  },400);
+  setTimeout(()=>{
+    el.style.boxShadow=origBoxShadow||'';
+    el.style.transition='';
+  },1600);
 }
 
 // ═══════════════════════════════════════════════
