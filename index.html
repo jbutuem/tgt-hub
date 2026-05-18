@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.51.0';
+const HUB_VERSION='0.51.1';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -3136,7 +3136,7 @@ function performanceShowCampaigns(clientId,boardType,channelIdx){
   const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
   
   const m=document.createElement('div');
-  m.className='modal-ov';
+  m.className='modal-ov open';
   m.onclick=(e)=>{if(e.target===m)m.remove()};
   m.innerHTML=`<div class="modal" style="max-width:540px;background:#15161a;border:1px solid #2a2c30">
     <div style="padding:16px 20px;border-bottom:1px solid #2a2c30;display:flex;align-items:center;gap:12px">
