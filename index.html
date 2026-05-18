@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.50.0';
+const HUB_VERSION='0.50.1';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -2640,62 +2640,104 @@ async function pgPerformance(el){
     return;
   }
   const camps=S.performance_campaigns||[];
-  if(camps.length===0){
-    el.innerHTML=`<div class="empty" style="padding:60px 20px;text-align:center">
-      <div style="font-size:48px;margin-bottom:12px">🚀</div>
-      <div style="font-size:16px;font-weight:600;margin-bottom:6px">Nenhuma campanha ativa carregada ainda</div>
-      <div style="font-size:12px;color:var(--txt3);margin-bottom:18px">Aguarde a sincronização inicial ou clique abaixo para forçar.</div>
-      <button onclick="performanceRefreshCampaigns(this)" class="btn">🔄 Sincronizar campanhas do Monday</button>
-    </div>`;
-    return;
-  }
   
   // Timer ativo do usuário (de qualquer source)
   const running=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
   const isPerfRunning=running&&running.source==='performance_panel';
   
-  // Agrupa campanhas por board_type
-  const byType={trafego:[],producao:[]};
-  camps.forEach(c=>{if(byType[c.board_type])byType[c.board_type].push(c)});
+  // Filtros/state local
+  if(!window._psFilters)window._psFilters={search:'',mode:'all'}; // mode: all | trafego | producao
+  const PF=window._psFilters;
   
-  // Agrupa por cliente dentro de cada board
-  const groupByClient=(arr)=>{
-    const out={};
-    arr.forEach(c=>{
-      const cid=c.client_id||'_unmapped';
-      if(!out[cid])out[cid]=[];
-      out[cid].push(c);
-    });
-    return out;
-  };
+  // Agrupa campanhas por board_type e cliente
+  const campsByBoardClient={trafego:{},producao:{}};
+  camps.forEach(c=>{
+    if(!campsByBoardClient[c.board_type])return;
+    const cid=c.client_id||'_unmapped';
+    if(!campsByBoardClient[c.board_type][cid])campsByBoardClient[c.board_type][cid]={camps:[],labelMonday:c.client_label_monday};
+    campsByBoardClient[c.board_type][cid].camps.push(c);
+  });
   
-  const trafegoByClient=groupByClient(byType.trafego);
-  const producaoByClient=groupByClient(byType.producao);
+  // Lista de TODOS os clientes ativos (independente de terem campanha)
+  // Filtra: account vê só seu time; admin vê tudo
+  const allClients=(S.clients||[]).filter(c=>{
+    if(!c.is_active)return false;
+    if(isA())return true;
+    if(isAcc())return canSeeClient(c.id);
+    return false;
+  });
   
   const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
+  const sH=arr=>arr.reduce((s,it)=>s+(it.hours_invested||0),0);
   
   // Render bloco de cliente com dropdown de campanhas + botão
-  const renderClientRow=(clientId,campsList,boardType,labelMonday)=>{
-    const cliN=clientId==='_unmapped'?`<span style="color:var(--pack);font-style:italic">${escapeHtml(labelMonday||'(sem cliente mapeado)')}</span>`:escapeHtml(clientName(clientId));
+  // Aceita cliente que NÃO TEM campanhas — nesse caso só mostra "Manutenção/Supervisão"
+  const renderClientRow=(clientId,boardType,campData)=>{
+    const isUnmapped=clientId==='_unmapped';
+    const cliN=isUnmapped?`<span style="color:var(--pack);font-style:italic">${escapeHtml(campData?.labelMonday||'(sem cliente)')}</span>`:escapeHtml(clientName(clientId));
+    const campsList=campData?.camps||[];
     const sortedCamps=[...campsList].sort((a,b)=>(a.item_name||'').localeCompare(b.item_name||''));
-    // Está rodando alguma campanha deste cliente?
-    const activeHere=isPerfRunning&&running.client_id===clientId&&sortedCamps.find(c=>String(c.monday_item_id)===String(running.monday_item_id));
+    const activeHere=isPerfRunning&&(
+      (running.client_id===clientId&&sortedCamps.find(c=>String(c.monday_item_id)===String(running.monday_item_id))) ||
+      (running.client_id===clientId&&!running.monday_item_id) // Manutenção/Supervisão
+    );
     const selectId=`ps-${boardType}-${clientId||'unmapped'}`;
-    return `<div class="ps-row ${activeHere?'ps-active':''}" data-client="${clientId}">
-      <div class="ps-cli">${cliN}</div>
+    const isCurrentlySupervisao=activeHere&&!running.monday_item_id;
+    
+    return `<div class="ps-row ${activeHere?'ps-active':''}" data-client="${clientId}" data-board="${boardType}">
+      <div class="ps-cli">${cliN}${campsList.length>0?`<span style="font-size:10px;color:var(--txt3);font-weight:400;margin-left:6px">· ${campsList.length} campanha${campsList.length!==1?'s':''}</span>`:`<span style="font-size:10px;color:var(--txt3);font-weight:400;margin-left:6px">· só supervisão</span>`}</div>
       <select id="${selectId}" class="ps-sel" ${activeHere?'disabled':''}>
-        <option value="">— Selecione campanha —</option>
-        <option value="__general__"${activeHere&&running.monday_item_id===null?' selected':''}>⚙️ Manutenção/Supervisão (geral)</option>
+        <option value="">— Selecione campanha ou supervisão —</option>
+        <option value="__general__"${isCurrentlySupervisao?' selected':''}>⚙️ Manutenção/Supervisão (geral do cliente)</option>
         ${sortedCamps.map(c=>`<option value="${c.monday_item_id}"${activeHere&&String(c.monday_item_id)===String(running.monday_item_id)?' selected':''}>${escapeHtml(c.item_name||'')}${c.status_label?` · ${escapeHtml(c.status_label)}`:''}</option>`).join('')}
       </select>
       ${activeHere?
         `<button onclick="performanceStop()" class="btn btn-sm" style="background:var(--red);color:#fff;min-width:90px">⏹ Parar</button>`:
-        `<button onclick="performanceStart('${selectId}','${clientId}','${boardType}','${escapeHtml(labelMonday||'')}')" class="btn btn-sec btn-sm" style="min-width:90px">▶ Iniciar</button>`
+        `<button onclick="performanceStart('${selectId}','${clientId}','${boardType}','${escapeHtml(campData?.labelMonday||'')}')" class="btn btn-sec btn-sm" style="min-width:90px">▶ Iniciar</button>`
       }
     </div>`;
   };
   
-  // Soma horas de hoje da Amanda no painel
+  // Para cada board_type, monta a lista combinada de clientes (mapeados + Hub + não-mapeados)
+  const buildBoardSection=(boardType)=>{
+    const haveCamps=campsByBoardClient[boardType]||{};
+    // União: todos os clientes ativos + clientes não-mapeados que tem campanhas
+    const allCids=new Set();
+    allClients.forEach(c=>allCids.add(c.id));
+    // Não-mapeados (campData.labelMonday existe mas client_id é null)
+    let hasUnmapped=false;
+    Object.keys(haveCamps).forEach(cid=>{
+      if(cid==='_unmapped')hasUnmapped=true;
+      else allCids.add(cid);
+    });
+    
+    // Filtra por busca, se houver
+    const sortedCids=[...allCids].sort((a,b)=>clientName(a).localeCompare(clientName(b)));
+    const filteredCids=PF.search?sortedCids.filter(cid=>{
+      const cn=clientName(cid).toLowerCase();
+      const labelM=(haveCamps[cid]?.labelMonday||'').toLowerCase();
+      const campsMatch=(haveCamps[cid]?.camps||[]).some(c=>(c.item_name||'').toLowerCase().includes(PF.search.toLowerCase()));
+      return cn.includes(PF.search.toLowerCase())||labelM.includes(PF.search.toLowerCase())||campsMatch;
+    }):sortedCids;
+    
+    const totalCamps=Object.values(haveCamps).reduce((s,o)=>s+(o.camps?.length||0),0);
+    
+    let html=filteredCids.map(cid=>renderClientRow(cid,boardType,haveCamps[cid])).join('');
+    if(hasUnmapped&&haveCamps._unmapped){
+      // Filtro: só se PF.search bater no label ou nome de campanha
+      const showUnmapped=!PF.search||(
+        (haveCamps._unmapped.labelMonday||'').toLowerCase().includes(PF.search.toLowerCase())||
+        (haveCamps._unmapped.camps||[]).some(c=>(c.item_name||'').toLowerCase().includes(PF.search.toLowerCase()))
+      );
+      if(showUnmapped)html+=renderClientRow('_unmapped',boardType,haveCamps._unmapped);
+    }
+    return {html,totalClients:filteredCids.length,totalCamps,hasUnmapped};
+  };
+  
+  const traf=buildBoardSection('trafego');
+  const prod=buildBoardSection('producao');
+  
+  // Soma horas de hoje no painel
   const todayBR=new Date().toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'});
   const myToday=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running&&e.source==='performance_panel'&&(e.started_at||'').substring(0,10)===todayBR);
   const totalToday=myToday.reduce((s,e)=>s+(e.hours||0),0);
@@ -2707,18 +2749,18 @@ async function pgPerformance(el){
     const ageSec=Math.floor((Date.now()-startMs)/1000);
     const camp=camps.find(c=>String(c.monday_item_id)===String(running.monday_item_id));
     const cliN=running.client_id?clientName(running.client_id):'(geral)';
+    const itemName=camp?camp.item_name:(running.description||'Manutenção/Supervisão');
     activeBlock=`<div style="background:linear-gradient(135deg,rgba(0,200,117,.1),rgba(0,200,117,.02));border:1px solid rgba(0,200,117,.4);border-left:4px solid var(--prod);border-radius:10px;padding:16px 18px;margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="font-size:36px">⏱</div>
         <div style="flex:1">
           <div style="font-size:10px;letter-spacing:1.5px;color:var(--prod);font-weight:800;margin-bottom:3px">▶ TIMER ATIVO</div>
-          <div style="font-size:15px;font-weight:700">${escapeHtml(cliN)} · ${escapeHtml(camp?camp.item_name:(running.description||'Manutenção/Supervisão'))}</div>
+          <div style="font-size:15px;font-weight:700">${escapeHtml(cliN)} · ${escapeHtml(itemName)}</div>
           <div style="font-size:11px;color:var(--txt3);margin-top:3px">iniciado ${new Date(running.started_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} · rodando há <b id="ps-elapsed" style="font-family:var(--mono)">${formatElapsed(ageSec)}</b></div>
         </div>
         <button onclick="performanceStop()" class="btn" style="background:var(--red);color:#fff">⏹ Parar</button>
       </div>
     </div>`;
-    // Atualiza o "rodando há X" a cada segundo
     if(window._psTickInterval)clearInterval(window._psTickInterval);
     window._psTickInterval=setInterval(()=>{
       const lb=$('ps-elapsed');if(!lb)return clearInterval(window._psTickInterval);
@@ -2728,6 +2770,9 @@ async function pgPerformance(el){
   }else{
     if(window._psTickInterval){clearInterval(window._psTickInterval);window._psTickInterval=null}
   }
+  
+  // Mensagem se nenhuma campanha
+  const noCamps=camps.length===0;
   
   el.innerHTML=`
     <div style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -2748,53 +2793,57 @@ async function pgPerformance(el){
     
     ${activeBlock}
     
+    <!-- BUSCA + STATS -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <input type="text" placeholder="🔍 Buscar cliente ou campanha..." value="${escapeHtml(PF.search||'')}" oninput="window._psFilters.search=this.value;clearTimeout(window._psSearchTO);window._psSearchTO=setTimeout(()=>renderPage(),250)" style="flex:1;min-width:200px;background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:7px 11px;border-radius:6px;font-size:12px">
+      ${PF.search?`<button onclick="window._psFilters.search='';renderPage()" class="btn btn-sec btn-sm" style="font-size:10px">✕ Limpar</button>`:''}
+      <div style="font-size:10px;color:var(--txt3);font-family:var(--mono)">
+        <span style="color:var(--t1);font-weight:700">${traf.totalClients}</span> tráfego · <span style="color:#5559DF;font-weight:700">${prod.totalClients}</span> produção · <span style="font-weight:700">${camps.filter(c=>c.is_active).length}</span> campanhas
+      </div>
+    </div>
+    
+    ${noCamps?`<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-left:4px solid var(--pack);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px">
+      ⚠️ Nenhuma campanha carregada ainda. Clique em <b>🔄 Atualizar campanhas</b> acima para sincronizar com o Monday.
+    </div>`:''}
+    
     <style>
-      .ps-row{display:grid;grid-template-columns:200px 1fr 110px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);transition:background .15s}
+      .ps-row{display:grid;grid-template-columns:220px 1fr 110px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);transition:background .15s}
+      .ps-row:last-child{border-bottom:none}
       .ps-row:hover{background:rgba(69,94,110,.04)}
       .ps-row.ps-active{background:rgba(0,200,117,.06);border-left:3px solid var(--prod)}
-      .ps-cli{font-weight:600;font-size:13px;color:var(--txt1)}
-      .ps-sel{background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+      .ps-cli{font-weight:600;font-size:13px;color:var(--txt1);display:flex;align-items:center;flex-wrap:wrap}
+      .ps-sel{background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;max-width:100%}
       .ps-sel:disabled{opacity:.6;cursor:not-allowed}
       @media (max-width:768px){.ps-row{grid-template-columns:1fr;gap:6px;padding:10px 12px}}
     </style>
     
     <!-- TRÁFEGO -->
-    ${byType.trafego.length>0?`
     <div style="margin-bottom:18px">
       <h3 style="font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;color:var(--t1)">
         <span style="background:rgba(69,94,110,.15);padding:3px 10px;border-radius:12px;font-size:10px;letter-spacing:1.5px;color:var(--t1);font-weight:700">🎯 TRÁFEGO &amp; PERFORMANCE</span>
-        <span style="font-weight:400;color:var(--txt3);font-size:11px">${byType.trafego.length} campanha${byType.trafego.length!==1?'s':''} ativa${byType.trafego.length!==1?'s':''}</span>
+        <span style="font-weight:400;color:var(--txt3);font-size:11px">${traf.totalClients} cliente${traf.totalClients!==1?'s':''}${traf.totalCamps?` · ${traf.totalCamps} campanha${traf.totalCamps!==1?'s':''} ativa${traf.totalCamps!==1?'s':''}`:''}</span>
       </h3>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
-        ${Object.entries(trafegoByClient).sort((a,b)=>{
-          const an=a[0]==='_unmapped'?'zzz':clientName(a[0]);
-          const bn=b[0]==='_unmapped'?'zzz':clientName(b[0]);
-          return an.localeCompare(bn);
-        }).map(([cid,arr])=>renderClientRow(cid,arr,'trafego',arr[0]?.client_label_monday)).join('')}
+        ${traf.html||'<div class="empty" style="padding:30px 20px;text-align:center;color:var(--txt3);font-size:12px">Nenhum cliente encontrado.</div>'}
       </div>
-    </div>`:''}
+    </div>
     
     <!-- PRODUÇÃO -->
-    ${byType.producao.length>0?`
     <div style="margin-bottom:18px">
       <h3 style="font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;color:#5559DF">
         <span style="background:rgba(85,89,223,.15);padding:3px 10px;border-radius:12px;font-size:10px;letter-spacing:1.5px;color:#5559DF;font-weight:700">🎬 PRODUÇÃO</span>
-        <span style="font-weight:400;color:var(--txt3);font-size:11px">${byType.producao.length} item${byType.producao.length!==1?'s':''} ativo${byType.producao.length!==1?'s':''}</span>
+        <span style="font-weight:400;color:var(--txt3);font-size:11px">${prod.totalClients} cliente${prod.totalClients!==1?'s':''}${prod.totalCamps?` · ${prod.totalCamps} item${prod.totalCamps!==1?'s':''} ativo${prod.totalCamps!==1?'s':''}`:''}</span>
       </h3>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden">
-        ${Object.entries(producaoByClient).sort((a,b)=>{
-          const an=a[0]==='_unmapped'?'zzz':clientName(a[0]);
-          const bn=b[0]==='_unmapped'?'zzz':clientName(b[0]);
-          return an.localeCompare(bn);
-        }).map(([cid,arr])=>renderClientRow(cid,arr,'producao',arr[0]?.client_label_monday)).join('')}
+        ${prod.html||'<div class="empty" style="padding:30px 20px;text-align:center;color:var(--txt3);font-size:12px">Nenhum cliente encontrado.</div>'}
       </div>
-    </div>`:''}
+    </div>
     
     <!-- INFO RODAPÉ -->
     <div style="margin-top:18px;padding:12px 14px;background:rgba(69,94,110,.05);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--txt3);line-height:1.5">
-      <b style="color:var(--txt2)">Como funciona:</b> Escolha cliente + campanha e clique em <b>▶ Iniciar</b>. O timer começa no Hub e adiciona seu nome na coluna "Executando" do card no Monday. Se já houver outro timer rodando, ele é parado automaticamente.<br>
+      <b style="color:var(--txt2)">Como funciona:</b> Cada cliente ativo aparece nas duas seções. Escolha cliente + campanha (ou Manutenção/Supervisão para tempo genérico) e clique em <b>▶ Iniciar</b>. O timer começa no Hub e adiciona seu nome na coluna "Executando" do card no Monday (se for uma campanha específica). Se já houver outro timer rodando, ele é parado automaticamente.<br>
       <b style="color:var(--txt2)">Manutenção/Supervisão:</b> Use quando o tempo for de gestão geral do cliente, não vinculado a uma campanha específica. O lançamento entra no banco com action="Manutenção/Supervisão" e sem item Monday.<br>
-      <b style="color:var(--txt2)">Atualização das campanhas:</b> A lista é sincronizada com o Monday a cada 5 minutos. Clique em "🔄 Atualizar campanhas" para forçar.
+      <b style="color:var(--txt2)">Atualização das campanhas:</b> A lista é sincronizada com o Monday a cada 15 minutos (ou pelo botão "🔄 Atualizar campanhas").
     </div>`;
 }
 
