@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.55.1';
+const HUB_VERSION='0.56.0';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -1902,8 +1902,9 @@ async function stopTimer(silent){
 
 // Lançamento Manual — Time In/Out com selects fechados
 // Horas: 07-20 | Minutos: 00, 15, 30, 45
-function showManualEntry(){
-  $('m-entry-title').textContent='Lançamento Manual';
+function showManualEntry(opts){
+  opts=opts||{};
+  $('m-entry-title').textContent=opts.title||'Lançamento Manual';
   // Gera options de hora 07-20
   const hourOpts=[];for(let h=7;h<=20;h++){const hh=String(h).padStart(2,'0');hourOpts.push(`<option value="${hh}">${hh}h</option>`)}
   // Gera options de minuto 00,15,30,45
@@ -1911,7 +1912,7 @@ function showManualEntry(){
   
   $('m-entry-body').innerHTML=`
     <div class="f-field"><label class="f-label">Descrição</label><input class="f-input" id="me-desc" placeholder="Ex: Criação posts semana 1"></div>
-    <div class="f-field"><label class="f-label">Data</label><input class="f-input" type="date" id="me-date" value="${new Date().toISOString().substring(0,10)}"></div>
+    <div class="f-field"><label class="f-label">Data</label><input class="f-input" type="date" id="me-date" value="${opts.date||new Date().toISOString().substring(0,10)}"></div>
     <div class="f-row">
       <div class="f-field"><label class="f-label">Início</label>
         <div style="display:flex;gap:6px;align-items:center">
@@ -1933,7 +1934,7 @@ function showManualEntry(){
       <div class="f-field"><label class="f-label">Cliente</label><select class="f-sel" id="me-client"><option value="">Selecione</option>${S.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Ação</label><select class="f-sel" id="me-action"><option value="">Selecione</option>${ACTIONS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
     </div>
-    ${isA()?`<div class="f-field"><label class="f-label">Pessoa</label><select class="f-sel" id="me-member">${S.members.map(m=>`<option value="${m.id}" ${m.id===S.user.id?'selected':''}>${m.name}</option>`).join('')}</select></div>`:''}`;
+    ${isA()?`<div class="f-field"><label class="f-label">Pessoa</label><select class="f-sel" id="me-member">${S.members.map(m=>`<option value="${m.id}" ${m.id===(opts.memberId||S.user.id)?'selected':''}>${m.name}</option>`).join('')}</select></div>`:''}`;
   
   // Default: início 09:00, fim 10:00
   $('me-h-in').value='09';$('me-m-in').value='00';
@@ -4168,8 +4169,12 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
           <div class="f-field"><label class="f-label" style="color:var(--txt3)">= <span id="bg-travel-total" style="font-weight:700">R$ 0</span></label><div style="font-size:10px;color:var(--txt3)">R$ ${getCostRate('travel_km')}/km + R$ ${getCostRate('travel_flat')}/viagem</div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
-          <div class="f-field"><label class="f-label" style="color:var(--txt3)">Alimentação (auto)</label><div style="font-size:12px;color:var(--txt3)">= pessoas × dias × R$ ${getCostRate('food_per_person')}</div></div>
-          <div style="display:flex;align-items:center"><span style="font-weight:700;font-family:var(--mono)" id="bg-food-total">R$ 0</span></div>
+          <div class="f-field">
+            <label class="f-label">Alimentação (editável)</label>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:4px">Sugerido: pessoas × dias × R$ ${getCostRate('food_per_person')} = <span id="bg-food-suggested" style="font-weight:700;color:var(--txt2)">R$ 0</span> <button type="button" onclick="document.getElementById('bg-food').value=document.getElementById('bg-food-suggested').textContent.replace(/[^0-9.,]/g,'').replace('.','').replace(',','.');calcBudget()" style="background:transparent;border:1px solid var(--border);color:var(--txt2);padding:1px 6px;border-radius:3px;cursor:pointer;font-size:9px;margin-left:4px">usar</button></div>
+            <input class="f-input" type="number" min="0" step="0.01" id="bg-food" value="${bgt?.cost_food||''}" placeholder="Digite o valor" oninput="calcBudget()">
+          </div>
+          <div class="f-field"><label class="f-label" style="color:var(--txt3)">= <span id="bg-food-total" style="font-weight:700">R$ 0</span></label><div style="font-size:10px;color:var(--txt3)">Total efetivo (manual se preenchido, senão sugerido)</div></div>
         </div>
       </div>
       <div style="margin-bottom:16px">
@@ -4327,14 +4332,32 @@ async function exportBudgetPDF(reqId){
   const acc=S.members.find(x=>x.id===r.requested_by);
   const price=bgt?Number(bgt.client_price):0;
   // Build PDF using jsPDF
-  if(!window.jspdf){
-    const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js';
-    document.head.appendChild(s);
-    await new Promise(r=>{s.onload=r;setTimeout(r,3000)});
+  try{
+    if(!window.jspdf){
+      toast('Carregando gerador de PDF...','info');
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js';
+        s.onload=()=>resolve();
+        s.onerror=()=>reject(new Error('Falha ao carregar jsPDF da CDN'));
+        document.head.appendChild(s);
+        // timeout de segurança
+        setTimeout(()=>reject(new Error('Timeout carregando jsPDF (>10s)')),10000);
+      });
+    }
+    if(!window.jspdf||!window.jspdf.jsPDF){
+      throw new Error('jsPDF não disponível após carregamento');
+    }
+  }catch(e){
+    console.error('Erro PDF:',e);
+    toast('Erro ao carregar PDF: '+e.message,'error');
+    return;
   }
-  const{jsPDF}=window.jspdf;
-  const doc=new jsPDF();
+  
+  let doc;
+  try{
+    const{jsPDF}=window.jspdf;
+    doc=new jsPDF();
 
   // ─── HEADER ────────────────────────────────────────
   doc.setFillColor(23,23,23);doc.rect(0,0,210,50,'F');
@@ -4443,8 +4466,17 @@ async function exportBudgetPDF(reqId){
   doc.setTextColor(237,28,36);
   doc.text('tgtstudio.com.br',155,288);
 
-  doc.save(`TGT_Proposta_${(r.title||'producao').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
-  toast('PDF gerado');
+  try{
+    doc.save(`TGT_Proposta_${(r.title||'producao').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+    toast('PDF gerado','success');
+  }catch(saveErr){
+    console.error('Erro ao salvar PDF:',saveErr);
+    toast('Erro ao salvar PDF: '+saveErr.message,'error');
+  }
+  }catch(e){
+    console.error('Erro durante geração do PDF:',e);
+    toast('Erro no PDF: '+e.message,'error');
+  }
 }
 
 function switchReqTab(tab){
@@ -4463,7 +4495,12 @@ function calcBudget(){
   const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
   const crewCost=crewQty*crewDays*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=crewQty*crewDays*crewPeriod*getCostRate('food_per_person');
+  // Alimentação: sugerido vs manual (manual ganha se preenchido)
+  const foodSuggested=crewQty*crewDays*crewPeriod*getCostRate('food_per_person');
+  const foodManualEl=$('bg-food');
+  const foodManualRaw=foodManualEl&&foodManualEl.value.trim()!==''?parseFloat(foodManualEl.value):null;
+  const foodCost=(foodManualRaw!==null&&!isNaN(foodManualRaw))?foodManualRaw:foodSuggested;
+  if(el('bg-food-suggested'))el('bg-food-suggested').textContent=fMoney(foodSuggested);
   const editCost=v('bg-edit-hrs')*getCostRate('edit_hour_rate');
   const motionCost=v('bg-motion-hrs')*getCostRate('motion_hour_rate');
   const colorCost=v('bg-color-qty')*getCostRate('color_grade_flat');
@@ -4529,7 +4566,10 @@ function calcBudgetFromReceita(){
   const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
   const crewCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
+  const foodSuggested=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
+  const foodManualEl=$('bg-food');
+  const foodManualRaw=foodManualEl&&foodManualEl.value.trim()!==''?parseFloat(foodManualEl.value):null;
+  const foodCost=(foodManualRaw!==null&&!isNaN(foodManualRaw))?foodManualRaw:foodSuggested;
   const costs=crewCost+travelCost+foodCost+v('bg-edit-hrs')*getCostRate('edit_hour_rate')+v('bg-motion-hrs')*getCostRate('motion_hour_rate')+v('bg-color-qty')*getCostRate('color_grade_flat')+v('bg-audio-qty')*getCostRate('audio_mix_flat')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const receita=v('bg-receita');
   const taxPct=v('bg-tax')/100;
@@ -4552,7 +4592,10 @@ function calcBudgetFromMarginInput(){
   const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
   const crewCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
+  const foodSuggested=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
+  const foodManualEl=$('bg-food');
+  const foodManualRaw=foodManualEl&&foodManualEl.value.trim()!==''?parseFloat(foodManualEl.value):null;
+  const foodCost=(foodManualRaw!==null&&!isNaN(foodManualRaw))?foodManualRaw:foodSuggested;
   const costs=crewCost+travelCost+foodCost+v('bg-edit-hrs')*getCostRate('edit_hour_rate')+v('bg-motion-hrs')*getCostRate('motion_hour_rate')+v('bg-color-qty')*getCostRate('color_grade_flat')+v('bg-audio-qty')*getCostRate('audio_mix_flat')+v('bg-equip')+v('bg-talent')+v('bg-location')+v('bg-other');
   const marginPct=v('bg-margin-input')/100;
   const taxPct=v('bg-tax')/100;
@@ -4574,7 +4617,10 @@ async function saveBudget(reqId,budgetId){
   const crewExtra=$('bg-crew-extra')?.checked?1.35:1;
   const crewCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('crew_daily_rate')*crewExtra;
   const travelCost=v('bg-travel-km')*getCostRate('travel_km')+v('bg-travel-trips')*getCostRate('travel_flat');
-  const foodCost=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
+  const foodSuggested=v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*getCostRate('food_per_person');
+  const foodManualEl=$('bg-food');
+  const foodManualRaw=foodManualEl&&foodManualEl.value.trim()!==''?parseFloat(foodManualEl.value):null;
+  const foodCost=(foodManualRaw!==null&&!isNaN(foodManualRaw))?foodManualRaw:foodSuggested;
   const editCost=v('bg-edit-hrs')*getCostRate('edit_hour_rate');
   const motionCost=v('bg-motion-hrs')*getCostRate('motion_hour_rate');
   const colorCost=v('bg-color-qty')*getCostRate('color_grade_flat');
@@ -9839,7 +9885,28 @@ function renderPersonDetail(personId){
       _activeCharts['chart-pday-'+personId]=new Chart($('chart-pday-'+personId),{
         type:'bar',
         data:{labels:dayKeys.map(k=>k.substring(5).replace('-','/')),datasets:[{label:'Horas',data:dayKeys.map(k=>byDay[k]),backgroundColor:'#ED1C24',borderRadius:4}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:chartTheme().grid,ticks:chartTheme().ticks},x:{grid:{display:false},ticks:chartTheme().ticks}}}
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false},tooltip:{callbacks:{footer:()=>isA()?'Clique para ajuste manual':''}}},
+          scales:{y:{beginAtZero:true,grid:chartTheme().grid,ticks:chartTheme().ticks},x:{grid:{display:false},ticks:chartTheme().ticks}},
+          onClick:(evt,els)=>{
+            if(!isA())return; // só admin/account
+            if(!els||els.length===0)return;
+            const idx=els[0].index;
+            const isoDate=dayKeys[idx]; // YYYY-MM-DD original
+            if(!isoDate)return;
+            // Abre o modal de lançamento manual com a data e pessoa preenchidas
+            showManualEntry({
+              date:isoDate,
+              memberId:personId,
+              title:`Ajustar ${p.name} · ${isoDate.split('-').reverse().join('/')}`
+            });
+          },
+          onHover:(evt,els)=>{
+            if(!isA())return;
+            evt.native.target.style.cursor=els.length>0?'pointer':'default';
+          }
+        }
       });
     }
     // Chart por cliente (com plugin de % nas fatias + tabela lateral)
