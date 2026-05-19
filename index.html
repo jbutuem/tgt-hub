@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.54.0';
+const HUB_VERSION='0.55.0';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -7238,127 +7238,162 @@ async function saveScore(){
 async function pgOrgChart(el){
   if(!isA()){el.innerHTML='<div class="empty">Acesso restrito ao admin</div>';return}
   
-  // Identificar accounts: pessoas com access_level account ou admin (que normalmente atuam como account)
-  // Excluindo clients e prod_leader (são separados)
-  const allMembers=(S.members||[]).filter(m=>(m.active!==false)&&m.access_level!=='client');
+  // ═══════════════ STATE PENDING ═══════════════
+  // Mudanças ficam em memória até clicar SALVAR
+  if(!window._ocPending)window._ocPending={memberMoves:{},clientMoves:{},memberReports:{},clientAccounts:{}};
   
-  // Times conhecidos (ordem de exibição)
-  const TEAMS=[
-    {key:'ADM', label:'ADM',  color:'#888B97', emoji:'👔', desc:'Gestão / Administração'},
-    {key:'T1',  label:'T1',   color:'#ED1C24', emoji:'🟥', desc:'Time 1 — Kerry / Lesaffre'},
-    {key:'T3',  label:'T3',   color:'#FF6B35', emoji:'🟧', desc:'Time 3 — Performance / Brands menores'},
-    {key:'T4',  label:'T4',   color:'#F59E0B', emoji:'🟨', desc:'Time 4 — UV Line / De Marchi'},
-    {key:'T5',  label:'T5',   color:'#5559DF', emoji:'🟪', desc:'Time 5 — Packaging'},
-    {key:'PROD',label:'PROD', color:'#10B981', emoji:'🎬', desc:'Produção AV'}
-  ];
+  // ═══════════════ FILTRO INATIVOS ═══════════════
+  // Inativos NUNCA aparecem (active!==false E is_active!==false)
+  const isActive=x=>(x.active!==false)&&(x.is_active!==false);
+  const allMembers=(S.members||[]).filter(m=>isActive(m)&&m.access_level!=='client');
+  const allClients=(S.clients||[]).filter(c=>isActive(c));
   
-  // Group members per team
-  const membersByTeam={};
-  const orphans=[];
-  TEAMS.forEach(t=>{membersByTeam[t.key]=[]});
+  // ═══════════════ TIMES DINÂMICOS (do banco) ═══════════════
+  if(!window._ocTeams){
+    try{
+      const teams=await sbGet('tt_teams','is_active=eq.true&order=sort_order.asc');
+      window._ocTeams=teams||[];
+    }catch(e){
+      console.warn('Erro carregando tt_teams, usando fallback',e);
+      window._ocTeams=[
+        {key:'ADM',label:'ADM',color:'#888B97',emoji:'👔',description:'Gestão'},
+        {key:'T1',label:'T1',color:'#ED1C24',emoji:'🟥',description:'Time 1'},
+        {key:'T3',label:'T3',color:'#FF6B35',emoji:'🟧',description:'Time 3'},
+        {key:'T4',label:'T4',color:'#F59E0B',emoji:'🟨',description:'Time 4'},
+        {key:'T5',label:'T5',color:'#5559DF',emoji:'🟪',description:'Time 5'},
+        {key:'PROD',label:'PROD',color:'#10B981',emoji:'🎬',description:'Produção AV'}
+      ];
+    }
+  }
+  const TEAMS=window._ocTeams;
+  
+  // ═══════════════ MULTI-TEAM ═══════════════
+  // Carregar tt_member_teams pra saber em quais times cada pessoa está
+  if(!window._ocMemberTeams){
+    try{
+      const mt=await sbGet('tt_member_teams','');
+      window._ocMemberTeams=mt||[];
+    }catch(e){window._ocMemberTeams=[]}
+  }
+  
+  // Aplica mudanças pendentes em cima dos dados base
+  // teamsByMember[memberId] = Set de teams (incluindo pending)
+  const teamsByMember={};
   allMembers.forEach(m=>{
-    if(m.team&&membersByTeam[m.team])membersByTeam[m.team].push(m);
-    else orphans.push(m);
+    teamsByMember[m.id]=new Set();
+    // 1) tt_member_teams (multi)
+    window._ocMemberTeams.filter(mt=>mt.member_id===m.id).forEach(mt=>teamsByMember[m.id].add(mt.team));
+    // 2) tt_members.team (fallback se não tem multi)
+    if(m.team&&teamsByMember[m.id].size===0)teamsByMember[m.id].add(m.team);
+    // 3) Aplica pending (memberMoves: {memberId: {add:[T1,T3], remove:[T4]}})
+    const pend=window._ocPending.memberMoves[m.id];
+    if(pend){
+      (pend.add||[]).forEach(t=>teamsByMember[m.id].add(t));
+      (pend.remove||[]).forEach(t=>teamsByMember[m.id].delete(t));
+    }
   });
   
-  // Per team: split accounts (líderes) vs designers
-  const isAccountLike=m=>m.access_level==='account'||m.access_level==='admin'||m.access_level==='prod_leader';
+  // membersByTeam[teamKey] = array de members
+  const membersByTeam={};
+  TEAMS.forEach(t=>{membersByTeam[t.key]=[]});
+  const orphans=[];
+  allMembers.forEach(m=>{
+    const ts=teamsByMember[m.id];
+    if(ts.size===0){orphans.push(m);return}
+    ts.forEach(t=>{if(membersByTeam[t])membersByTeam[t].push(m)});
+  });
   
-  // Identificar líderes ativos
-  const allAccounts=allMembers.filter(isAccountLike);
-  
-  // Helpers
-  const accName=id=>{const a=allMembers.find(m=>m.id===id);return a?a.name:'—'};
-  const initials=name=>(name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
-  
-  // Clientes por time
+  // Clientes por time (com pending)
   const clientsByTeam={};
   TEAMS.forEach(t=>{clientsByTeam[t.key]=[]});
-  (S.clients||[]).filter(c=>c.is_active!==false).forEach(c=>{
-    if(c.team&&clientsByTeam[c.team])clientsByTeam[c.team].push(c);
+  const clientOrphans=[];
+  allClients.forEach(c=>{
+    const effectiveTeam=window._ocPending.clientMoves[c.id]||c.team;
+    if(effectiveTeam&&clientsByTeam[effectiveTeam])clientsByTeam[effectiveTeam].push(c);
+    else clientOrphans.push(c);
   });
   
-  // ───────── Render ─────────
+  // Helpers
+  const isAccountLike=m=>m.access_level==='account'||m.access_level==='admin'||m.access_level==='prod_leader';
+  const allAccounts=allMembers.filter(isAccountLike);
+  const accName=id=>{const a=allMembers.find(m=>m.id===id);return a?a.name:'—'};
+  const initials=name=>(name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  const effectiveReports=m=>window._ocPending.memberReports[m.id]!==undefined?window._ocPending.memberReports[m.id]:m.reports_to_account_id;
+  const effectiveAccount=c=>window._ocPending.clientAccounts[c.id]!==undefined?window._ocPending.clientAccounts[c.id]:c.primary_account_id;
+  
+  // Conta pendências
+  const pendCount=Object.keys(window._ocPending.memberMoves).length
+    +Object.keys(window._ocPending.clientMoves).length
+    +Object.keys(window._ocPending.memberReports).length
+    +Object.keys(window._ocPending.clientAccounts).length;
+  
+  // ═══════════════ RENDER ═══════════════
   el.innerHTML=`
   <style>
-    /* ═════ ORGCHART — Painel Switcher Style ═════ */
-    .oc-deck{
-      background:linear-gradient(180deg,#0a0a0c 0%,#15161a 100%);
-      border:1px solid #2a2c30;
-      border-radius:14px;
-      padding:18px;
-      box-shadow:0 4px 20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
-      position:relative;
-      overflow:hidden;
-    }
-    .oc-deck::before{
-      content:'';position:absolute;top:0;left:0;right:0;height:1px;
-      background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);
-    }
-    /* Header */
-    .oc-header{
-      display:flex;align-items:center;gap:14px;margin-bottom:14px;
-      padding-bottom:12px;border-bottom:1px solid #2a2c30;
-    }
-    .oc-header-icon{
-      width:42px;height:42px;border-radius:10px;
-      background:linear-gradient(135deg,#ED1C24,#5559DF);
-      display:flex;align-items:center;justify-content:center;font-size:22px;
-      box-shadow:0 2px 10px rgba(237,28,36,.4);
-    }
+    .oc-deck{background:linear-gradient(180deg,#0a0a0c 0%,#15161a 100%);border:1px solid #2a2c30;border-radius:14px;padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);position:relative;overflow:hidden}
+    .oc-deck::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent)}
+    .oc-header{display:flex;align-items:center;gap:14px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #2a2c30;flex-wrap:wrap}
+    .oc-header-icon{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,#ED1C24,#5559DF);display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 2px 10px rgba(237,28,36,.4)}
     .oc-header h2{margin:0;font-size:20px;color:#fff;letter-spacing:.3px;font-weight:800}
     .oc-header .sub{font-size:11px;color:#888;letter-spacing:1.5px;margin-top:2px;text-transform:uppercase;font-weight:600}
-    
-    /* Stats top */
-    .oc-stats{display:flex;gap:18px;margin-left:auto;font-family:var(--mono)}
-    .oc-stat{text-align:center;min-width:50px}
-    .oc-stat .v{font-size:18px;font-weight:800;color:#fff;line-height:1}
+    .oc-stats{display:flex;gap:14px;margin-left:auto;font-family:var(--mono)}
+    .oc-stat{text-align:center;min-width:42px}
+    .oc-stat .v{font-size:17px;font-weight:800;color:#fff;line-height:1}
     .oc-stat .l{font-size:9px;color:#666;letter-spacing:1.5px;margin-top:3px;text-transform:uppercase}
     
-    /* Tabs */
+    /* Actions */
+    .oc-acts{display:flex;gap:8px;align-items:center}
+    .oc-btn{padding:8px 14px;border-radius:7px;border:1px solid #3a3d45;background:#2a2c34;color:#fff;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;font-family:inherit;transition:all .12s;display:flex;align-items:center;gap:6px}
+    .oc-btn:hover{border-color:#5a5d65;background:#34373f}
+    .oc-btn.primary{background:linear-gradient(180deg,#ED1C24,#a01016);border-color:#ED1C24}
+    .oc-btn.primary:hover{background:linear-gradient(180deg,#ff2530,#b81118)}
+    .oc-btn.primary:disabled{background:#2a2c34;border-color:#3a3d45;color:#666;cursor:not-allowed}
+    .oc-btn.ghost{background:transparent}
+    .oc-pend-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:9px;background:#FFD600;color:#000;font-size:10px;font-weight:900;padding:0 6px;margin-left:4px}
+    
+    /* POOL — barra de pessoas no topo (Blackmagic style) */
+    .oc-pool-wrap{background:linear-gradient(180deg,#0d0e10,#15161a);border:1px solid #2a2c30;border-radius:10px;padding:10px 12px;margin-bottom:14px;position:relative}
+    .oc-pool-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    .oc-pool-h .ttl{font-size:10px;color:#888;letter-spacing:2px;font-weight:800;text-transform:uppercase}
+    .oc-pool-h .ttl b{color:#FFD600}
+    .oc-pool-search{background:#15161a;border:1px solid #2a2c30;color:#fff;padding:5px 10px;border-radius:5px;font-size:11px;width:180px;font-family:inherit}
+    .oc-pool{display:flex;flex-wrap:wrap;gap:5px;max-height:200px;overflow-y:auto;padding:2px}
+    .oc-pool::-webkit-scrollbar{width:6px}
+    .oc-pool::-webkit-scrollbar-track{background:transparent}
+    .oc-pool::-webkit-scrollbar-thumb{background:#2a2c30;border-radius:3px}
+    
+    .oc-pchip{position:relative;display:flex;align-items:center;gap:6px;padding:5px 9px 5px 6px;background:linear-gradient(180deg,#2a2c34,#1c1e24);border:1px solid #3a3d45;border-radius:18px;cursor:grab;font-size:11px;color:#fff;font-weight:600;transition:all .12s;box-shadow:0 1px 0 #0a0b0e,0 2px 4px rgba(0,0,0,.3);font-family:inherit;user-select:none}
+    .oc-pchip:hover{transform:translateY(-1px);border-color:#5a5d65;box-shadow:0 2px 0 #0a0b0e,0 4px 8px rgba(0,0,0,.4)}
+    .oc-pchip.dragging{opacity:.4;cursor:grabbing}
+    .oc-pchip .av{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#ED1C24,#5559DF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:9px;color:#fff;flex-shrink:0;text-shadow:0 1px 1px rgba(0,0,0,.4)}
+    .oc-pchip.is-account{border-left:2px solid #FFD600}
+    .oc-pchip.is-admin{border-left:2px solid #5559DF}
+    .oc-pchip.is-prod_leader{border-left:2px solid #10B981}
+    .oc-pchip .tms{display:inline-flex;gap:2px;margin-left:3px}
+    .oc-pchip .tms span{font-size:8px;padding:1px 4px;border-radius:6px;background:rgba(255,255,255,.08);color:#aaa;font-weight:800;letter-spacing:.5px}
+    .oc-pchip.no-team{border-style:dashed;border-color:#F59E0B;background:rgba(245,158,11,.08)}
+    
     .oc-tabs{display:flex;gap:4px;margin-bottom:14px;background:#15161a;border-radius:10px;padding:4px;border:1px solid #2a2c30}
     .oc-tab{flex:1;background:transparent;color:#888;border:none;padding:9px 14px;border-radius:7px;cursor:pointer;font-weight:700;font-size:12px;letter-spacing:1px;transition:all .15s;font-family:inherit;text-transform:uppercase}
     .oc-tab:hover{color:#ccc}
     .oc-tab.active{background:linear-gradient(180deg,#2a2c34,#1c1e24);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.06)}
     
-    /* Teams grid */
     .oc-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
     @media(min-width:1400px){.oc-teams{grid-template-columns:repeat(3,1fr)}}
     
-    /* Team card */
-    .oc-team{
-      background:linear-gradient(180deg,#1c1e24,#15161a);
-      border:1px solid #2a2c30;
-      border-top:3px solid var(--accent);
-      border-radius:10px;
-      padding:12px;
-      display:flex;flex-direction:column;gap:10px;
-      transition:border-color .15s,background .15s;
-      min-height:200px;
-    }
-    .oc-team.dragover{
-      background:linear-gradient(180deg,#22242a,#1a1c20);
-      border-color:var(--accent);
-      box-shadow:0 0 0 2px var(--accent),0 0 24px rgba(255,255,255,.04);
-    }
+    .oc-team{background:linear-gradient(180deg,#1c1e24,#15161a);border:1px solid #2a2c30;border-top:3px solid var(--accent);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s,background .15s;min-height:200px;position:relative}
+    .oc-team.dragover{background:linear-gradient(180deg,#22242a,#1a1c20);border-color:var(--accent);box-shadow:0 0 0 2px var(--accent),0 0 24px rgba(255,255,255,.04)}
     .oc-team-h{display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #2a2c30}
     .oc-team-h .emj{font-size:18px}
     .oc-team-h .lbl{font-weight:900;color:var(--accent);font-size:13px;letter-spacing:2px}
-    .oc-team-h .desc{font-size:9px;color:#777;letter-spacing:1px;text-transform:uppercase;flex:1}
+    .oc-team-h .desc{font-size:9px;color:#777;letter-spacing:1px;text-transform:uppercase;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .oc-team-h .cnt{font-family:var(--mono);font-size:10px;color:#888;background:rgba(255,255,255,.05);padding:3px 7px;border-radius:6px;font-weight:700}
+    .oc-team-h .edit-team{background:transparent;border:none;color:#555;cursor:pointer;padding:2px 5px;font-size:11px;border-radius:4px;font-family:inherit}
+    .oc-team-h .edit-team:hover{color:#fff;background:rgba(255,255,255,.05)}
     
     .oc-section-l{font-size:9px;color:#666;letter-spacing:2px;font-weight:700;text-transform:uppercase;margin-top:2px}
     
-    /* Card de pessoa */
-    .oc-card{
-      background:linear-gradient(180deg,#2a2c34,#1c1e24);
-      border:1px solid #3a3d45;
-      border-radius:8px;padding:8px 10px;cursor:grab;
-      display:flex;align-items:center;gap:8px;
-      transition:all .12s;font-family:inherit;
-      box-shadow:0 2px 0 #14151a,0 4px 8px rgba(0,0,0,.3);
-      position:relative;
-    }
+    .oc-card{background:linear-gradient(180deg,#2a2c34,#1c1e24);border:1px solid #3a3d45;border-radius:8px;padding:8px 10px;cursor:grab;display:flex;align-items:center;gap:8px;transition:all .12s;font-family:inherit;box-shadow:0 2px 0 #14151a,0 4px 8px rgba(0,0,0,.3);position:relative}
     .oc-card:hover{transform:translateY(-1px);border-color:#4a4d55;box-shadow:0 3px 0 #14151a,0 6px 14px rgba(0,0,0,.4)}
     .oc-card.dragging{opacity:.35;cursor:grabbing}
     .oc-card.is-account{border-left:3px solid #FFD600}
@@ -7368,55 +7403,28 @@ async function pgOrgChart(el){
     .oc-card .role{font-size:9px;color:#888;letter-spacing:.5px;margin-top:1px;text-transform:uppercase;font-weight:600}
     .oc-card .role.account{color:#FFD600}
     .oc-card .role.prod_leader{color:#10B981}
+    .oc-card .pend-tag{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:#FFD600;color:#000;font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid #15161a}
     
-    /* Clientes */
-    .oc-client{
-      background:linear-gradient(180deg,#22242a,#15161a);
-      border:1px solid #2a2c30;
-      border-radius:7px;padding:6px 9px;cursor:grab;
-      display:flex;align-items:center;gap:7px;font-size:11px;
-      transition:all .12s;
-    }
+    .oc-client{background:linear-gradient(180deg,#22242a,#15161a);border:1px solid #2a2c30;border-radius:7px;padding:6px 9px;cursor:grab;display:flex;align-items:center;gap:7px;font-size:11px;transition:all .12s;position:relative}
     .oc-client:hover{transform:translateY(-1px);border-color:#3a3d45}
     .oc-client.dragging{opacity:.35;cursor:grabbing}
     .oc-client .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
     .oc-client .nm{flex:1;color:#ccc;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .oc-client .acc{font-size:9px;color:#FFD600;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+    .oc-client .pend-tag{position:absolute;top:-3px;right:-3px;width:14px;height:14px;border-radius:50%;background:#FFD600;color:#000;font-size:8px;font-weight:900;display:flex;align-items:center;justify-content:center;border:2px solid #15161a}
     
     .oc-empty{font-size:10px;color:#555;text-align:center;padding:12px;font-style:italic;border:1px dashed #2a2c30;border-radius:7px}
     
-    /* Drop hint */
-    .oc-drop-hint{
-      pointer-events:none;
-      position:fixed;
-      background:linear-gradient(180deg,#ED1C24,#a01016);
-      color:#fff;padding:8px 14px;border-radius:8px;
-      font-size:11px;font-weight:800;letter-spacing:1px;
-      z-index:9999;
-      opacity:0;transition:opacity .15s;
-      box-shadow:0 4px 20px rgba(237,28,36,.5);
-      text-transform:uppercase;
-    }
+    .oc-drop-hint{pointer-events:none;position:fixed;background:linear-gradient(180deg,#ED1C24,#a01016);color:#fff;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:800;letter-spacing:1px;z-index:9999;opacity:0;transition:opacity .15s;box-shadow:0 4px 20px rgba(237,28,36,.5);text-transform:uppercase}
     .oc-drop-hint.show{opacity:1}
     
-    /* Toast (status banner) */
-    .oc-banner{
-      background:linear-gradient(180deg,rgba(16,185,129,.15),rgba(16,185,129,.04));
-      border:1px solid rgba(16,185,129,.5);
-      border-left:4px solid #10B981;
-      border-radius:8px;padding:9px 14px;margin-bottom:12px;
-      font-size:11px;color:#10B981;font-weight:700;
-      display:flex;align-items:center;gap:8px;
-      animation:oc-fade-in .25s ease-out;
-    }
+    .oc-banner{background:linear-gradient(180deg,rgba(16,185,129,.15),rgba(16,185,129,.04));border:1px solid rgba(16,185,129,.5);border-left:4px solid #10B981;border-radius:8px;padding:9px 14px;margin-bottom:12px;font-size:11px;color:#10B981;font-weight:700;display:flex;align-items:center;gap:8px;animation:oc-fade-in .25s ease-out}
     @keyframes oc-fade-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1}}
     
-    /* Footer info */
-    .oc-info{
-      margin-top:14px;padding:11px 14px;
-      background:#15161a;border:1px solid #2a2c30;
-      border-radius:8px;font-size:11px;color:#888;line-height:1.6;
-    }
+    .oc-pending-bar{background:linear-gradient(180deg,rgba(255,214,0,.12),rgba(255,214,0,.03));border:1px solid rgba(255,214,0,.4);border-left:4px solid #FFD600;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#FFD600;font-weight:700;display:flex;align-items:center;gap:10px}
+    .oc-pending-bar .lbl{flex:1}
+    
+    .oc-info{margin-top:14px;padding:11px 14px;background:#15161a;border:1px solid #2a2c30;border-radius:8px;font-size:11px;color:#888;line-height:1.6}
     .oc-info b{color:#ccc}
     .oc-info kbd{background:#2a2c34;color:#ddd;padding:2px 6px;border-radius:4px;font-size:10px;border:1px solid #3a3d45;font-family:var(--mono)}
   </style>
@@ -7426,16 +7434,57 @@ async function pgOrgChart(el){
       <div class="oc-header-icon">🎛</div>
       <div>
         <h2>ORGANOGRAMA TGT</h2>
-        <div class="sub">Painel de Controle · Arraste pessoas e clientes entre times</div>
+        <div class="sub">Painel de Controle · Arraste e solte · Salve quando estiver pronto</div>
       </div>
       <div class="oc-stats">
         <div class="oc-stat"><div class="v">${allMembers.length}</div><div class="l">pessoas</div></div>
         <div class="oc-stat"><div class="v" style="color:#FFD600">${allAccounts.length}</div><div class="l">líderes</div></div>
-        <div class="oc-stat"><div class="v">${(S.clients||[]).filter(c=>c.is_active!==false).length}</div><div class="l">clientes</div></div>
+        <div class="oc-stat"><div class="v">${allClients.length}</div><div class="l">clientes</div></div>
+        <div class="oc-stat"><div class="v">${TEAMS.length}</div><div class="l">times</div></div>
+      </div>
+      <div class="oc-acts" style="margin-left:14px">
+        <button class="oc-btn" onclick="ocPromptNewTeam()">+ Novo Time</button>
+        <button class="oc-btn ghost" onclick="ocDiscardAll()" ${pendCount===0?'disabled':''}>Descartar</button>
+        <button class="oc-btn primary" onclick="ocSaveAll()" ${pendCount===0?'disabled':''}>
+          💾 Salvar${pendCount>0?`<span class="oc-pend-badge">${pendCount}</span>`:''}
+        </button>
       </div>
     </div>
     
     <div id="oc-banner-slot"></div>
+    
+    ${pendCount>0?`<div class="oc-pending-bar">
+      <span style="font-size:18px">⚠</span>
+      <div class="lbl">Você tem <b>${pendCount}</b> alteração${pendCount>1?'ões':''} pendente${pendCount>1?'s':''}. Nada foi salvo ainda — clique em <b>Salvar</b> pra confirmar.</div>
+    </div>`:''}
+    
+    <!-- POOL DE PESSOAS — Blackmagic-style -->
+    <div class="oc-pool-wrap">
+      <div class="oc-pool-h">
+        <div class="ttl">📡 Pool de Pessoas TGT · <b>${allMembers.length} ativas</b> · Arraste de qualquer lugar pra qualquer time</div>
+        <input type="text" class="oc-pool-search" placeholder="🔍 Filtrar..." 
+          oninput="ocFilterPool(this.value)" id="oc-pool-q">
+      </div>
+      <div class="oc-pool" id="oc-pool">
+        ${allMembers.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(m=>{
+          const ts=Array.from(teamsByMember[m.id]).sort();
+          const accentClass=m.access_level==='admin'?'is-admin':m.access_level==='account'?'is-account':m.access_level==='prod_leader'?'is-prod_leader':'';
+          const noTeam=ts.length===0?'no-team':'';
+          return `<div class="oc-pchip ${accentClass} ${noTeam}" 
+            draggable="true" 
+            data-pname="${escapeHtml((m.name||'').toLowerCase())}"
+            data-pteam="${ts.join(',')}"
+            ondragstart="ocDragStart(event,'${m.id}','member')"
+            ondragend="ocDragEnd(event)"
+            onclick="if(!window._ocJustDragged)ocOpenMemberCard('${m.id}')"
+            title="${escapeHtml(m.name)}${ts.length?' · '+ts.join(', '):' · sem time'}">
+            <div class="av">${initials(m.name)}</div>
+            <span>${escapeHtml((m.name||'').split(' ')[0])}</span>
+            ${ts.length?`<span class="tms">${ts.map(t=>`<span>${t}</span>`).join('')}</span>`:''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
     
     <div class="oc-tabs">
       <button class="oc-tab ${(window._ocTab||'pessoas')==='pessoas'?'active':''}" onclick="window._ocTab='pessoas';renderPage()">👥 Pessoas por Time</button>
@@ -7449,55 +7498,66 @@ async function pgOrgChart(el){
         const teamAccounts=teamMembers.filter(isAccountLike);
         const teamDesigners=teamMembers.filter(m=>!isAccountLike(m));
         const teamClients=clientsByTeam[t.key]||[];
+        const hasPendInTeam=teamMembers.some(m=>window._ocPending.memberMoves[m.id])||teamClients.some(c=>window._ocPending.clientMoves[c.id]);
         return `<div class="oc-team" style="--accent:${t.color}" data-team="${t.key}"
           ondragover="event.preventDefault();this.classList.add('dragover')"
           ondragleave="this.classList.remove('dragover')"
           ondrop="ocHandleDrop(event,'${t.key}')">
           <div class="oc-team-h">
             <span class="emj">${t.emoji}</span>
-            <span class="lbl">${t.label}</span>
-            <span class="desc">${escapeHtml(t.desc)}</span>
+            <span class="lbl">${escapeHtml(t.label)}</span>
+            <span class="desc">${escapeHtml(t.description||t.desc||'')}</span>
             <span class="cnt">${isPessoasTab?teamMembers.length:teamClients.length}</span>
+            <button class="edit-team" onclick="ocEditTeam('${t.key}')" title="Editar/Apagar time">⚙</button>
           </div>
-          
           ${isPessoasTab?`
             <div class="oc-section-l">Líderes / Accounts</div>
-            ${teamAccounts.length>0?teamAccounts.map(m=>`
-              <div class="oc-card is-account" draggable="true" data-mid="${m.id}" data-kind="member"
+            ${teamAccounts.length>0?teamAccounts.map(m=>{
+              const isPend=window._ocPending.memberMoves[m.id];
+              return `<div class="oc-card is-account" draggable="true" data-mid="${m.id}" data-kind="member"
                 ondragstart="ocDragStart(event,'${m.id}','member')"
                 ondragend="ocDragEnd(event)"
                 onclick="if(!window._ocJustDragged)ocOpenMemberCard('${m.id}')"
                 title="${escapeHtml(m.name)} · ${m.access_level||''}">
+                ${isPend?'<div class="pend-tag">!</div>':''}
                 <div class="av">${initials(m.name)}</div>
                 <div class="ifo">
                   <div class="nm">${escapeHtml(m.name)}</div>
                   <div class="role account">${m.access_level==='admin'?'admin':m.access_level==='prod_leader'?'prod leader':'account'}</div>
                 </div>
-              </div>`).join(''):'<div class="oc-empty">Sem líder</div>'}
+              </div>`;
+            }).join(''):'<div class="oc-empty">Sem líder</div>'}
             
             <div class="oc-section-l" style="margin-top:6px">Designers</div>
             ${teamDesigners.length>0?teamDesigners.map(m=>{
-              const repAcc=m.reports_to_account_id?S.members.find(a=>a.id===m.reports_to_account_id):null;
+              const isPend=window._ocPending.memberMoves[m.id];
+              const repId=effectiveReports(m);
+              const repAcc=repId?S.members.find(a=>a.id===repId):null;
+              const multi=teamsByMember[m.id].size>1;
               return `<div class="oc-card" draggable="true" data-mid="${m.id}" data-kind="member"
                 ondragstart="ocDragStart(event,'${m.id}','member')"
                 ondragend="ocDragEnd(event)"
                 onclick="if(!window._ocJustDragged)ocOpenMemberCard('${m.id}')"
-                title="${escapeHtml(m.name)}${repAcc?` · reporta a ${repAcc.name}`:''}">
+                title="${escapeHtml(m.name)}${multi?' · em vários times':''}${repAcc?' · reporta a '+repAcc.name:''}">
+                ${isPend?'<div class="pend-tag">!</div>':''}
                 <div class="av">${initials(m.name)}</div>
                 <div class="ifo">
-                  <div class="nm">${escapeHtml(m.name)}</div>
-                  <div class="role">${escapeHtml(m.job_title||'designer')}${repAcc?` · → ${escapeHtml(initials(repAcc.name))}`:''}</div>
+                  <div class="nm">${escapeHtml(m.name)}${multi?' <span style="color:#5559DF;font-size:9px">⇄</span>':''}</div>
+                  <div class="role">${escapeHtml(m.job_title||'designer')}${repAcc?' · → '+escapeHtml(initials(repAcc.name)):''}</div>
                 </div>
               </div>`;
             }).join(''):'<div class="oc-empty">Sem designers</div>'}
           `:`
             ${teamClients.length>0?teamClients.map(c=>{
-              const accN=c.primary_account_id?accName(c.primary_account_id):null;
+              const accId=effectiveAccount(c);
+              const accN=accId?accName(accId):null;
+              const isPend=window._ocPending.clientMoves[c.id];
               return `<div class="oc-client" draggable="true" data-cid="${c.id}" data-kind="client"
                 ondragstart="ocDragStart(event,'${c.id}','client')"
                 ondragend="ocDragEnd(event)"
                 onclick="if(!window._ocJustDragged)ocOpenClientCard('${c.id}')"
-                title="${escapeHtml(c.name)}${accN?` · responsável: ${accN}`:''}">
+                title="${escapeHtml(c.name)}${accN?' · responsável: '+accN:''}">
+                ${isPend?'<div class="pend-tag">!</div>':''}
                 <div class="dot"></div>
                 <div class="nm">${escapeHtml(c.name)}</div>
                 ${accN?`<div class="acc">→ ${escapeHtml(initials(accN))}</div>`:''}
@@ -7508,48 +7568,56 @@ async function pgOrgChart(el){
       }).join('')}
     </div>
     
-    ${orphans.length>0?`
+    ${clientOrphans.length>0&&window._ocTab==='clientes'?`
       <div style="margin-top:14px;padding:10px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px">
-        <div style="font-size:10px;color:#F59E0B;letter-spacing:1.5px;font-weight:800;text-transform:uppercase;margin-bottom:6px">⚠ Sem time atribuído (${orphans.length})</div>
+        <div style="font-size:10px;color:#F59E0B;letter-spacing:1.5px;font-weight:800;text-transform:uppercase;margin-bottom:6px">⚠ Clientes sem time (${clientOrphans.length})</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
-          ${orphans.map(m=>`
-            <div class="oc-card" draggable="true" data-mid="${m.id}" data-kind="member" style="border-color:#F59E0B"
-              ondragstart="ocDragStart(event,'${m.id}','member')" ondragend="ocDragEnd(event)">
-              <div class="av">${initials(m.name)}</div>
-              <div class="ifo">
-                <div class="nm">${escapeHtml(m.name)}</div>
-                <div class="role">${escapeHtml(m.access_level||'')}</div>
-              </div>
-            </div>`).join('')}
+          ${clientOrphans.map(c=>`<div class="oc-client" style="border-color:#F59E0B" draggable="true" data-cid="${c.id}" data-kind="client"
+            ondragstart="ocDragStart(event,'${c.id}','client')" ondragend="ocDragEnd(event)">
+            <div class="dot" style="background:#F59E0B"></div>
+            <div class="nm">${escapeHtml(c.name)}</div>
+          </div>`).join('')}
         </div>
       </div>`:''}
-  </div>
+    
+    <div class="oc-info">
+      <b>Como usar:</b> Arraste pessoas (do pool ou dos times) e clientes entre os times. Tudo fica pendente até clicar <b>💾 Salvar</b>.<br>
+      <b style="color:#5559DF">⇄</b> = pessoa em múltiplos times · <b style="color:#FFD600">!</b> = mudança pendente · <kbd>⚙</kbd> = editar time
+    </div>
+    
+    <div id="oc-drop-hint" class="oc-drop-hint">Soltando...</div>
+  </div>`;
   
-  <div class="oc-info">
-    <b>Como usar:</b> Arraste qualquer <span style="color:#fff">card de pessoa</span> ou <span style="color:#fff">card de cliente</span> e solte em um time. O sistema atualiza automaticamente o banco e propaga: <b>cards de cliente</b> reassociam ao novo time; <b>cards de pessoa</b> mudam de equipe e podem ser linkados ao novo account responsável. Use a tab acima pra alternar entre <kbd>Pessoas</kbd> e <kbd>Clientes</kbd>.<br>
-    <b style="color:#FFD600">Borda amarela</b> = Líder/Account. <b style="color:#10B981">Verde</b> = Prod Leader.
-  </div>
-  
-  <div id="oc-drop-hint" class="oc-drop-hint">Soltando...</div>`;
-  
-  // Ensure tab default
   if(!window._ocTab)window._ocTab='pessoas';
 }
 
-// ───────── Drag & Drop handlers ─────────
+// ═══════════════════════════════════════════════
+// FILTRO DO POOL
+// ═══════════════════════════════════════════════
+function ocFilterPool(q){
+  q=(q||'').toLowerCase().trim();
+  const pool=$('oc-pool');if(!pool)return;
+  pool.querySelectorAll('.oc-pchip').forEach(el=>{
+    const name=el.dataset.pname||'';
+    const teams=el.dataset.pteam||'';
+    el.style.display=(!q||name.includes(q)||teams.toLowerCase().includes(q))?'':'none';
+  });
+}
+
+// ═══════════════════════════════════════════════
+// DRAG & DROP — modo PENDING
+// ═══════════════════════════════════════════════
 function ocDragStart(ev,id,kind){
   window._ocJustDragged=true;
   ev.dataTransfer.effectAllowed='move';
   ev.dataTransfer.setData('text/plain',JSON.stringify({id,kind}));
   ev.currentTarget.classList.add('dragging');
-  // Visual hint
   const hint=$('oc-drop-hint');
   if(hint){
     hint.textContent=kind==='member'?'Soltar em um time →':'Mover cliente →';
     hint.style.left=(ev.clientX+20)+'px';
     hint.style.top=(ev.clientY-10)+'px';
     setTimeout(()=>hint.classList.add('show'),50);
-    // Atualiza posição com mousemove
     window._ocHintMove=(e)=>{hint.style.left=(e.clientX+20)+'px';hint.style.top=(e.clientY-10)+'px'};
     document.addEventListener('dragover',window._ocHintMove);
   }
@@ -7558,10 +7626,8 @@ function ocDragStart(ev,id,kind){
 function ocDragEnd(ev){
   ev.currentTarget.classList.remove('dragging');
   document.querySelectorAll('.oc-team.dragover').forEach(el=>el.classList.remove('dragover'));
-  const hint=$('oc-drop-hint');
-  if(hint)hint.classList.remove('show');
+  const hint=$('oc-drop-hint');if(hint)hint.classList.remove('show');
   if(window._ocHintMove)document.removeEventListener('dragover',window._ocHintMove);
-  // Reset flag depois de pequeno delay (evita click logo após drag)
   setTimeout(()=>{window._ocJustDragged=false},150);
 }
 
@@ -7572,72 +7638,360 @@ async function ocHandleDrop(ev,newTeam){
   try{payload=JSON.parse(ev.dataTransfer.getData('text/plain'))}catch(e){return}
   if(!payload||!payload.id||!payload.kind)return;
   
-  try{
-    if(payload.kind==='member'){
-      const m=S.members.find(x=>x.id===payload.id);
-      if(!m)return;
-      if(m.team===newTeam){toast('Já está nesse time','info');return}
-      
-      const oldTeam=m.team;
-      
-      // 1. Atualiza tt_members.team (campo "primary team" — usado em vários lugares)
-      await sbPatch('tt_members',`id=eq.${m.id}`,{team:newTeam,reports_to_account_id:null});
-      
-      // 2. Sincroniza tt_member_teams (multi-team): remove o antigo e adiciona novo como primary
-      try{
-        if(oldTeam){
-          await sbDel('tt_member_teams',`member_id=eq.${m.id}&team=eq.${oldTeam}`);
-        }
-        // Insere novo (ou atualiza se já existia como secundário)
-        const existingNew=await sbGet('tt_member_teams',`member_id=eq.${m.id}&team=eq.${newTeam}`);
-        if(existingNew&&existingNew.length>0){
-          await sbPatch('tt_member_teams',`id=eq.${existingNew[0].id}`,{is_primary:true});
-        }else{
-          await sbPost('tt_member_teams',{
-            member_id:m.id,
-            team:newTeam,
-            capacity_hours:m.capacity_hours||140,
-            is_primary:true
-          });
-        }
-      }catch(e){console.warn('multi-team sync:',e.message)}
-      
-      // 3. Atualiza estado local
-      m.team=newTeam;m.reports_to_account_id=null;
-      ocShowBanner(`✅ ${m.name} → ${newTeam}${oldTeam?` (era ${oldTeam})`:''}`,'success');
-      renderPage();
-      
-      // 4. Sugere definir reports_to se o novo time tem accounts
-      const teamAccounts=S.members.filter(x=>x.team===newTeam&&(x.access_level==='account'||x.access_level==='admin')&&x.id!==m.id&&x.active!==false);
-      if(teamAccounts.length>0&&m.access_level!=='account'&&m.access_level!=='admin'&&m.access_level!=='prod_leader'){
-        setTimeout(()=>ocPromptReportsTo(m,teamAccounts),400);
-      }
-    }else if(payload.kind==='client'){
-      const c=S.clients.find(x=>x.id===payload.id);
-      if(!c)return;
-      if(c.team===newTeam){toast('Já está nesse time','info');return}
-      
-      const oldTeam=c.team;
-      
-      // 1. Atualiza tt_clients.team
-      await sbPatch('tt_clients',`id=eq.${c.id}`,{team:newTeam,primary_account_id:null});
-      c.team=newTeam;c.primary_account_id=null;
-      
-      ocShowBanner(`✅ ${c.name} → ${newTeam}${oldTeam?` (era ${oldTeam})`:''}`,'success');
-      renderPage();
-      
-      // 2. Sugere definir account responsável
-      const teamAccounts=S.members.filter(x=>x.team===newTeam&&(x.access_level==='account'||x.access_level==='admin')&&x.active!==false);
-      if(teamAccounts.length>0){
-        setTimeout(()=>ocPromptPrimaryAccount(c,teamAccounts),400);
-      }
+  if(payload.kind==='member'){
+    const m=S.members.find(x=>x.id===payload.id);
+    if(!m)return;
+    
+    // Quais times ela tem agora (considerando pending)
+    const current=new Set();
+    window._ocMemberTeams.filter(mt=>mt.member_id===m.id).forEach(mt=>current.add(mt.team));
+    if(m.team&&current.size===0)current.add(m.team);
+    const pend=window._ocPending.memberMoves[m.id];
+    if(pend){
+      (pend.add||[]).forEach(t=>current.add(t));
+      (pend.remove||[]).forEach(t=>current.delete(t));
     }
-  }catch(e){
-    toast('Erro: '+e.message,'error');
+    
+    if(current.has(newTeam)){
+      toast(`${m.name} já está em ${newTeam}`,'info');
+      return;
+    }
+    
+    // Pergunta: ADICIONAR ou MOVER?
+    if(current.size>0){
+      ocPromptAddOrMove(m,Array.from(current),newTeam);
+    }else{
+      // Era órfã, só adiciona
+      ocAddMemberToTeam(m.id,newTeam);
+    }
+  }else if(payload.kind==='client'){
+    const c=S.clients.find(x=>x.id===payload.id);
+    if(!c)return;
+    const effectiveTeam=window._ocPending.clientMoves[c.id]||c.team;
+    if(effectiveTeam===newTeam){toast(`${c.name} já está em ${newTeam}`,'info');return}
+    
+    // Cliente sempre muda (não tem multi-team)
+    window._ocPending.clientMoves[c.id]=newTeam;
+    // Limpa account se mudou de time (precisa redefinir)
+    if(c.primary_account_id||window._ocPending.clientAccounts[c.id]){
+      window._ocPending.clientAccounts[c.id]=null;
+    }
+    ocShowBanner(`📌 ${c.name} → ${newTeam} (pendente)`,'pending');
+    renderPage();
   }
 }
 
-// Modal: define account responsável de cliente recém-mudado
+// Modal: Adicionar ao novo time OU mover do antigo?
+function ocPromptAddOrMove(member,currentTeams,newTeam){
+  const mo=document.createElement('div');
+  mo.className='modal-ov open';
+  mo.onclick=(e)=>{if(e.target===mo)mo.remove()};
+  const teamList=currentTeams.join(', ');
+  mo.innerHTML=`<div class="modal" style="max-width:480px;background:#15161a;border:1px solid #2a2c30">
+    <div style="padding:18px 22px;border-bottom:1px solid #2a2c30">
+      <div style="font-size:10px;color:#5559DF;letter-spacing:2px;font-weight:800">${escapeHtml(member.name).toUpperCase()}</div>
+      <div style="font-size:14px;color:#fff;font-weight:700;margin-top:6px">Já está em: <span style="color:#FFD600">${escapeHtml(teamList)}</span></div>
+      <div style="font-size:13px;color:#aaa;margin-top:4px">O que você quer fazer ao soltar em <b style="color:#fff">${newTeam}</b>?</div>
+    </div>
+    <div style="padding:16px 22px;display:flex;flex-direction:column;gap:8px">
+      <button onclick="ocAddMemberToTeam('${member.id}','${newTeam}');this.closest('.modal-ov').remove()" 
+        style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;background:linear-gradient(180deg,#10B98140,#10B98115);border:1px solid #10B981;color:#fff;border-radius:8px;cursor:pointer;text-align:left;font-family:inherit;transition:all .12s"
+        onmouseover="this.style.background='linear-gradient(180deg,#10B98160,#10B98125)'"
+        onmouseout="this.style.background='linear-gradient(180deg,#10B98140,#10B98115)'">
+        <span style="font-size:24px">➕</span>
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#10B981">ADICIONAR ao ${newTeam}</div>
+          <div style="font-size:11px;color:#aaa;margin-top:2px">Mantém em ${escapeHtml(teamList)} também — multi-time</div>
+        </div>
+      </button>
+      ${currentTeams.length===1?`
+        <button onclick="ocMoveMemberToTeam('${member.id}','${currentTeams[0]}','${newTeam}');this.closest('.modal-ov').remove()" 
+          style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;background:linear-gradient(180deg,#ED1C2440,#ED1C2415);border:1px solid #ED1C24;color:#fff;border-radius:8px;cursor:pointer;text-align:left;font-family:inherit;transition:all .12s"
+          onmouseover="this.style.background='linear-gradient(180deg,#ED1C2460,#ED1C2425)'"
+          onmouseout="this.style.background='linear-gradient(180deg,#ED1C2440,#ED1C2415)'">
+          <span style="font-size:24px">↪</span>
+          <div>
+            <div style="font-size:13px;font-weight:800;color:#ED1C24">MOVER de ${currentTeams[0]} → ${newTeam}</div>
+            <div style="font-size:11px;color:#aaa;margin-top:2px">Remove de ${currentTeams[0]}, adiciona em ${newTeam}</div>
+          </div>
+        </button>
+      `:currentTeams.map(t=>`
+        <button onclick="ocMoveMemberToTeam('${member.id}','${t}','${newTeam}');this.closest('.modal-ov').remove()" 
+          style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:#2a2c34;border:1px solid #3a3d45;color:#fff;border-radius:7px;cursor:pointer;text-align:left;font-family:inherit;font-size:12px"
+          onmouseover="this.style.borderColor='#ED1C24'"
+          onmouseout="this.style.borderColor='#3a3d45'">
+          ↪ <b>REMOVER de ${t}</b> e adicionar em ${newTeam}
+        </button>
+      `).join('')}
+      <button onclick="this.closest('.modal-ov').remove()" style="display:block;width:100%;padding:8px;background:transparent;border:none;color:#666;cursor:pointer;font-size:11px;margin-top:4px;font-family:inherit">Cancelar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(mo);
+}
+
+function ocAddMemberToTeam(memberId,team){
+  if(!window._ocPending.memberMoves[memberId])window._ocPending.memberMoves[memberId]={add:[],remove:[]};
+  const p=window._ocPending.memberMoves[memberId];
+  if(!p.add.includes(team))p.add.push(team);
+  // Se estava marcado pra remover, cancela
+  p.remove=p.remove.filter(t=>t!==team);
+  const m=S.members.find(x=>x.id===memberId);
+  ocShowBanner(`📌 ${m?.name||'membro'} → +${team} (pendente)`,'pending');
+  renderPage();
+}
+
+function ocMoveMemberToTeam(memberId,fromTeam,toTeam){
+  if(!window._ocPending.memberMoves[memberId])window._ocPending.memberMoves[memberId]={add:[],remove:[]};
+  const p=window._ocPending.memberMoves[memberId];
+  if(!p.remove.includes(fromTeam))p.remove.push(fromTeam);
+  if(!p.add.includes(toTeam))p.add.push(toTeam);
+  // Edge: se adicionando o que estava removendo, cancela
+  p.add=p.add.filter(t=>t!==fromTeam);
+  p.remove=p.remove.filter(t=>t!==toTeam);
+  const m=S.members.find(x=>x.id===memberId);
+  ocShowBanner(`📌 ${m?.name||'membro'} ${fromTeam} → ${toTeam} (pendente)`,'pending');
+  renderPage();
+}
+
+// ═══════════════════════════════════════════════
+// SALVAR TODAS as mudanças pendentes
+// ═══════════════════════════════════════════════
+async function ocSaveAll(){
+  const p=window._ocPending;
+  const total=Object.keys(p.memberMoves).length+Object.keys(p.clientMoves).length+Object.keys(p.memberReports).length+Object.keys(p.clientAccounts).length;
+  if(total===0){toast('Nada pra salvar','info');return}
+  
+  if(!confirm(`Confirmar ${total} alterações no organograma?\n\nIsso vai atualizar o banco e refletir em todo o sistema.`))return;
+  
+  let okCount=0,errCount=0;
+  const errors=[];
+  
+  // 1) Member moves (adicionar/remover de times)
+  for(const memberId in p.memberMoves){
+    const moves=p.memberMoves[memberId];
+    const m=S.members.find(x=>x.id===memberId);
+    if(!m)continue;
+    
+    try{
+      // Remove dos times marcados
+      for(const t of (moves.remove||[])){
+        try{await sbDel('tt_member_teams',`member_id=eq.${memberId}&team=eq.${t}`)}catch(e){console.warn('rm team',e)}
+      }
+      // Adiciona aos times marcados
+      for(const t of (moves.add||[])){
+        try{
+          const existing=await sbGet('tt_member_teams',`member_id=eq.${memberId}&team=eq.${t}`);
+          if(!existing||existing.length===0){
+            await sbPost('tt_member_teams',{member_id:memberId,team:t,capacity_hours:0,is_primary:false});
+          }
+        }catch(e){console.warn('add team',e)}
+      }
+      
+      // Recalcula o "primary team" (tt_members.team) — pega o primeiro time atual ordenado
+      const currentTeams=await sbGet('tt_member_teams',`member_id=eq.${memberId}`);
+      let primaryTeam=null;
+      if(currentTeams&&currentTeams.length>0){
+        // Mantém o atual se ainda existe; senão pega o primeiro
+        const stillThere=currentTeams.find(ct=>ct.team===m.team);
+        primaryTeam=stillThere?m.team:currentTeams[0].team;
+        // Marca o primary
+        await sbPatch('tt_member_teams',`member_id=eq.${memberId}&team=eq.${primaryTeam}`,{is_primary:true});
+      }
+      
+      await sbPatch('tt_members',`id=eq.${memberId}`,{team:primaryTeam});
+      m.team=primaryTeam;
+      
+      okCount++;
+    }catch(e){errCount++;errors.push(`${m.name}: ${e.message}`)}
+  }
+  
+  // 2) Client moves
+  for(const clientId in p.clientMoves){
+    const newTeam=p.clientMoves[clientId];
+    try{
+      const updates={team:newTeam};
+      if(p.clientAccounts[clientId]===null)updates.primary_account_id=null;
+      await sbPatch('tt_clients',`id=eq.${clientId}`,updates);
+      const c=S.clients.find(x=>x.id===clientId);
+      if(c){c.team=newTeam;if(updates.primary_account_id===null)c.primary_account_id=null}
+      okCount++;
+    }catch(e){errCount++;errors.push(`Cliente: ${e.message}`)}
+  }
+  
+  // 3) Member reports_to
+  for(const memberId in p.memberReports){
+    const accId=p.memberReports[memberId];
+    try{
+      await sbPatch('tt_members',`id=eq.${memberId}`,{reports_to_account_id:accId});
+      const m=S.members.find(x=>x.id===memberId);
+      if(m)m.reports_to_account_id=accId;
+      okCount++;
+    }catch(e){errCount++;errors.push(`reports_to: ${e.message}`)}
+  }
+  
+  // 4) Client primary accounts (que não foram limpos no clientMoves)
+  for(const clientId in p.clientAccounts){
+    if(p.clientMoves[clientId])continue; // já processado
+    const accId=p.clientAccounts[clientId];
+    try{
+      await sbPatch('tt_clients',`id=eq.${clientId}`,{primary_account_id:accId});
+      const c=S.clients.find(x=>x.id===clientId);
+      if(c)c.primary_account_id=accId;
+      okCount++;
+    }catch(e){errCount++;errors.push(`primary_account: ${e.message}`)}
+  }
+  
+  // Limpa pending + recarrega cache de tt_member_teams
+  window._ocPending={memberMoves:{},clientMoves:{},memberReports:{},clientAccounts:{}};
+  try{window._ocMemberTeams=await sbGet('tt_member_teams','')}catch(e){}
+  
+  if(errCount===0){
+    ocShowBanner(`✅ ${okCount} alterações salvas! Refletindo em todo o sistema.`,'success');
+  }else{
+    toast(`Salvou ${okCount}, mas ${errCount} falharam: ${errors[0]||''}`,'error');
+  }
+  renderPage();
+}
+
+function ocDiscardAll(){
+  if(!confirm('Descartar todas as alterações pendentes?'))return;
+  window._ocPending={memberMoves:{},clientMoves:{},memberReports:{},clientAccounts:{}};
+  ocShowBanner('🗑 Alterações descartadas','info');
+  renderPage();
+}
+
+// ═══════════════════════════════════════════════
+// CRIAR/EDITAR TIME
+// ═══════════════════════════════════════════════
+function ocPromptNewTeam(){
+  ocPromptTeamForm(null);
+}
+
+function ocEditTeam(teamKey){
+  const t=window._ocTeams.find(x=>x.key===teamKey);
+  if(!t)return;
+  ocPromptTeamForm(t);
+}
+
+function ocPromptTeamForm(existing){
+  const mo=document.createElement('div');
+  mo.className='modal-ov open';
+  mo.onclick=(e)=>{if(e.target===mo)mo.remove()};
+  const isEdit=!!existing;
+  const colors=['#ED1C24','#FF6B35','#F59E0B','#FFD600','#10B981','#06B6D4','#5559DF','#A855F7','#EC4899','#888B97'];
+  const emojis=['🟥','🟧','🟨','🟩','🟦','🟪','⬛','🎬','👔','💼','🚀','📦','✨','🎯','🎨','📊'];
+  mo.innerHTML=`<div class="modal" style="max-width:480px;background:#15161a;border:1px solid #2a2c30">
+    <div style="padding:18px 22px;border-bottom:1px solid #2a2c30">
+      <div style="font-size:10px;color:#FFD600;letter-spacing:2px;font-weight:800">${isEdit?'EDITAR':'CRIAR'} TIME</div>
+      <div style="font-size:16px;color:#fff;font-weight:800;margin-top:4px">${isEdit?'Configurar '+escapeHtml(existing.label):'Novo time / grupo'}</div>
+    </div>
+    <div style="padding:16px 22px;display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700">KEY (curto, sem espaços)</label>
+        <input id="oc-tf-key" type="text" value="${isEdit?escapeHtml(existing.key):''}" ${isEdit?'disabled':''} maxlength="20"
+          placeholder="ex: T6, INOVA, AV2"
+          style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit;margin-top:4px;text-transform:uppercase">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700">NOME / LABEL</label>
+        <input id="oc-tf-label" type="text" value="${isEdit?escapeHtml(existing.label):''}" maxlength="40"
+          placeholder="ex: Time 6 — Inovação"
+          style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit;margin-top:4px">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700">DESCRIÇÃO</label>
+        <input id="oc-tf-desc" type="text" value="${isEdit?escapeHtml(existing.description||existing.desc||''):''}" maxlength="80"
+          placeholder="ex: Projetos especiais e R&D"
+          style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit;margin-top:4px">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700">EMOJI</label>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px" id="oc-tf-emojis">
+          ${emojis.map(e=>`<button type="button" data-emoji="${e}" onclick="document.querySelectorAll('#oc-tf-emojis button').forEach(b=>b.style.background='#2a2c34');this.style.background='#FFD60040';document.getElementById('oc-tf-emoji').value='${e}'" 
+            style="background:${isEdit&&existing.emoji===e?'#FFD60040':'#2a2c34'};border:1px solid #3a3d45;font-size:18px;padding:4px 8px;border-radius:6px;cursor:pointer">${e}</button>`).join('')}
+        </div>
+        <input type="hidden" id="oc-tf-emoji" value="${isEdit?existing.emoji:'🟦'}">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700">COR DE ACENTO</label>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px" id="oc-tf-colors">
+          ${colors.map(c=>`<button type="button" data-color="${c}" onclick="document.querySelectorAll('#oc-tf-colors button').forEach(b=>b.style.outline='none');this.style.outline='2px solid #fff';document.getElementById('oc-tf-color').value='${c}'" 
+            style="width:32px;height:32px;background:${c};border:1px solid rgba(0,0,0,.3);border-radius:6px;cursor:pointer;outline:${isEdit&&existing.color===c?'2px solid #fff':'none'}"></button>`).join('')}
+        </div>
+        <input type="hidden" id="oc-tf-color" value="${isEdit?existing.color:'#5559DF'}">
+      </div>
+    </div>
+    <div style="padding:12px 22px;border-top:1px solid #2a2c30;display:flex;gap:8px;justify-content:space-between">
+      <div>
+        ${isEdit&&existing.key!=='ADM'&&existing.key!=='T1'&&existing.key!=='T3'&&existing.key!=='T4'&&existing.key!=='T5'&&existing.key!=='PROD'?
+          `<button onclick="ocDeleteTeam('${existing.key}');this.closest('.modal-ov').remove()" style="background:transparent;color:#ED1C24;border:1px solid #ED1C24;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit">🗑 Apagar</button>`:''}
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c34;color:#aaa;border:1px solid #3a3d45;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">Cancelar</button>
+        <button onclick="ocSaveTeam(${isEdit?`'${existing.key}'`:'null'})" style="background:linear-gradient(180deg,#ED1C24,#a01016);color:#fff;border:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">${isEdit?'Salvar':'Criar Time'}</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(mo);
+}
+
+async function ocSaveTeam(existingKey){
+  const key=(document.getElementById('oc-tf-key').value||'').toUpperCase().trim().replace(/[^A-Z0-9_]/g,'');
+  const label=(document.getElementById('oc-tf-label').value||'').trim();
+  const description=(document.getElementById('oc-tf-desc').value||'').trim();
+  const emoji=document.getElementById('oc-tf-emoji').value||'🟦';
+  const color=document.getElementById('oc-tf-color').value||'#5559DF';
+  
+  if(!key||!label){toast('Key e Label obrigatórios','error');return}
+  
+  try{
+    if(existingKey){
+      // Edição
+      await sbPatch('tt_teams',`key=eq.${existingKey}`,{label,description,emoji,color,updated_at:new Date().toISOString()});
+      const t=window._ocTeams.find(x=>x.key===existingKey);
+      if(t){Object.assign(t,{label,description,emoji,color})}
+      ocShowBanner(`✅ Time ${label} atualizado`,'success');
+    }else{
+      // Criação — verifica se key já existe
+      const exists=await sbGet('tt_teams',`key=eq.${key}`);
+      if(exists&&exists.length>0){toast(`Time ${key} já existe`,'error');return}
+      const nextOrder=Math.max(...window._ocTeams.map(t=>t.sort_order||100))+1;
+      await sbPost('tt_teams',{key,label,description,emoji,color,sort_order:nextOrder,is_active:true});
+      window._ocTeams.push({key,label,description,emoji,color,sort_order:nextOrder,is_active:true});
+      ocShowBanner(`✅ Time ${label} criado`,'success');
+    }
+    // Fecha modal
+    document.querySelectorAll('.modal-ov.open').forEach(m=>m.remove());
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+async function ocDeleteTeam(key){
+  // Verifica se tem gente ou cliente nesse time
+  const peopleHere=S.members.filter(m=>m.team===key&&m.active!==false).length;
+  const clientsHere=S.clients.filter(c=>c.team===key&&c.is_active!==false).length;
+  const mtHere=window._ocMemberTeams.filter(mt=>mt.team===key).length;
+  
+  if(peopleHere>0||clientsHere>0||mtHere>0){
+    if(!confirm(`Time ${key} tem ${peopleHere} pessoas, ${clientsHere} clientes e ${mtHere} vínculos multi-team.\n\nApagar mesmo assim? Os vínculos serão removidos.`))return;
+  }else{
+    if(!confirm(`Apagar time ${key}?`))return;
+  }
+  
+  try{
+    // Remove vínculos
+    await sbDel('tt_member_teams',`team=eq.${key}`);
+    // Soft delete (mantém histórico mas some do organograma)
+    await sbPatch('tt_teams',`key=eq.${key}`,{is_active:false});
+    window._ocTeams=window._ocTeams.filter(t=>t.key!==key);
+    ocShowBanner(`🗑 Time ${key} removido`,'info');
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// ═══════════════════════════════════════════════
+// MODAIS DE DETALHES (mantidos da v0.54)
+// ═══════════════════════════════════════════════
 function ocPromptPrimaryAccount(client,accounts){
   const m=document.createElement('div');
   m.className='modal-ov open';
@@ -7665,85 +8019,42 @@ function ocPromptPrimaryAccount(client,accounts){
   document.body.appendChild(m);
 }
 
-async function ocSetClientAccount(clientId,accountId){
-  try{
-    await sbPatch('tt_clients',`id=eq.${clientId}`,{primary_account_id:accountId});
-    // tt_account_clients (relação muitos-pra-muitos: limpa+insere)
-    try{await sbDel('tt_account_clients',`client_id=eq.${clientId}`)}catch(e){}
-    try{await sbPost('tt_account_clients',{account_id:accountId,client_id:clientId})}catch(e){}
-    const c=S.clients.find(x=>x.id===clientId);
-    if(c)c.primary_account_id=accountId;
-    const a=S.members.find(x=>x.id===accountId);
-    ocShowBanner(`✅ ${c?.name||'cliente'} → ${a?.name||'account'}`,'success');
-    renderPage();
-  }catch(e){toast('Erro: '+e.message,'error')}
+// Set client account — vai pra pending também
+function ocSetClientAccount(clientId,accountId){
+  window._ocPending.clientAccounts[clientId]=accountId||null;
+  const c=S.clients.find(x=>x.id===clientId);
+  const a=S.members.find(x=>x.id===accountId);
+  ocShowBanner(`📌 ${c?.name||'cliente'} → ${a?.name||'sem account'} (pendente)`,'pending');
+  renderPage();
 }
 
-// Modal: define accountque pessoa reporta dentro do time
-function ocPromptReportsTo(member,accounts){
-  const m=document.createElement('div');
-  m.className='modal-ov open';
-  m.onclick=(e)=>{if(e.target===m)m.remove()};
-  const opts=accounts.map(a=>`
-    <button onclick="ocSetMemberReportsTo('${member.id}','${a.id}');this.closest('.modal-ov').remove()" 
-      style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:linear-gradient(180deg,#2a2c34,#1c1e24);border:1px solid #3a3d45;color:#fff;border-radius:8px;cursor:pointer;text-align:left;margin-bottom:6px;font-family:inherit;transition:all .12s"
-      onmouseover="this.style.background='linear-gradient(180deg,#34373f,#22242a)';this.style.borderColor='#FFD600'"
-      onmouseout="this.style.background='linear-gradient(180deg,#2a2c34,#1c1e24)';this.style.borderColor='#3a3d45'">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#ED1C24,#FFD600);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#fff">${(a.name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()}</div>
-      <div style="flex:1;font-size:12px;font-weight:700">${escapeHtml(a.name)}</div>
-      <span style="color:#FFD600;font-size:10px;letter-spacing:1px;font-weight:700">${a.access_level==='admin'?'ADMIN':'ACCOUNT'}</span>
-    </button>`).join('');
-  m.innerHTML=`<div class="modal" style="max-width:480px;background:#15161a;border:1px solid #2a2c30">
-    <div style="padding:16px 20px;border-bottom:1px solid #2a2c30">
-      <div style="font-size:10px;color:#FFD600;letter-spacing:2px;font-weight:800">REPORTA-SE A QUEM?</div>
-      <div style="font-size:16px;color:#fff;font-weight:800;margin-top:4px">${escapeHtml(member.name)}</div>
-      <div style="font-size:11px;color:#888;margin-top:2px">Time: ${member.team}</div>
-    </div>
-    <div style="padding:14px 20px">
-      ${opts}
-      <button onclick="this.closest('.modal-ov').remove()" style="display:block;width:100%;padding:8px;background:transparent;border:none;color:#666;cursor:pointer;font-size:11px;margin-top:6px;font-family:inherit">Pular por agora</button>
-    </div>
-  </div>`;
-  document.body.appendChild(m);
-}
-
-async function ocSetMemberReportsTo(memberId,accountId){
-  try{
-    await sbPatch('tt_members',`id=eq.${memberId}`,{reports_to_account_id:accountId});
-    // Mantém tt_account_members também sincronizado
-    try{
-      const exists=await sbGet('tt_account_members',`account_id=eq.${accountId}&member_id=eq.${memberId}`);
-      if(!exists||exists.length===0){
-        await sbPost('tt_account_members',{account_id:accountId,member_id:memberId});
-      }
-    }catch(e){}
-    const m=S.members.find(x=>x.id===memberId);
-    if(m)m.reports_to_account_id=accountId;
-    const a=S.members.find(x=>x.id===accountId);
-    ocShowBanner(`✅ ${m?.name||'membro'} reporta a ${a?.name||'account'}`,'success');
-    renderPage();
-  }catch(e){toast('Erro: '+e.message,'error')}
+// Set reports_to — vai pra pending
+function ocSetMemberReportsTo(memberId,accountId){
+  window._ocPending.memberReports[memberId]=accountId||null;
+  const m=S.members.find(x=>x.id===memberId);
+  const a=S.members.find(x=>x.id===accountId);
+  ocShowBanner(`📌 ${m?.name||'membro'} reporta a ${a?.name||'ninguém'} (pendente)`,'pending');
+  renderPage();
 }
 
 function ocShowBanner(msg,kind){
   const slot=$('oc-banner-slot');if(!slot)return;
-  slot.innerHTML=`<div class="oc-banner">${escapeHtml(msg)}</div>`;
+  const color=kind==='success'?'#10B981':kind==='pending'?'#FFD600':kind==='info'?'#5559DF':'#10B981';
+  slot.innerHTML=`<div class="oc-banner" style="border-color:${color}50;border-left-color:${color};color:${color};background:linear-gradient(180deg,${color}25,${color}05)">${escapeHtml(msg)}</div>`;
   setTimeout(()=>{const b=slot.querySelector('.oc-banner');if(b)b.style.opacity='0';setTimeout(()=>slot.innerHTML='',300)},2400);
 }
 
-// Modal: detalhes/edição rápida de pessoa
 function ocOpenMemberCard(memberId){
   const m=S.members.find(x=>x.id===memberId);if(!m)return;
-  const repAcc=m.reports_to_account_id?S.members.find(a=>a.id===m.reports_to_account_id):null;
+  const repId=window._ocPending.memberReports[m.id]!==undefined?window._ocPending.memberReports[m.id]:m.reports_to_account_id;
+  const repAcc=repId?S.members.find(a=>a.id===repId):null;
   const allAccounts=S.members.filter(x=>x.id!==m.id&&(x.access_level==='account'||x.access_level==='admin')&&x.active!==false).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  
-  // Lista clientes que esse account é primary
+  const myTeams=Array.from(new Set([
+    ...(window._ocMemberTeams.filter(mt=>mt.member_id===m.id).map(mt=>mt.team)),
+    ...(m.team?[m.team]:[])
+  ]));
   const myClients=m.access_level==='account'||m.access_level==='admin'
-    ? S.clients.filter(c=>c.primary_account_id===m.id&&c.is_active!==false)
-    : [];
-  // Lista clientes do time da pessoa
-  const teamClients=S.clients.filter(c=>c.team===m.team&&c.is_active!==false);
-  
+    ? S.clients.filter(c=>c.primary_account_id===m.id&&c.is_active!==false):[];
   const ini=(m.name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
   
   const mo=document.createElement('div');
@@ -7754,35 +8065,38 @@ function ocOpenMemberCard(memberId){
       <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#ED1C24,#5559DF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0">${ini}</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:17px;font-weight:800;color:#fff">${escapeHtml(m.name)}</div>
-        <div style="font-size:11px;color:#888;margin-top:3px">${escapeHtml(m.job_title||'')}${m.email?` · ${escapeHtml(m.email)}`:''}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">${escapeHtml(m.job_title||'')}${m.email?' · '+escapeHtml(m.email):''}</div>
       </div>
       <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c30;color:#aaa;border:none;width:30px;height:30px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700">✕</button>
     </div>
-    
-    <div style="padding:16px 22px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
-      <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
-        <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">TIME</div>
-        <div style="font-size:16px;color:#fff;font-weight:800;margin-top:3px">${m.team||'—'}</div>
+    <div style="padding:16px 22px">
+      <div style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">TIMES (${myTeams.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+        ${myTeams.length>0?myTeams.map(t=>`<span style="font-size:11px;color:#fff;background:rgba(85,89,223,.2);border:1px solid rgba(85,89,223,.5);padding:4px 10px;border-radius:12px;font-weight:700">${t}</span>`).join(''):'<span style="font-size:11px;color:#F59E0B">⚠ Sem time atribuído</span>'}
       </div>
-      <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
-        <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">CAPACIDADE</div>
-        <div style="font-size:16px;color:#fff;font-weight:800;margin-top:3px">${m.capacity_hours||140}h</div>
-      </div>
-      <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
-        <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">NÍVEL</div>
-        <div style="font-size:13px;color:#FFD600;font-weight:800;margin-top:3px;text-transform:uppercase">${m.access_level||'user'}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+        <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
+          <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">CAPACIDADE</div>
+          <div style="font-size:16px;color:#fff;font-weight:800;margin-top:3px">${m.capacity_hours||140}h/mês</div>
+        </div>
+        <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
+          <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">CUSTO/H</div>
+          <div style="font-size:16px;color:#fff;font-weight:800;margin-top:3px">R$ ${Number(m.hourly_cost||0).toLocaleString('pt-BR')}</div>
+        </div>
+        <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
+          <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">NÍVEL</div>
+          <div style="font-size:13px;color:#FFD600;font-weight:800;margin-top:3px;text-transform:uppercase">${m.access_level||'user'}</div>
+        </div>
       </div>
     </div>
-    
     ${m.access_level!=='account'&&m.access_level!=='admin'&&m.access_level!=='prod_leader'?`
     <div style="padding:0 22px 16px">
       <div style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">REPORTA-SE A (account)</div>
-      <select id="oc-md-rep" onchange="ocSetMemberReportsTo('${m.id}',this.value||null);this.closest('.modal-ov').remove()" style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit">
+      <select onchange="ocSetMemberReportsTo('${m.id}',this.value||null);this.closest('.modal-ov').remove()" style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit">
         <option value="">— Nenhum —</option>
-        ${allAccounts.map(a=>`<option value="${a.id}"${m.reports_to_account_id===a.id?' selected':''}>${escapeHtml(a.name)}</option>`).join('')}
+        ${allAccounts.map(a=>`<option value="${a.id}"${repId===a.id?' selected':''}>${escapeHtml(a.name)}</option>`).join('')}
       </select>
     </div>`:''}
-    
     ${myClients.length>0?`
     <div style="padding:0 22px 16px">
       <div style="font-size:10px;color:#FFD600;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">CLIENTES ATENDIDOS COMO ACCOUNT (${myClients.length})</div>
@@ -7790,24 +8104,20 @@ function ocOpenMemberCard(memberId){
         ${myClients.map(c=>`<span style="font-size:11px;color:#fff;background:rgba(255,214,0,.15);border:1px solid rgba(255,214,0,.4);padding:4px 10px;border-radius:12px;font-weight:600">${escapeHtml(c.name)}</span>`).join('')}
       </div>
     </div>`:''}
-    
     <div style="padding:12px 22px;border-top:1px solid #2a2c30;display:flex;gap:8px;justify-content:flex-end">
       <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c34;color:#aaa;border:1px solid #3a3d45;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">Fechar</button>
-      <button onclick="this.closest('.modal-ov').remove();nav('members');setTimeout(()=>{const btn=document.querySelector('[data-edit-member=\\''+'${m.id}'+'\\']');if(btn)btn.click()},300)" style="background:linear-gradient(180deg,#ED1C24,#a01016);color:#fff;border:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Editar perfil completo →</button>
+      <button onclick="this.closest('.modal-ov').remove();nav('members')" style="background:linear-gradient(180deg,#ED1C24,#a01016);color:#fff;border:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Editar perfil completo →</button>
     </div>
   </div>`;
   document.body.appendChild(mo);
 }
 
-// Modal: detalhes/edição rápida de cliente
 function ocOpenClientCard(clientId){
   const c=S.clients.find(x=>x.id===clientId);if(!c)return;
-  const acc=c.primary_account_id?S.members.find(x=>x.id===c.primary_account_id):null;
+  const effTeam=window._ocPending.clientMoves[c.id]||c.team;
+  const accId=window._ocPending.clientAccounts[c.id]!==undefined?window._ocPending.clientAccounts[c.id]:c.primary_account_id;
   const allAccounts=S.members.filter(x=>(x.access_level==='account'||x.access_level==='admin')&&x.active!==false).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  
-  // Pessoas que trabalham nesse cliente (via tt_account_clients OU primary_account)
-  // Pra simplificar, mostro do time
-  const teamPeople=S.members.filter(m=>m.team===c.team&&m.active!==false&&m.access_level!=='client');
+  const teamPeople=S.members.filter(m=>m.team===effTeam&&m.active!==false&&m.access_level!=='client');
   
   const mo=document.createElement('div');
   mo.className='modal-ov open';
@@ -7817,27 +8127,24 @@ function ocOpenClientCard(clientId){
       <div style="width:48px;height:48px;border-radius:11px;background:linear-gradient(135deg,#5559DF,#10B981);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">🏢</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:17px;font-weight:800;color:#fff">${escapeHtml(c.name)}</div>
-        <div style="font-size:11px;color:#888;margin-top:3px">Time ${c.team||'—'} · ${c.is_fee?'Fee mensal':'Projeto'} ${c.fee_monthly?`· R$ ${Number(c.fee_monthly).toLocaleString('pt-BR')}/mês`:''}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">Time ${effTeam||'—'} · ${c.is_fee?'Fee mensal':'Projeto'}${c.fee_monthly?' · R$ '+Number(c.fee_monthly).toLocaleString('pt-BR')+'/mês':''}</div>
       </div>
       <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c30;color:#aaa;border:none;width:30px;height:30px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700">✕</button>
     </div>
-    
     <div style="padding:16px 22px">
       <div style="font-size:10px;color:#FFD600;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">ACCOUNT RESPONSÁVEL</div>
-      <select id="oc-cd-acc" onchange="ocSetClientAccount('${c.id}',this.value||null);this.closest('.modal-ov').remove()" style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit">
+      <select onchange="ocSetClientAccount('${c.id}',this.value||null);this.closest('.modal-ov').remove()" style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit">
         <option value="">— Nenhum —</option>
-        ${allAccounts.map(a=>`<option value="${a.id}"${c.primary_account_id===a.id?' selected':''}>${escapeHtml(a.name)}</option>`).join('')}
+        ${allAccounts.map(a=>`<option value="${a.id}"${accId===a.id?' selected':''}>${escapeHtml(a.name)}</option>`).join('')}
       </select>
     </div>
-    
     ${teamPeople.length>0?`
     <div style="padding:0 22px 16px">
-      <div style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">EQUIPE NO TIME ${c.team} (${teamPeople.length})</div>
+      <div style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">EQUIPE NO TIME ${effTeam} (${teamPeople.length})</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${teamPeople.map(m=>`<span style="font-size:11px;color:#fff;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);padding:4px 10px;border-radius:12px;font-weight:600">${escapeHtml(m.name)}</span>`).join('')}
       </div>
     </div>`:''}
-    
     <div style="padding:12px 22px;border-top:1px solid #2a2c30;display:flex;gap:8px;justify-content:flex-end">
       <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c34;color:#aaa;border:1px solid #3a3d45;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">Fechar</button>
       <button onclick="this.closest('.modal-ov').remove();nav('clients')" style="background:linear-gradient(180deg,#5559DF,#3a3da0);color:#fff;border:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Ver detalhes do cliente →</button>
@@ -7845,6 +8152,7 @@ function ocOpenClientCard(clientId){
   </div>`;
   document.body.appendChild(mo);
 }
+
 
 // ═══════════════════════════════════════════════
 // MEMBERS
