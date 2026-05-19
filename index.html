@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.52.0';
+const HUB_VERSION='0.54.0';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -1477,13 +1477,14 @@ function buildNav(){
   // CADASTROS — admin only
   if(isA()){
     h+=`<div class="sb-section">Cadastros</div>`;
+    h+=`<div class="sb-item" data-p="orgchart" onclick="nav('orgchart')">🎛 Organograma</div>`;
     h+=`<div class="sb-item" data-p="members" onclick="nav('members')">${ICONS.members} Membros</div>`;
     h+=`<div class="sb-item" data-p="clients" onclick="nav('clients')">${ICONS.clients} Clientes</div>`;
   }
   n.innerHTML=h;
 }
 
-const TITLES={timer:'Timer',entries:'Lançamentos',performance:'Painel Performance','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-audit':'Auditoria','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Meus Extras','extras-hist':'Meus Extras','extras-pagar':'Extras a Pagar',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM','my-score':'Meu Score',planning:'Planejamento Mensal',members:'Membros',clients:'Clientes',profile:'Meu Perfil',announcements:'Comunicados'};
+const TITLES={timer:'Timer',entries:'Lançamentos',performance:'Painel Performance','d-my':'Meu Painel','d-adm':'Painel ADM','d-client':'Por Cliente','d-team':'Por Time','d-person':'Por Pessoa','d-finance':'Financeiro','d-audit':'Auditoria','d-client-view':'Dashboard','p-requests':'Solicitações de Produção','p-my-prods':'Minhas Produções','p-calendar':'Calendário de Produções','p-equip':'Equipamentos','p-config':'Configurações de Produção',extras:'Meus Extras','extras-hist':'Meus Extras','extras-pagar':'Extras a Pagar',qc:'Brand Guardian','ag-briefing':'Validador de Briefing','ag-arte':'Feedback de Arte',score:'Score ADM','my-score':'Meu Score',planning:'Planejamento Mensal',orgchart:'Organograma',members:'Membros',clients:'Clientes',profile:'Meu Perfil',announcements:'Comunicados'};
 
 function nav(page){
   curPage=page;
@@ -1509,7 +1510,7 @@ async function renderPage(){
       'p-requests':pgProdRequests,'p-calendar':pgProdCalendar,'p-equip':pgProdEquip,'p-config':pgProdConfig,
       extras:pgExtras,'extras-hist':pgExtrasHist,'extras-pagar':pgExtrasPagar,
       qc:pgQC,'ag-briefing':pgBriefing,'ag-arte':pgArte,
-      score:pgScore,'my-score':pgMyScore,planning:pgPlanning,members:pgMembers,clients:pgClients,profile:pgProfile,
+      score:pgScore,'my-score':pgMyScore,planning:pgPlanning,orgchart:pgOrgChart,members:pgMembers,clients:pgClients,profile:pgProfile,
       announcements:pgAnnouncements
     };
     if(pages[curPage])await pages[curPage](el);
@@ -7228,6 +7229,621 @@ async function saveScore(){
     closeM('m-score');S.scores=await sbGet('score_adm','order=month.desc,account_id');toast('Avaliação salva');
     buildNav();renderPage();
   }catch(e){console.error('saveScore error:',e,data);toast('Erro: '+e.message,'error')}
+}
+
+// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+// ORGANOGRAMA TGT (drag & drop, estilo painel switcher)
+// ═══════════════════════════════════════════════
+async function pgOrgChart(el){
+  if(!isA()){el.innerHTML='<div class="empty">Acesso restrito ao admin</div>';return}
+  
+  // Identificar accounts: pessoas com access_level account ou admin (que normalmente atuam como account)
+  // Excluindo clients e prod_leader (são separados)
+  const allMembers=(S.members||[]).filter(m=>(m.active!==false)&&m.access_level!=='client');
+  
+  // Times conhecidos (ordem de exibição)
+  const TEAMS=[
+    {key:'ADM', label:'ADM',  color:'#888B97', emoji:'👔', desc:'Gestão / Administração'},
+    {key:'T1',  label:'T1',   color:'#ED1C24', emoji:'🟥', desc:'Time 1 — Kerry / Lesaffre'},
+    {key:'T3',  label:'T3',   color:'#FF6B35', emoji:'🟧', desc:'Time 3 — Performance / Brands menores'},
+    {key:'T4',  label:'T4',   color:'#F59E0B', emoji:'🟨', desc:'Time 4 — UV Line / De Marchi'},
+    {key:'T5',  label:'T5',   color:'#5559DF', emoji:'🟪', desc:'Time 5 — Packaging'},
+    {key:'PROD',label:'PROD', color:'#10B981', emoji:'🎬', desc:'Produção AV'}
+  ];
+  
+  // Group members per team
+  const membersByTeam={};
+  const orphans=[];
+  TEAMS.forEach(t=>{membersByTeam[t.key]=[]});
+  allMembers.forEach(m=>{
+    if(m.team&&membersByTeam[m.team])membersByTeam[m.team].push(m);
+    else orphans.push(m);
+  });
+  
+  // Per team: split accounts (líderes) vs designers
+  const isAccountLike=m=>m.access_level==='account'||m.access_level==='admin'||m.access_level==='prod_leader';
+  
+  // Identificar líderes ativos
+  const allAccounts=allMembers.filter(isAccountLike);
+  
+  // Helpers
+  const accName=id=>{const a=allMembers.find(m=>m.id===id);return a?a.name:'—'};
+  const initials=name=>(name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  
+  // Clientes por time
+  const clientsByTeam={};
+  TEAMS.forEach(t=>{clientsByTeam[t.key]=[]});
+  (S.clients||[]).filter(c=>c.is_active!==false).forEach(c=>{
+    if(c.team&&clientsByTeam[c.team])clientsByTeam[c.team].push(c);
+  });
+  
+  // ───────── Render ─────────
+  el.innerHTML=`
+  <style>
+    /* ═════ ORGCHART — Painel Switcher Style ═════ */
+    .oc-deck{
+      background:linear-gradient(180deg,#0a0a0c 0%,#15161a 100%);
+      border:1px solid #2a2c30;
+      border-radius:14px;
+      padding:18px;
+      box-shadow:0 4px 20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
+      position:relative;
+      overflow:hidden;
+    }
+    .oc-deck::before{
+      content:'';position:absolute;top:0;left:0;right:0;height:1px;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);
+    }
+    /* Header */
+    .oc-header{
+      display:flex;align-items:center;gap:14px;margin-bottom:14px;
+      padding-bottom:12px;border-bottom:1px solid #2a2c30;
+    }
+    .oc-header-icon{
+      width:42px;height:42px;border-radius:10px;
+      background:linear-gradient(135deg,#ED1C24,#5559DF);
+      display:flex;align-items:center;justify-content:center;font-size:22px;
+      box-shadow:0 2px 10px rgba(237,28,36,.4);
+    }
+    .oc-header h2{margin:0;font-size:20px;color:#fff;letter-spacing:.3px;font-weight:800}
+    .oc-header .sub{font-size:11px;color:#888;letter-spacing:1.5px;margin-top:2px;text-transform:uppercase;font-weight:600}
+    
+    /* Stats top */
+    .oc-stats{display:flex;gap:18px;margin-left:auto;font-family:var(--mono)}
+    .oc-stat{text-align:center;min-width:50px}
+    .oc-stat .v{font-size:18px;font-weight:800;color:#fff;line-height:1}
+    .oc-stat .l{font-size:9px;color:#666;letter-spacing:1.5px;margin-top:3px;text-transform:uppercase}
+    
+    /* Tabs */
+    .oc-tabs{display:flex;gap:4px;margin-bottom:14px;background:#15161a;border-radius:10px;padding:4px;border:1px solid #2a2c30}
+    .oc-tab{flex:1;background:transparent;color:#888;border:none;padding:9px 14px;border-radius:7px;cursor:pointer;font-weight:700;font-size:12px;letter-spacing:1px;transition:all .15s;font-family:inherit;text-transform:uppercase}
+    .oc-tab:hover{color:#ccc}
+    .oc-tab.active{background:linear-gradient(180deg,#2a2c34,#1c1e24);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.06)}
+    
+    /* Teams grid */
+    .oc-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+    @media(min-width:1400px){.oc-teams{grid-template-columns:repeat(3,1fr)}}
+    
+    /* Team card */
+    .oc-team{
+      background:linear-gradient(180deg,#1c1e24,#15161a);
+      border:1px solid #2a2c30;
+      border-top:3px solid var(--accent);
+      border-radius:10px;
+      padding:12px;
+      display:flex;flex-direction:column;gap:10px;
+      transition:border-color .15s,background .15s;
+      min-height:200px;
+    }
+    .oc-team.dragover{
+      background:linear-gradient(180deg,#22242a,#1a1c20);
+      border-color:var(--accent);
+      box-shadow:0 0 0 2px var(--accent),0 0 24px rgba(255,255,255,.04);
+    }
+    .oc-team-h{display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid #2a2c30}
+    .oc-team-h .emj{font-size:18px}
+    .oc-team-h .lbl{font-weight:900;color:var(--accent);font-size:13px;letter-spacing:2px}
+    .oc-team-h .desc{font-size:9px;color:#777;letter-spacing:1px;text-transform:uppercase;flex:1}
+    .oc-team-h .cnt{font-family:var(--mono);font-size:10px;color:#888;background:rgba(255,255,255,.05);padding:3px 7px;border-radius:6px;font-weight:700}
+    
+    .oc-section-l{font-size:9px;color:#666;letter-spacing:2px;font-weight:700;text-transform:uppercase;margin-top:2px}
+    
+    /* Card de pessoa */
+    .oc-card{
+      background:linear-gradient(180deg,#2a2c34,#1c1e24);
+      border:1px solid #3a3d45;
+      border-radius:8px;padding:8px 10px;cursor:grab;
+      display:flex;align-items:center;gap:8px;
+      transition:all .12s;font-family:inherit;
+      box-shadow:0 2px 0 #14151a,0 4px 8px rgba(0,0,0,.3);
+      position:relative;
+    }
+    .oc-card:hover{transform:translateY(-1px);border-color:#4a4d55;box-shadow:0 3px 0 #14151a,0 6px 14px rgba(0,0,0,.4)}
+    .oc-card.dragging{opacity:.35;cursor:grabbing}
+    .oc-card.is-account{border-left:3px solid #FFD600}
+    .oc-card .av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#ED1C24,#5559DF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#fff;flex-shrink:0;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+    .oc-card .ifo{flex:1;min-width:0}
+    .oc-card .nm{font-size:12px;font-weight:700;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .oc-card .role{font-size:9px;color:#888;letter-spacing:.5px;margin-top:1px;text-transform:uppercase;font-weight:600}
+    .oc-card .role.account{color:#FFD600}
+    .oc-card .role.prod_leader{color:#10B981}
+    
+    /* Clientes */
+    .oc-client{
+      background:linear-gradient(180deg,#22242a,#15161a);
+      border:1px solid #2a2c30;
+      border-radius:7px;padding:6px 9px;cursor:grab;
+      display:flex;align-items:center;gap:7px;font-size:11px;
+      transition:all .12s;
+    }
+    .oc-client:hover{transform:translateY(-1px);border-color:#3a3d45}
+    .oc-client.dragging{opacity:.35;cursor:grabbing}
+    .oc-client .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+    .oc-client .nm{flex:1;color:#ccc;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .oc-client .acc{font-size:9px;color:#FFD600;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+    
+    .oc-empty{font-size:10px;color:#555;text-align:center;padding:12px;font-style:italic;border:1px dashed #2a2c30;border-radius:7px}
+    
+    /* Drop hint */
+    .oc-drop-hint{
+      pointer-events:none;
+      position:fixed;
+      background:linear-gradient(180deg,#ED1C24,#a01016);
+      color:#fff;padding:8px 14px;border-radius:8px;
+      font-size:11px;font-weight:800;letter-spacing:1px;
+      z-index:9999;
+      opacity:0;transition:opacity .15s;
+      box-shadow:0 4px 20px rgba(237,28,36,.5);
+      text-transform:uppercase;
+    }
+    .oc-drop-hint.show{opacity:1}
+    
+    /* Toast (status banner) */
+    .oc-banner{
+      background:linear-gradient(180deg,rgba(16,185,129,.15),rgba(16,185,129,.04));
+      border:1px solid rgba(16,185,129,.5);
+      border-left:4px solid #10B981;
+      border-radius:8px;padding:9px 14px;margin-bottom:12px;
+      font-size:11px;color:#10B981;font-weight:700;
+      display:flex;align-items:center;gap:8px;
+      animation:oc-fade-in .25s ease-out;
+    }
+    @keyframes oc-fade-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1}}
+    
+    /* Footer info */
+    .oc-info{
+      margin-top:14px;padding:11px 14px;
+      background:#15161a;border:1px solid #2a2c30;
+      border-radius:8px;font-size:11px;color:#888;line-height:1.6;
+    }
+    .oc-info b{color:#ccc}
+    .oc-info kbd{background:#2a2c34;color:#ddd;padding:2px 6px;border-radius:4px;font-size:10px;border:1px solid #3a3d45;font-family:var(--mono)}
+  </style>
+  
+  <div class="oc-deck">
+    <div class="oc-header">
+      <div class="oc-header-icon">🎛</div>
+      <div>
+        <h2>ORGANOGRAMA TGT</h2>
+        <div class="sub">Painel de Controle · Arraste pessoas e clientes entre times</div>
+      </div>
+      <div class="oc-stats">
+        <div class="oc-stat"><div class="v">${allMembers.length}</div><div class="l">pessoas</div></div>
+        <div class="oc-stat"><div class="v" style="color:#FFD600">${allAccounts.length}</div><div class="l">líderes</div></div>
+        <div class="oc-stat"><div class="v">${(S.clients||[]).filter(c=>c.is_active!==false).length}</div><div class="l">clientes</div></div>
+      </div>
+    </div>
+    
+    <div id="oc-banner-slot"></div>
+    
+    <div class="oc-tabs">
+      <button class="oc-tab ${(window._ocTab||'pessoas')==='pessoas'?'active':''}" onclick="window._ocTab='pessoas';renderPage()">👥 Pessoas por Time</button>
+      <button class="oc-tab ${window._ocTab==='clientes'?'active':''}" onclick="window._ocTab='clientes';renderPage()">🏢 Clientes por Time</button>
+    </div>
+    
+    <div class="oc-teams" id="oc-teams">
+      ${TEAMS.map(t=>{
+        const isPessoasTab=(window._ocTab||'pessoas')==='pessoas';
+        const teamMembers=membersByTeam[t.key]||[];
+        const teamAccounts=teamMembers.filter(isAccountLike);
+        const teamDesigners=teamMembers.filter(m=>!isAccountLike(m));
+        const teamClients=clientsByTeam[t.key]||[];
+        return `<div class="oc-team" style="--accent:${t.color}" data-team="${t.key}"
+          ondragover="event.preventDefault();this.classList.add('dragover')"
+          ondragleave="this.classList.remove('dragover')"
+          ondrop="ocHandleDrop(event,'${t.key}')">
+          <div class="oc-team-h">
+            <span class="emj">${t.emoji}</span>
+            <span class="lbl">${t.label}</span>
+            <span class="desc">${escapeHtml(t.desc)}</span>
+            <span class="cnt">${isPessoasTab?teamMembers.length:teamClients.length}</span>
+          </div>
+          
+          ${isPessoasTab?`
+            <div class="oc-section-l">Líderes / Accounts</div>
+            ${teamAccounts.length>0?teamAccounts.map(m=>`
+              <div class="oc-card is-account" draggable="true" data-mid="${m.id}" data-kind="member"
+                ondragstart="ocDragStart(event,'${m.id}','member')"
+                ondragend="ocDragEnd(event)"
+                onclick="if(!window._ocJustDragged)ocOpenMemberCard('${m.id}')"
+                title="${escapeHtml(m.name)} · ${m.access_level||''}">
+                <div class="av">${initials(m.name)}</div>
+                <div class="ifo">
+                  <div class="nm">${escapeHtml(m.name)}</div>
+                  <div class="role account">${m.access_level==='admin'?'admin':m.access_level==='prod_leader'?'prod leader':'account'}</div>
+                </div>
+              </div>`).join(''):'<div class="oc-empty">Sem líder</div>'}
+            
+            <div class="oc-section-l" style="margin-top:6px">Designers</div>
+            ${teamDesigners.length>0?teamDesigners.map(m=>{
+              const repAcc=m.reports_to_account_id?S.members.find(a=>a.id===m.reports_to_account_id):null;
+              return `<div class="oc-card" draggable="true" data-mid="${m.id}" data-kind="member"
+                ondragstart="ocDragStart(event,'${m.id}','member')"
+                ondragend="ocDragEnd(event)"
+                onclick="if(!window._ocJustDragged)ocOpenMemberCard('${m.id}')"
+                title="${escapeHtml(m.name)}${repAcc?` · reporta a ${repAcc.name}`:''}">
+                <div class="av">${initials(m.name)}</div>
+                <div class="ifo">
+                  <div class="nm">${escapeHtml(m.name)}</div>
+                  <div class="role">${escapeHtml(m.job_title||'designer')}${repAcc?` · → ${escapeHtml(initials(repAcc.name))}`:''}</div>
+                </div>
+              </div>`;
+            }).join(''):'<div class="oc-empty">Sem designers</div>'}
+          `:`
+            ${teamClients.length>0?teamClients.map(c=>{
+              const accN=c.primary_account_id?accName(c.primary_account_id):null;
+              return `<div class="oc-client" draggable="true" data-cid="${c.id}" data-kind="client"
+                ondragstart="ocDragStart(event,'${c.id}','client')"
+                ondragend="ocDragEnd(event)"
+                onclick="if(!window._ocJustDragged)ocOpenClientCard('${c.id}')"
+                title="${escapeHtml(c.name)}${accN?` · responsável: ${accN}`:''}">
+                <div class="dot"></div>
+                <div class="nm">${escapeHtml(c.name)}</div>
+                ${accN?`<div class="acc">→ ${escapeHtml(initials(accN))}</div>`:''}
+              </div>`;
+            }).join(''):'<div class="oc-empty">Sem clientes</div>'}
+          `}
+        </div>`;
+      }).join('')}
+    </div>
+    
+    ${orphans.length>0?`
+      <div style="margin-top:14px;padding:10px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px">
+        <div style="font-size:10px;color:#F59E0B;letter-spacing:1.5px;font-weight:800;text-transform:uppercase;margin-bottom:6px">⚠ Sem time atribuído (${orphans.length})</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${orphans.map(m=>`
+            <div class="oc-card" draggable="true" data-mid="${m.id}" data-kind="member" style="border-color:#F59E0B"
+              ondragstart="ocDragStart(event,'${m.id}','member')" ondragend="ocDragEnd(event)">
+              <div class="av">${initials(m.name)}</div>
+              <div class="ifo">
+                <div class="nm">${escapeHtml(m.name)}</div>
+                <div class="role">${escapeHtml(m.access_level||'')}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`:''}
+  </div>
+  
+  <div class="oc-info">
+    <b>Como usar:</b> Arraste qualquer <span style="color:#fff">card de pessoa</span> ou <span style="color:#fff">card de cliente</span> e solte em um time. O sistema atualiza automaticamente o banco e propaga: <b>cards de cliente</b> reassociam ao novo time; <b>cards de pessoa</b> mudam de equipe e podem ser linkados ao novo account responsável. Use a tab acima pra alternar entre <kbd>Pessoas</kbd> e <kbd>Clientes</kbd>.<br>
+    <b style="color:#FFD600">Borda amarela</b> = Líder/Account. <b style="color:#10B981">Verde</b> = Prod Leader.
+  </div>
+  
+  <div id="oc-drop-hint" class="oc-drop-hint">Soltando...</div>`;
+  
+  // Ensure tab default
+  if(!window._ocTab)window._ocTab='pessoas';
+}
+
+// ───────── Drag & Drop handlers ─────────
+function ocDragStart(ev,id,kind){
+  window._ocJustDragged=true;
+  ev.dataTransfer.effectAllowed='move';
+  ev.dataTransfer.setData('text/plain',JSON.stringify({id,kind}));
+  ev.currentTarget.classList.add('dragging');
+  // Visual hint
+  const hint=$('oc-drop-hint');
+  if(hint){
+    hint.textContent=kind==='member'?'Soltar em um time →':'Mover cliente →';
+    hint.style.left=(ev.clientX+20)+'px';
+    hint.style.top=(ev.clientY-10)+'px';
+    setTimeout(()=>hint.classList.add('show'),50);
+    // Atualiza posição com mousemove
+    window._ocHintMove=(e)=>{hint.style.left=(e.clientX+20)+'px';hint.style.top=(e.clientY-10)+'px'};
+    document.addEventListener('dragover',window._ocHintMove);
+  }
+}
+
+function ocDragEnd(ev){
+  ev.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.oc-team.dragover').forEach(el=>el.classList.remove('dragover'));
+  const hint=$('oc-drop-hint');
+  if(hint)hint.classList.remove('show');
+  if(window._ocHintMove)document.removeEventListener('dragover',window._ocHintMove);
+  // Reset flag depois de pequeno delay (evita click logo após drag)
+  setTimeout(()=>{window._ocJustDragged=false},150);
+}
+
+async function ocHandleDrop(ev,newTeam){
+  ev.preventDefault();
+  document.querySelectorAll('.oc-team.dragover').forEach(el=>el.classList.remove('dragover'));
+  let payload;
+  try{payload=JSON.parse(ev.dataTransfer.getData('text/plain'))}catch(e){return}
+  if(!payload||!payload.id||!payload.kind)return;
+  
+  try{
+    if(payload.kind==='member'){
+      const m=S.members.find(x=>x.id===payload.id);
+      if(!m)return;
+      if(m.team===newTeam){toast('Já está nesse time','info');return}
+      
+      const oldTeam=m.team;
+      
+      // 1. Atualiza tt_members.team (campo "primary team" — usado em vários lugares)
+      await sbPatch('tt_members',`id=eq.${m.id}`,{team:newTeam,reports_to_account_id:null});
+      
+      // 2. Sincroniza tt_member_teams (multi-team): remove o antigo e adiciona novo como primary
+      try{
+        if(oldTeam){
+          await sbDel('tt_member_teams',`member_id=eq.${m.id}&team=eq.${oldTeam}`);
+        }
+        // Insere novo (ou atualiza se já existia como secundário)
+        const existingNew=await sbGet('tt_member_teams',`member_id=eq.${m.id}&team=eq.${newTeam}`);
+        if(existingNew&&existingNew.length>0){
+          await sbPatch('tt_member_teams',`id=eq.${existingNew[0].id}`,{is_primary:true});
+        }else{
+          await sbPost('tt_member_teams',{
+            member_id:m.id,
+            team:newTeam,
+            capacity_hours:m.capacity_hours||140,
+            is_primary:true
+          });
+        }
+      }catch(e){console.warn('multi-team sync:',e.message)}
+      
+      // 3. Atualiza estado local
+      m.team=newTeam;m.reports_to_account_id=null;
+      ocShowBanner(`✅ ${m.name} → ${newTeam}${oldTeam?` (era ${oldTeam})`:''}`,'success');
+      renderPage();
+      
+      // 4. Sugere definir reports_to se o novo time tem accounts
+      const teamAccounts=S.members.filter(x=>x.team===newTeam&&(x.access_level==='account'||x.access_level==='admin')&&x.id!==m.id&&x.active!==false);
+      if(teamAccounts.length>0&&m.access_level!=='account'&&m.access_level!=='admin'&&m.access_level!=='prod_leader'){
+        setTimeout(()=>ocPromptReportsTo(m,teamAccounts),400);
+      }
+    }else if(payload.kind==='client'){
+      const c=S.clients.find(x=>x.id===payload.id);
+      if(!c)return;
+      if(c.team===newTeam){toast('Já está nesse time','info');return}
+      
+      const oldTeam=c.team;
+      
+      // 1. Atualiza tt_clients.team
+      await sbPatch('tt_clients',`id=eq.${c.id}`,{team:newTeam,primary_account_id:null});
+      c.team=newTeam;c.primary_account_id=null;
+      
+      ocShowBanner(`✅ ${c.name} → ${newTeam}${oldTeam?` (era ${oldTeam})`:''}`,'success');
+      renderPage();
+      
+      // 2. Sugere definir account responsável
+      const teamAccounts=S.members.filter(x=>x.team===newTeam&&(x.access_level==='account'||x.access_level==='admin')&&x.active!==false);
+      if(teamAccounts.length>0){
+        setTimeout(()=>ocPromptPrimaryAccount(c,teamAccounts),400);
+      }
+    }
+  }catch(e){
+    toast('Erro: '+e.message,'error');
+  }
+}
+
+// Modal: define account responsável de cliente recém-mudado
+function ocPromptPrimaryAccount(client,accounts){
+  const m=document.createElement('div');
+  m.className='modal-ov open';
+  m.onclick=(e)=>{if(e.target===m)m.remove()};
+  const opts=accounts.map(a=>`
+    <button onclick="ocSetClientAccount('${client.id}','${a.id}');this.closest('.modal-ov').remove()" 
+      style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:linear-gradient(180deg,#2a2c34,#1c1e24);border:1px solid #3a3d45;color:#fff;border-radius:8px;cursor:pointer;text-align:left;margin-bottom:6px;font-family:inherit;transition:all .12s"
+      onmouseover="this.style.background='linear-gradient(180deg,#34373f,#22242a)';this.style.borderColor='#FFD600'"
+      onmouseout="this.style.background='linear-gradient(180deg,#2a2c34,#1c1e24)';this.style.borderColor='#3a3d45'">
+      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#ED1C24,#FFD600);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#fff">${(a.name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()}</div>
+      <div style="flex:1;font-size:12px;font-weight:700">${escapeHtml(a.name)}</div>
+      <span style="color:#FFD600;font-size:10px;letter-spacing:1px;font-weight:700">${a.access_level==='admin'?'ADMIN':'ACCOUNT'}</span>
+    </button>`).join('');
+  m.innerHTML=`<div class="modal" style="max-width:480px;background:#15161a;border:1px solid #2a2c30">
+    <div style="padding:16px 20px;border-bottom:1px solid #2a2c30">
+      <div style="font-size:10px;color:#FFD600;letter-spacing:2px;font-weight:800">QUEM É O ACCOUNT RESPONSÁVEL?</div>
+      <div style="font-size:16px;color:#fff;font-weight:800;margin-top:4px">${escapeHtml(client.name)}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">Time: ${client.team}</div>
+    </div>
+    <div style="padding:14px 20px">
+      ${opts}
+      <button onclick="this.closest('.modal-ov').remove()" style="display:block;width:100%;padding:8px;background:transparent;border:none;color:#666;cursor:pointer;font-size:11px;margin-top:6px;font-family:inherit">Pular por agora</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function ocSetClientAccount(clientId,accountId){
+  try{
+    await sbPatch('tt_clients',`id=eq.${clientId}`,{primary_account_id:accountId});
+    // tt_account_clients (relação muitos-pra-muitos: limpa+insere)
+    try{await sbDel('tt_account_clients',`client_id=eq.${clientId}`)}catch(e){}
+    try{await sbPost('tt_account_clients',{account_id:accountId,client_id:clientId})}catch(e){}
+    const c=S.clients.find(x=>x.id===clientId);
+    if(c)c.primary_account_id=accountId;
+    const a=S.members.find(x=>x.id===accountId);
+    ocShowBanner(`✅ ${c?.name||'cliente'} → ${a?.name||'account'}`,'success');
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// Modal: define accountque pessoa reporta dentro do time
+function ocPromptReportsTo(member,accounts){
+  const m=document.createElement('div');
+  m.className='modal-ov open';
+  m.onclick=(e)=>{if(e.target===m)m.remove()};
+  const opts=accounts.map(a=>`
+    <button onclick="ocSetMemberReportsTo('${member.id}','${a.id}');this.closest('.modal-ov').remove()" 
+      style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:linear-gradient(180deg,#2a2c34,#1c1e24);border:1px solid #3a3d45;color:#fff;border-radius:8px;cursor:pointer;text-align:left;margin-bottom:6px;font-family:inherit;transition:all .12s"
+      onmouseover="this.style.background='linear-gradient(180deg,#34373f,#22242a)';this.style.borderColor='#FFD600'"
+      onmouseout="this.style.background='linear-gradient(180deg,#2a2c34,#1c1e24)';this.style.borderColor='#3a3d45'">
+      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#ED1C24,#FFD600);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#fff">${(a.name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()}</div>
+      <div style="flex:1;font-size:12px;font-weight:700">${escapeHtml(a.name)}</div>
+      <span style="color:#FFD600;font-size:10px;letter-spacing:1px;font-weight:700">${a.access_level==='admin'?'ADMIN':'ACCOUNT'}</span>
+    </button>`).join('');
+  m.innerHTML=`<div class="modal" style="max-width:480px;background:#15161a;border:1px solid #2a2c30">
+    <div style="padding:16px 20px;border-bottom:1px solid #2a2c30">
+      <div style="font-size:10px;color:#FFD600;letter-spacing:2px;font-weight:800">REPORTA-SE A QUEM?</div>
+      <div style="font-size:16px;color:#fff;font-weight:800;margin-top:4px">${escapeHtml(member.name)}</div>
+      <div style="font-size:11px;color:#888;margin-top:2px">Time: ${member.team}</div>
+    </div>
+    <div style="padding:14px 20px">
+      ${opts}
+      <button onclick="this.closest('.modal-ov').remove()" style="display:block;width:100%;padding:8px;background:transparent;border:none;color:#666;cursor:pointer;font-size:11px;margin-top:6px;font-family:inherit">Pular por agora</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function ocSetMemberReportsTo(memberId,accountId){
+  try{
+    await sbPatch('tt_members',`id=eq.${memberId}`,{reports_to_account_id:accountId});
+    // Mantém tt_account_members também sincronizado
+    try{
+      const exists=await sbGet('tt_account_members',`account_id=eq.${accountId}&member_id=eq.${memberId}`);
+      if(!exists||exists.length===0){
+        await sbPost('tt_account_members',{account_id:accountId,member_id:memberId});
+      }
+    }catch(e){}
+    const m=S.members.find(x=>x.id===memberId);
+    if(m)m.reports_to_account_id=accountId;
+    const a=S.members.find(x=>x.id===accountId);
+    ocShowBanner(`✅ ${m?.name||'membro'} reporta a ${a?.name||'account'}`,'success');
+    renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+function ocShowBanner(msg,kind){
+  const slot=$('oc-banner-slot');if(!slot)return;
+  slot.innerHTML=`<div class="oc-banner">${escapeHtml(msg)}</div>`;
+  setTimeout(()=>{const b=slot.querySelector('.oc-banner');if(b)b.style.opacity='0';setTimeout(()=>slot.innerHTML='',300)},2400);
+}
+
+// Modal: detalhes/edição rápida de pessoa
+function ocOpenMemberCard(memberId){
+  const m=S.members.find(x=>x.id===memberId);if(!m)return;
+  const repAcc=m.reports_to_account_id?S.members.find(a=>a.id===m.reports_to_account_id):null;
+  const allAccounts=S.members.filter(x=>x.id!==m.id&&(x.access_level==='account'||x.access_level==='admin')&&x.active!==false).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  
+  // Lista clientes que esse account é primary
+  const myClients=m.access_level==='account'||m.access_level==='admin'
+    ? S.clients.filter(c=>c.primary_account_id===m.id&&c.is_active!==false)
+    : [];
+  // Lista clientes do time da pessoa
+  const teamClients=S.clients.filter(c=>c.team===m.team&&c.is_active!==false);
+  
+  const ini=(m.name||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  
+  const mo=document.createElement('div');
+  mo.className='modal-ov open';
+  mo.onclick=(e)=>{if(e.target===mo)mo.remove()};
+  mo.innerHTML=`<div class="modal" style="max-width:560px;background:#15161a;border:1px solid #2a2c30">
+    <div style="padding:18px 22px;border-bottom:1px solid #2a2c30;display:flex;align-items:center;gap:14px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#ED1C24,#5559DF);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#fff;flex-shrink:0">${ini}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:17px;font-weight:800;color:#fff">${escapeHtml(m.name)}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">${escapeHtml(m.job_title||'')}${m.email?` · ${escapeHtml(m.email)}`:''}</div>
+      </div>
+      <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c30;color:#aaa;border:none;width:30px;height:30px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700">✕</button>
+    </div>
+    
+    <div style="padding:16px 22px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
+        <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">TIME</div>
+        <div style="font-size:16px;color:#fff;font-weight:800;margin-top:3px">${m.team||'—'}</div>
+      </div>
+      <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
+        <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">CAPACIDADE</div>
+        <div style="font-size:16px;color:#fff;font-weight:800;margin-top:3px">${m.capacity_hours||140}h</div>
+      </div>
+      <div style="background:rgba(255,255,255,.04);padding:10px;border-radius:7px;text-align:center">
+        <div style="font-size:9px;color:#888;letter-spacing:1.5px;font-weight:700">NÍVEL</div>
+        <div style="font-size:13px;color:#FFD600;font-weight:800;margin-top:3px;text-transform:uppercase">${m.access_level||'user'}</div>
+      </div>
+    </div>
+    
+    ${m.access_level!=='account'&&m.access_level!=='admin'&&m.access_level!=='prod_leader'?`
+    <div style="padding:0 22px 16px">
+      <div style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">REPORTA-SE A (account)</div>
+      <select id="oc-md-rep" onchange="ocSetMemberReportsTo('${m.id}',this.value||null);this.closest('.modal-ov').remove()" style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit">
+        <option value="">— Nenhum —</option>
+        ${allAccounts.map(a=>`<option value="${a.id}"${m.reports_to_account_id===a.id?' selected':''}>${escapeHtml(a.name)}</option>`).join('')}
+      </select>
+    </div>`:''}
+    
+    ${myClients.length>0?`
+    <div style="padding:0 22px 16px">
+      <div style="font-size:10px;color:#FFD600;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">CLIENTES ATENDIDOS COMO ACCOUNT (${myClients.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${myClients.map(c=>`<span style="font-size:11px;color:#fff;background:rgba(255,214,0,.15);border:1px solid rgba(255,214,0,.4);padding:4px 10px;border-radius:12px;font-weight:600">${escapeHtml(c.name)}</span>`).join('')}
+      </div>
+    </div>`:''}
+    
+    <div style="padding:12px 22px;border-top:1px solid #2a2c30;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c34;color:#aaa;border:1px solid #3a3d45;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">Fechar</button>
+      <button onclick="this.closest('.modal-ov').remove();nav('members');setTimeout(()=>{const btn=document.querySelector('[data-edit-member=\\''+'${m.id}'+'\\']');if(btn)btn.click()},300)" style="background:linear-gradient(180deg,#ED1C24,#a01016);color:#fff;border:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Editar perfil completo →</button>
+    </div>
+  </div>`;
+  document.body.appendChild(mo);
+}
+
+// Modal: detalhes/edição rápida de cliente
+function ocOpenClientCard(clientId){
+  const c=S.clients.find(x=>x.id===clientId);if(!c)return;
+  const acc=c.primary_account_id?S.members.find(x=>x.id===c.primary_account_id):null;
+  const allAccounts=S.members.filter(x=>(x.access_level==='account'||x.access_level==='admin')&&x.active!==false).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  
+  // Pessoas que trabalham nesse cliente (via tt_account_clients OU primary_account)
+  // Pra simplificar, mostro do time
+  const teamPeople=S.members.filter(m=>m.team===c.team&&m.active!==false&&m.access_level!=='client');
+  
+  const mo=document.createElement('div');
+  mo.className='modal-ov open';
+  mo.onclick=(e)=>{if(e.target===mo)mo.remove()};
+  mo.innerHTML=`<div class="modal" style="max-width:560px;background:#15161a;border:1px solid #2a2c30">
+    <div style="padding:18px 22px;border-bottom:1px solid #2a2c30;display:flex;align-items:center;gap:14px">
+      <div style="width:48px;height:48px;border-radius:11px;background:linear-gradient(135deg,#5559DF,#10B981);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">🏢</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:17px;font-weight:800;color:#fff">${escapeHtml(c.name)}</div>
+        <div style="font-size:11px;color:#888;margin-top:3px">Time ${c.team||'—'} · ${c.is_fee?'Fee mensal':'Projeto'} ${c.fee_monthly?`· R$ ${Number(c.fee_monthly).toLocaleString('pt-BR')}/mês`:''}</div>
+      </div>
+      <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c30;color:#aaa;border:none;width:30px;height:30px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700">✕</button>
+    </div>
+    
+    <div style="padding:16px 22px">
+      <div style="font-size:10px;color:#FFD600;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">ACCOUNT RESPONSÁVEL</div>
+      <select id="oc-cd-acc" onchange="ocSetClientAccount('${c.id}',this.value||null);this.closest('.modal-ov').remove()" style="width:100%;background:#2a2c34;border:1px solid #3a3d45;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit">
+        <option value="">— Nenhum —</option>
+        ${allAccounts.map(a=>`<option value="${a.id}"${c.primary_account_id===a.id?' selected':''}>${escapeHtml(a.name)}</option>`).join('')}
+      </select>
+    </div>
+    
+    ${teamPeople.length>0?`
+    <div style="padding:0 22px 16px">
+      <div style="font-size:10px;color:#888;letter-spacing:1.5px;font-weight:700;margin-bottom:8px">EQUIPE NO TIME ${c.team} (${teamPeople.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${teamPeople.map(m=>`<span style="font-size:11px;color:#fff;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);padding:4px 10px;border-radius:12px;font-weight:600">${escapeHtml(m.name)}</span>`).join('')}
+      </div>
+    </div>`:''}
+    
+    <div style="padding:12px 22px;border-top:1px solid #2a2c30;display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('.modal-ov').remove()" style="background:#2a2c34;color:#aaa;border:1px solid #3a3d45;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">Fechar</button>
+      <button onclick="this.closest('.modal-ov').remove();nav('clients')" style="background:linear-gradient(180deg,#5559DF,#3a3da0);color:#fff;border:none;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">Ver detalhes do cliente →</button>
+    </div>
+  </div>`;
+  document.body.appendChild(mo);
 }
 
 // ═══════════════════════════════════════════════
