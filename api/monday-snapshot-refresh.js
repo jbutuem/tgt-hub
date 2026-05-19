@@ -1,4 +1,11 @@
-// /api/monday-snapshot-refresh.js  v3 (upsert fix)
+// /api/monday-snapshot-refresh.js  v2
+// Atualiza tt_monday_hot_items com dados frescos do Monday
+//
+// Triggered by:
+//   1. Vercel Cron (daily)         → GET sem item_id → full refresh
+//   2. Monday webhook              → POST com event.pulseId → atualiza só esse item
+//   3. Manual                       → POST {force:true} → full refresh on-demand
+
 const MONDAY_TOKEN = process.env.MONDAY_API_TOKEN;
 const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -17,6 +24,8 @@ const HDR_SB = {
 
 let DEADLINE_COLS_CACHE = null;
 let DEADLINE_COLS_LOADED_AT = 0;
+let GROUP_RULES_CACHE = null;
+let GROUP_RULES_LOADED_AT = 0;
 
 async function mondayQuery(query, label = 'q') {
   try {
@@ -37,18 +46,17 @@ async function mondayQuery(query, label = 'q') {
   }
 }
 
-// IMPORTANT: para upsert real no PostgREST, header Prefer precisa de "resolution=merge-duplicates"
-async function sbUpsert(table, payload, onConflict) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
-    method: 'POST',
-    headers: { ...HDR_SB, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify(payload)
+async function sbRequest(method, path, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${path}`, {
+    method,
+    headers: { ...HDR_SB, 'Prefer': 'return=minimal' },
+    body: body ? JSON.stringify(body) : undefined
   });
   if (!r.ok) {
     const txt = await r.text();
-    throw new Error(`Supabase upsert ${table}: ${r.status} ${txt.substring(0,200)}`);
+    throw new Error(`Supabase ${method} ${path}: ${r.status} ${txt.substring(0,200)}`);
   }
-  return null;
+  return r.status === 204 ? null : r.json().catch(() => null);
 }
 
 async function loadDeadlineCols() {
@@ -67,6 +75,37 @@ async function loadDeadlineCols() {
 function inferDone(statusLabel) {
   if (!statusLabel) return false;
   return /finaliz|feito|arte fechada|done|conclu[íi]d|approved|completed|entregue|delivered|encerrad/i.test(statusLabel);
+}
+
+// Cache das regras de classificação de grupos (Backlog/Sprint vs Em aprovação cliente etc.)
+async function loadGroupRules() {
+  if (GROUP_RULES_CACHE && (Date.now() - GROUP_RULES_LOADED_AT) < 5 * 60 * 1000) {
+    return GROUP_RULES_CACHE;
+  }
+  const r = await fetch(`${SB_URL}/rest/v1/tt_radar_group_rules?select=monday_board_id,group_title,category`, { headers: HDR_SB });
+  const rows = await r.json();
+  GROUP_RULES_CACHE = {};
+  for (const row of rows) {
+    const key = `${row.monday_board_id}|${row.group_title}`;
+    GROUP_RULES_CACHE[key] = row.category;
+  }
+  GROUP_RULES_LOADED_AT = Date.now();
+  console.log(`[loadGroupRules] ${rows.length} regras carregadas`);
+  return GROUP_RULES_CACHE;
+}
+
+// Classifica grupo: explicit rule > keyword fallback > 'unclassified'
+function inferGroupCategory(boardId, groupTitle, rules) {
+  if (!groupTitle) return 'unclassified';
+  const key = `${boardId}|${groupTitle}`;
+  if (rules[key]) return rules[key];
+  // Fallback via keywords
+  const t = groupTitle.toLowerCase();
+  if (/em aprovaç[aã]o|client review|aprovação 1|aprovação cliente|avaliação.*\(pro\)|cliente review/i.test(t)) return 'client_review';
+  if (/finaliz|completed|publicado|arquivo final|done|conclu[íi]d|encerrad/i.test(t)) return 'done';
+  if (/on hold|cancelad|pausad|stand[ ]?by/i.test(t)) return 'ignore';
+  if (/backlog|sprint|solicit|banco de conte[úu]dos|desenvolv|fechamento|postagen|material|website|a fazer|configur|planejamento|redes sociais|social\s*[-—]/i.test(t)) return 'active';
+  return 'unclassified';
 }
 
 function parseDeadline(colVal, colType) {
@@ -92,11 +131,15 @@ function parseDeadline(colVal, colType) {
   return null;
 }
 
+// Fetch dados de UM item: tudo em UMA query (incluindo people)
 async function fetchMondayItem(boardId, itemId, cols) {
   const cfg = cols[boardId];
   if (!cfg) return { skipped: true, reason: 'no_mapping' };
+
+  // Lista de colunas específicas pedidas + people é descoberta varrendo tudo
   const wantedColIds = [cfg.deadline_col_id, cfg.status_col_id, cfg.priority_col_id].filter(Boolean);
   const colsList = wantedColIds.map(c => `"${c}"`).join(',');
+
   const query = `query {
     items(ids: [${itemId}]) {
       id
@@ -110,9 +153,11 @@ async function fetchMondayItem(boardId, itemId, cols) {
   if (!data || !data.items) return { error: true };
   const item = data.items[0];
   if (!item) return { deleted: true };
+
   return { item, cfg };
 }
 
+// Fetch people column separadamente (mais permissivo)
 async function fetchPeopleNames(itemId) {
   const q = `query { items(ids:[${itemId}]) { column_values { type text } } }`;
   const data = await mondayQuery(q, `people_${itemId}`);
@@ -146,18 +191,31 @@ async function listItemsWithHours() {
   return Array.from(map.values());
 }
 
-async function refreshOneItem(boardId, itemId, cols, aggregateData) {
+async function refreshOneItem(boardId, itemId, cols, aggregateData, groupRules) {
   const result = await fetchMondayItem(boardId, itemId, cols);
-  if (result.skipped) return { itemId, action: 'skipped', reason: result.reason };
-  if (result.deleted) return { itemId, action: 'gone' };
-  if (result.error) return { itemId, action: 'error' };
+  
+  if (result.skipped) {
+    return { itemId, action: 'skipped', reason: result.reason };
+  }
+  if (result.deleted) {
+    // Item realmente sumiu do Monday: NÃO deletar do snapshot
+    // (manter como referência histórica); apenas atualizar timestamp
+    return { itemId, action: 'gone' };
+  }
+  if (result.error) {
+    return { itemId, action: 'error' };
+  }
 
   const { item, cfg } = result;
   const cv = {};
   (item.column_values || []).forEach(c => { cv[c.id] = c.text });
+
   const deadline = parseDeadline(cv[cfg.deadline_col_id], cfg.deadline_col_type);
   const statusLabel = cv[cfg.status_col_id] || null;
   const priorityLabel = cfg.priority_col_id ? (cv[cfg.priority_col_id] || null) : null;
+  const groupTitle = item.group?.title || null;
+
+  // People column em chamada separada (não bloqueia se falhar)
   const respNames = await fetchPeopleNames(itemId);
 
   const payload = {
@@ -166,7 +224,8 @@ async function refreshOneItem(boardId, itemId, cols, aggregateData) {
     client_id: aggregateData?.client_id || null,
     item_name: item.name || null,
     item_url: item.url || null,
-    group_title: item.group?.title || null,
+    group_title: groupTitle,
+    group_category: inferGroupCategory(boardId, groupTitle, groupRules || {}),
     status_label: statusLabel,
     priority_label: priorityLabel,
     deadline_date: deadline,
@@ -178,11 +237,12 @@ async function refreshOneItem(boardId, itemId, cols, aggregateData) {
     updated_at: new Date().toISOString()
   };
 
-  await sbUpsert('tt_monday_hot_items', payload, 'monday_item_id');
+  await sbRequest('POST', 'tt_monday_hot_items?on_conflict=monday_item_id', payload);
   return { itemId, action: 'upserted', is_done: payload.is_done };
 }
 
 async function fullRefresh(cols) {
+  const groupRules = await loadGroupRules();
   const aggregates = await listItemsWithHours();
   console.log(`[fullRefresh] ${aggregates.length} items para sincronizar`);
   const results = { upserted: 0, skipped: 0, gone: 0, errors: 0 };
@@ -193,7 +253,7 @@ async function fullRefresh(cols) {
         hours_invested: agg.hours_invested,
         entries_count: agg.entries_count,
         last_activity_at: agg.last_activity_at
-      });
+      }, groupRules);
       if (r.action === 'upserted') results.upserted++;
       else if (r.action === 'skipped') results.skipped++;
       else if (r.action === 'gone') results.gone++;
@@ -208,12 +268,14 @@ async function fullRefresh(cols) {
   return results;
 }
 
+// ═══════════════════════════════════════════════════════════════
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // Validar env vars
   if (!MONDAY_TOKEN || !SB_URL || !SB_KEY) {
     return res.status(500).json({
       error: 'Missing env vars',
@@ -232,17 +294,21 @@ module.exports = async (req, res) => {
 
     if (req.method === 'POST' && req.body?.event) {
       const { pulseId, boardId } = req.body.event;
-      if (!pulseId || !boardId) return res.status(400).json({ error: 'missing pulseId/boardId' });
+      if (!pulseId || !boardId) {
+        return res.status(400).json({ error: 'missing pulseId/boardId' });
+      }
       const r = await fetch(`${SB_URL}/rest/v1/tt_time_entries?monday_item_id=eq.${pulseId}&monday_board_id=eq.${boardId}&is_running=eq.false&select=client_id,hours,started_at`, { headers: HDR_SB });
       const entries = await r.json();
-      if (!entries.length) return res.status(200).json({ skipped: 'no_hours' });
+      if (!entries.length) {
+        return res.status(200).json({ skipped: 'no_hours' });
+      }
       const agg = {
         client_id: entries[0].client_id,
         hours_invested: entries.reduce((s, e) => s + (e.hours || 0), 0),
         entries_count: entries.length,
         last_activity_at: entries.reduce((m, e) => e.started_at > m ? e.started_at : m, entries[0].started_at)
       };
-      const result = await refreshOneItem(boardId, pulseId, cols, agg);
+      const result = await refreshOneItem(boardId, pulseId, cols, agg, await loadGroupRules());
       return res.status(200).json(result);
     }
 
@@ -252,6 +318,7 @@ module.exports = async (req, res) => {
     }
 
     return res.status(400).json({ error: 'no action' });
+
   } catch (e) {
     console.error('[handler] error:', e);
     return res.status(500).json({ error: e.message });
