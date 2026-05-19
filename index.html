@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TGT Hub</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -718,7 +719,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.56.0';
+const HUB_VERSION='0.56.1';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -4331,26 +4332,46 @@ async function exportBudgetPDF(reqId){
   const bgt=S.av_budgets?.find(b=>b.request_id===reqId);
   const acc=S.members.find(x=>x.id===r.requested_by);
   const price=bgt?Number(bgt.client_price):0;
-  // Build PDF using jsPDF
+  // Build PDF using jsPDF — tenta múltiplas CDNs como fallback
   try{
     if(!window.jspdf){
       toast('Carregando gerador de PDF...','info');
-      await new Promise((resolve,reject)=>{
-        const s=document.createElement('script');
-        s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js';
-        s.onload=()=>resolve();
-        s.onerror=()=>reject(new Error('Falha ao carregar jsPDF da CDN'));
-        document.head.appendChild(s);
-        // timeout de segurança
-        setTimeout(()=>reject(new Error('Timeout carregando jsPDF (>10s)')),10000);
-      });
+      const CDNS=[
+        'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js',
+        'https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js'
+      ];
+      let loaded=false;
+      let lastErr=null;
+      for(const url of CDNS){
+        if(window.jspdf){loaded=true;break}
+        console.log('[PDF] Tentando carregar de:',url);
+        try{
+          await new Promise((resolve,reject)=>{
+            const s=document.createElement('script');
+            s.src=url;
+            s.async=true;
+            s.onload=()=>{console.log('[PDF] Carregou de',url);resolve()};
+            s.onerror=(e)=>{console.warn('[PDF] Falhou em',url);reject(new Error('Script falhou em '+url))};
+            document.head.appendChild(s);
+            setTimeout(()=>reject(new Error('Timeout (8s) em '+url)),8000);
+          });
+          // Espera o script atribuir window.jspdf
+          await new Promise(r=>setTimeout(r,150));
+          if(window.jspdf&&window.jspdf.jsPDF){loaded=true;break}
+        }catch(e){lastErr=e;console.warn('[PDF]',e.message)}
+      }
+      if(!loaded){
+        throw new Error('Todas as CDNs falharam. '+(lastErr?lastErr.message:'Verifique sua conexão / bloqueador de scripts.'));
+      }
     }
     if(!window.jspdf||!window.jspdf.jsPDF){
-      throw new Error('jsPDF não disponível após carregamento');
+      throw new Error('jsPDF carregou mas window.jspdf.jsPDF não está disponível');
     }
   }catch(e){
-    console.error('Erro PDF:',e);
+    console.error('[PDF] Erro fatal:',e);
     toast('Erro ao carregar PDF: '+e.message,'error');
+    alert('Falha ao carregar gerador de PDF.\n\nDetalhes: '+e.message+'\n\nPossíveis causas:\n• Conexão lenta/sem internet\n• Bloqueador de scripts (uBlock/AdBlock)\n• Firewall corporativo bloqueando CDNs\n\nAbra o Console (F12) para mais detalhes.');
     return;
   }
   
