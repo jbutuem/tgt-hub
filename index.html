@@ -718,7 +718,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.51.1';
+const HUB_VERSION='0.52.0';
 
 // ═══════════════════════════════════════════════
 // STATE
@@ -2215,8 +2215,12 @@ async function pgRadar(el){
   });
   
   // ── Filtros (state) ────────────────────────────────
-  if(!window._radarFilters)window._radarFilters={client:'all',team:'all',person:'all'};
+  // category: 'active_only' (default — só Backlog/Sprint, regra de negócio)
+  //          'include_review' (inclui Em aprovação cliente)
+  //          'all' (inclui tudo, até unclassified)
+  if(!window._radarFilters)window._radarFilters={client:'all',team:'all',person:'all',category:'active_only'};
   const RF=window._radarFilters;
+  if(!RF.category)RF.category='active_only'; // fallback retroativo
   
   // Helpers para nomes/lookups
   const clientName=(id)=>{const c=S.clients.find(c=>c.id===id);return c?c.name:'—'};
@@ -2224,6 +2228,16 @@ async function pgRadar(el){
   
   // ── Aplicar filtros ────────────────────────────────
   const visibleItems=baseItems.filter(it=>{
+    // Filtro de categoria de grupo (Backlog/Sprint vs Aprovação Cliente)
+    const cat=it.group_category||'unclassified';
+    if(RF.category==='active_only'){
+      // Só conta o que é trabalho TGT pendente: active ou unclassified (legado)
+      if(cat!=='active'&&cat!=='unclassified')return false;
+    }else if(RF.category==='include_review'){
+      // Active + client_review (mas não done/ignore)
+      if(cat==='done'||cat==='ignore')return false;
+    }
+    // 'all' = mostra tudo (exceto done que já é filtrado por is_done)
     if(RF.client!=='all' && it.client_id!==RF.client)return false;
     if(RF.team!=='all' && teamOfClient(it.client_id)!==RF.team)return false;
     if(RF.person!=='all'){
@@ -2276,7 +2290,7 @@ async function pgRadar(el){
     renderPage();
   };
   window._radarResetFilters=()=>{
-    window._radarFilters={client:'all',team:'all',person:'all'};
+    window._radarFilters={client:'all',team:'all',person:'all',category:'active_only'};
     try{localStorage.removeItem('radar_filters')}catch(e){}
     renderPage();
   };
@@ -2358,10 +2372,14 @@ async function pgRadar(el){
   
   // ── Cabeçalho ───────────────────────────────────────
   // Conta filtros ativos
-  const activeFilters=[RF.client,RF.team,RF.person].filter(v=>v!=='all').length;
+  const activeFilters=[RF.client,RF.team,RF.person].filter(v=>v!=='all').length+(RF.category!=='active_only'?1:0);
   
   // Filtro de Time: só pra ADM (Account não escolhe time, vê tudo do seu time)
   const showTeamFilter=isA();
+  
+  // Stats por categoria (para mostrar no toggle)
+  const cntActive=baseItems.filter(it=>{const c=it.group_category||'unclassified';return c==='active'||c==='unclassified'}).length;
+  const cntReview=baseItems.filter(it=>it.group_category==='client_review').length;
   
   el.innerHTML=`
     <div style="margin-bottom:14px">
@@ -2370,7 +2388,7 @@ async function pgRadar(el){
           <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#ED1C24);display:flex;align-items:center;justify-content:center;font-size:22px">🎯</div>
           <div>
             <h2 style="margin:0;font-size:22px;line-height:1.1">Radar Operacional</h2>
-            <div style="font-size:12px;color:var(--txt3);margin-top:2px">Onde o time está sendo consumido · prazos críticos · pontos de atenção</div>
+            <div style="font-size:12px;color:var(--txt3);margin-top:2px">Backlog + Sprint · prazos críticos do trabalho TGT (excluindo aprovações pendentes do cliente)</div>
           </div>
         </div>
         <div style="flex:1"></div>
@@ -2384,6 +2402,11 @@ async function pgRadar(el){
     <!-- BARRA DE FILTROS -->
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="font-size:10px;color:var(--txt3);letter-spacing:1px;font-weight:700">FILTROS</div>
+      <select onchange="_radarSetFilter('category',this.value)" style="background:var(--bg3);border:1px solid ${RF.category==='active_only'?'var(--border)':'rgba(245,158,11,.5)'};color:var(--txt1);padding:5px 8px;border-radius:6px;font-size:11px;cursor:pointer" title="Backlog + Sprint = trabalho ativo TGT. Em Aprovação Cliente = aguardando o cliente.">
+        <option value="active_only"${RF.category==='active_only'?' selected':''}>📋 Só Backlog + Sprint (${cntActive})</option>
+        <option value="include_review"${RF.category==='include_review'?' selected':''}>+ Em aprovação cliente (${cntActive+cntReview})</option>
+        <option value="all"${RF.category==='all'?' selected':''}>Todos os grupos</option>
+      </select>
       ${showTeamFilter?`
         <select onchange="_radarSetFilter('team',this.value)" style="background:var(--bg3);border:1px solid var(--border);color:var(--txt1);padding:5px 8px;border-radius:6px;font-size:11px;cursor:pointer">
           <option value="all"${RF.team==='all'?' selected':''}>Todos os times</option>
