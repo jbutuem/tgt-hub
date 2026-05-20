@@ -686,7 +686,18 @@ const HDR_R={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
 const ACTIONS=['Análise Estratégica','Reunião','Digital Comm','Design Gráfico','Webdesign','Apresentação','Embalagem','Branding','Campanha/Tráfego','Produção AV','Evento','Brand Review','ADM'];
 const PROD_TYPES={fee_prod:'Fee Prod',extra_prod:'Extra Prod',single_project:'Single Project',package:'Pacote'};
-const AV_STATUSES={draft:'Rascunho',pending_leader_review:'Aguardando Líder',leader_reviewing:'Líder Analisando',budget_sent:'Orçamento Enviado',account_approved:'Aprovado',account_rejected:'Rejeitado',scheduled:'Agendado',in_capture:'Em Captação',in_edit:'Em Edição',in_review:'Em Revisão',delivered:'Entregue',cancelled:'Cancelado'};
+const AV_STATUSES={
+  requested:'Solicitado',
+  budgeting:'Orçando',
+  pending_approval:'Aguardando Aprovação',
+  approved:'Aprovado',
+  rejected:'Rejeitado',
+  scheduled:'Agendado',
+  delivered:'Entregue',
+  cancelled:'Cancelado',
+  // legados (compat)
+  draft:'Rascunho',pending_leader_review:'Solicitado',leader_reviewing:'Orçando',budget_sent:'Aguardando Aprovação',account_approved:'Aprovado',account_rejected:'Rejeitado',in_capture:'Em Captação',in_edit:'Em Edição',in_review:'Em Revisão'
+};
 
 // ═══════════════════════════════════════════════
 // HELPER: extrair "trabalhando em" de uma entry
@@ -719,7 +730,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.58.0';
+const HUB_VERSION='0.60.0';
 const TGT_LOGO_B64='data:image/jpeg;base64,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';
 const TGT_LOGO_ASPECT=3.175; // largura/altura
 
@@ -942,11 +953,18 @@ const canUseBG=()=>!!S.user&&!isCli();
 const canReviewBG=()=>!!S.user&&(isA()||isAcc()||isPL()||S.user.qc_reviewer===true);
 // Dashboards de time/cliente: admin vê tudo, account/prod_leader veem o próprio escopo
 const canSeeTeamData=()=>isA()||isAcc()||isPL();
-// Produção AV: admin e prod_leader têm acesso completo de gestão; account pode ver os do próprio time
-const canManageProdAV=()=>isA()||isPL();
+// ─── FLUXO PRODUÇÃO AV (simplificado) ───
+// Quem SOLICITA orçamento: account (sr/jr) e admin
+const canRequestBudget=()=>isA()||isAcc();
+// Quem PREPARA orçamento: account do time PROD ou admin
+const canPrepareBudget=()=>isA()||(isAcc()&&S.user&&S.user.team==='PROD')||isPL();
+// Quem APROVA: account solicitante (ou admin). Validado por request no contexto.
+const canApproveBudget=()=>isA()||isAcc();
+// Quem vê valores reais (custo/receita/imposto/participações/NF): account e admin
+const canSeeProdFinancials=()=>isA()||isAcc();
+// Gestão geral (compat com código existente)
+const canManageProdAV=()=>isA()||isPL()||(isAcc()&&S.user&&S.user.team==='PROD');
 const canSeeProdAV=()=>isA()||isPL()||isAcc();
-// Aprovação final de orçamento Prod AV: só admin
-const canApproveBudget=()=>isA();
 // Legado — manter por compat até remover usos antigos
 const isQC=canReviewBG;
 
@@ -1444,13 +1462,14 @@ function buildNav(){
     // prod_leader → analisar solicitações novas e configurar aprovadas
     // account → ver suas solicitações rejeitadas (precisa ajustar)
     let pendingCount=0;
-    if(isA()){
-      pendingCount=S.av_requests.filter(r=>r.status==='budget_sent').length;
-    }else if(isPL()){
-      pendingCount=S.av_requests.filter(r=>['pending_leader_review','leader_reviewing','account_approved'].includes(r.status)).length;
-    }else if(isAcc()){
+    if(canPrepareBudget()){
+      // quem orça vê solicitações pra orçar + aprovadas pra agendar
+      pendingCount=S.av_requests.filter(r=>['requested','budgeting','rejected','approved'].includes(r.status)).length;
+    }
+    if(isAcc()){
+      // account solicitante vê os que aguardam aprovação dele
       const myClientIds=S.clients.filter(c=>c.team===S.user.team).map(c=>c.id);
-      pendingCount=S.av_requests.filter(r=>r.status==='account_rejected'&&(myClientIds.includes(r.client_id)||r.requested_by===S.user.id)).length;
+      pendingCount+=S.av_requests.filter(r=>r.status==='pending_approval'&&(myClientIds.includes(r.client_id)||r.requested_by===S.user.id)).length;
     }
     const badgeHtml=pendingCount?`<span class="sb-badge">${pendingCount}</span>`:'';
     h+=`<div class="sb-item" data-p="p-requests" onclick="nav('p-requests')">${ICONS.prod} Solicitações ${badgeHtml}</div>`;
@@ -4002,22 +4021,22 @@ async function pgProdRequests(el){
     reqs=reqs.filter(r=>myClientIds.includes(r.client_id)||r.requested_by===S.user.id);
   }
   
-  const needsLeader=reqs.filter(r=>['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status));
-  const needsAccount=reqs.filter(r=>r.status==='budget_sent');
-  const approved=reqs.filter(r=>r.status==='account_approved');
-  const scheduled=reqs.filter(r=>['scheduled','in_capture','in_edit','in_review'].includes(r.status));
+  const needsBudget=reqs.filter(r=>['requested','budgeting','rejected'].includes(r.status));
+  const needsAccount=reqs.filter(r=>r.status==='pending_approval');
+  const approved=reqs.filter(r=>r.status==='approved');
+  const scheduled=reqs.filter(r=>['scheduled'].includes(r.status));
   const done=reqs.filter(r=>['delivered','cancelled'].includes(r.status));
   
   // Determine which filter to show by default
-  const isLeaderOrAdmin=isA()||isPL();
-  const defaultFilter=isLeaderOrAdmin&&needsLeader.length?'leader':needsAccount.length?'account':'all';
+  const isLeaderOrAdmin=canPrepareBudget();
+  const defaultFilter=isLeaderOrAdmin&&needsBudget.length?'leader':needsAccount.length?'account':'all';
   
   const filterBtns=[
     {id:'all',label:'Todas',count:reqs.length},
-    {id:'leader',label:'🔧 Ação do Líder',count:needsLeader.length,color:'var(--t1)'},
-    {id:'account',label:'📋 Ação do Account',count:needsAccount.length,color:'var(--pack)'},
+    {id:'leader',label:'🔧 Orçar',count:needsBudget.length,color:'var(--t1)'},
+    {id:'account',label:'📋 Aprovar',count:needsAccount.length,color:'var(--pack)'},
     {id:'approved',label:'✓ Aprovadas',count:approved.length,color:'var(--prod)'},
-    {id:'production',label:'🎬 Em Produção',count:scheduled.length,color:'var(--red)'},
+    {id:'production',label:'🎬 Agendadas',count:scheduled.length,color:'var(--red)'},
     {id:'done',label:'✅ Finalizadas',count:done.length},
   ];
 
@@ -4044,17 +4063,17 @@ async function pgProdRequests(el){
 
 function renderProdReqRows(reqs,filter){
   let filtered=reqs;
-  if(filter==='leader')filtered=reqs.filter(r=>['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status));
-  else if(filter==='account')filtered=reqs.filter(r=>r.status==='budget_sent');
-  else if(filter==='approved')filtered=reqs.filter(r=>r.status==='account_approved');
-  else if(filter==='production')filtered=reqs.filter(r=>['scheduled','in_capture','in_edit','in_review'].includes(r.status));
+  if(filter==='leader')filtered=reqs.filter(r=>['requested','budgeting','rejected'].includes(r.status));
+  else if(filter==='account')filtered=reqs.filter(r=>r.status==='pending_approval');
+  else if(filter==='approved')filtered=reqs.filter(r=>r.status==='approved');
+  else if(filter==='production')filtered=reqs.filter(r=>['scheduled'].includes(r.status));
   else if(filter==='done')filtered=reqs.filter(r=>['delivered','cancelled'].includes(r.status));
   if(!filtered.length)return'<tr><td colspan="6" class="empty">Nenhuma solicitação neste filtro</td></tr>';
   return filtered.map(r=>{
     const c=S.clients.find(cl=>cl.id===r.client_id);const m=S.members.find(mm=>mm.id===r.requested_by);
-    const isAction=(['pending_leader_review','leader_reviewing','account_rejected'].includes(r.status)&&canManageProdAV())||(r.status==='budget_sent'&&canApproveBudget())||(r.status==='account_approved'&&canManageProdAV());
+    const isAction=(['requested','budgeting','rejected'].includes(r.status)&&canPrepareBudget())||(r.status==='pending_approval'&&canApproveBudget())||(r.status==='approved'&&canPrepareBudget());
     const hl=isAction?'background:rgba(237,28,36,.04);border-left:3px solid var(--red);':'';
-    const icon=r.status==='account_rejected'?'🔄':r.status==='budget_sent'?'⚠️':r.status==='account_approved'?'✅':'';
+    const icon=r.status==='rejected'?'🔄':r.status==='pending_approval'?'⚠️':r.status==='approved'?'✅':'';
     return`<tr style="cursor:pointer;${hl}" onclick="showRequestDetail('${r.id}')"><td style="font-weight:600">${icon} ${r.title}</td><td>${c?c.name:'—'}</td><td>${PROD_TYPES[r.prod_type]||r.prod_type}</td><td><span class="st-pill st-${r.status}">${AV_STATUSES[r.status]||r.status}</span></td><td>${fD(r.desired_deadline)}</td><td>${m?m.name.split(' ')[0]:'—'}</td></tr>`}).join('');
 }
 
@@ -4076,6 +4095,7 @@ function showNewRequest(){
       <div class="f-field"><label class="f-label">Tipo *</label><select class="f-sel" id="rq-type"><option value="">Selecione</option>${Object.entries(PROD_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
     </div>
     <div class="f-field"><label class="f-label">Objetivo / Impacto esperado</label><textarea class="f-area" id="rq-obj" placeholder="Qual o objetivo estratégico desta produção?"></textarea></div>
+    <div class="f-field"><label class="f-label">Entregáveis esperados *</label><textarea class="f-area" id="rq-deliverables" placeholder="Liste o que você espera receber, um por linha. Ex:&#10;2 vídeos verticais de 2 min&#10;1 vídeo institucional 16:9&#10;100 fotos tratadas&#10;Cobertura de stories"></textarea><div style="font-size:10px;color:var(--txt3);margin-top:2px">Detalhe bem — o líder usa isso como base para o orçamento</div></div>
     <div class="f-field">
       <label class="f-label">O que o vídeo vai ter (selecione todos que se aplicam)</label>
       <div class="chk-grid" id="rq-vtypes">
@@ -4172,6 +4192,8 @@ async function mondayUpdateProdStatus(req,newStatus){
 async function saveRequest(){
   const title=$('rq-title')?.value,client=$('rq-client')?.value,type=$('rq-type')?.value;
   if(!title||!client||!type){toast('Preencha título, cliente e tipo','error');return}
+  const deliverables=($('rq-deliverables')?.value||'').trim();
+  if(!deliverables){toast('Preencha os entregáveis esperados','error');$('rq-deliverables')?.focus();return}
   const n=v=>{const s=(v||'').trim();return s===''?null:s};
   const ni=v=>{const x=parseInt(v);return isNaN(x)?null:x};
   // Read checked video types
@@ -4186,6 +4208,7 @@ async function saveRequest(){
       prod_type:type,
       objective:n($('rq-obj')?.value),
       expected_impact:null,
+      deliverables_detail:deliverables,
       video_type:n(vtypes),
       quantity_deliverables:ni($('rq-qty')?.value)||1,
       formats:n(formats),
@@ -4193,7 +4216,7 @@ async function saveRequest(){
       reference_links:n($('rq-refs')?.value),
       briefing_notes:n($('rq-notes')?.value),
       client_budget:parseFloat($('rq-budget')?.value)||null,
-      status:'pending_leader_review'
+      status:'requested'
     };
     const result=await sbPost('av_requests',body);
     // Create item on Monday board
@@ -4207,36 +4230,39 @@ async function saveRequest(){
 // REQUEST DETAIL + APPROVAL FLOW
 // ═══════════════════════════════════════════════
 const STATUS_FLOW={
-  // Líder recebe solicitação — pode enviar orçamento ou cancelar
-  pending_leader_review:['budget_sent','cancelled'],
-  // Líder analisando — pode enviar orçamento ou cancelar
-  leader_reviewing:['budget_sent','cancelled'],
-  // Account recebe orçamento — aprova ou rejeita
-  budget_sent:['account_approved','account_rejected'],
-  // Account aprovou → líder agenda
-  account_approved:['scheduled','cancelled'],
-  // Account rejeitou → líder reabre
-  account_rejected:['pending_leader_review'],
-  // Agendado → inicia captação
-  scheduled:['in_capture','cancelled'],
-  // Fluxo de produção
-  in_capture:['in_edit'],
-  in_edit:['in_review'],
-  in_review:['delivered','in_edit'],
+  // Solicitado → orça ou cancela
+  requested:['budgeting','cancelled'],
+  // Orçando → manda pra aprovação ou cancela
+  budgeting:['pending_approval','cancelled'],
+  // Aguardando aprovação → account aprova ou rejeita
+  pending_approval:['approved','rejected'],
+  // Aprovado → agenda (entra no calendário)
+  approved:['scheduled','cancelled'],
+  // Rejeitado → volta a orçar
+  rejected:['budgeting','cancelled'],
+  // Agendado → entregue
+  scheduled:['delivered','cancelled'],
   delivered:[],
-  cancelled:['pending_leader_review']
+  cancelled:['budgeting'],
+  // legados (compat com dados antigos)
+  pending_leader_review:['budgeting','cancelled'],
+  leader_reviewing:['pending_approval','cancelled'],
+  budget_sent:['approved','rejected'],
+  account_approved:['scheduled','cancelled'],
+  account_rejected:['budgeting'],
+  in_capture:['delivered'],in_edit:['delivered'],in_review:['delivered']
 };
 const STATUS_ACTION_LABELS={
-  budget_sent:'📤 Enviar Orçamento ao Account',
-  account_approved:'✓ Aprovar Orçamento',account_rejected:'✗ Recusar Orçamento',
-  scheduled:'📅 Colocar na Agenda',
-  in_capture:'🎬 Iniciar Captação',in_edit:'✂ Enviar pra Edição',
-  in_review:'🔍 Enviar pra Revisão',delivered:'✓ Marcar Entregue',
-  cancelled:'Cancelar',pending_leader_review:'↩ Reabrir / Revisar'
+  budgeting:'🔧 Preparar Orçamento',
+  pending_approval:'📤 Enviar para Aprovação',
+  approved:'✓ Aprovar',rejected:'✗ Rejeitar',
+  scheduled:'📅 Agendar Produção',
+  delivered:'✓ Marcar Entregue',
+  cancelled:'Cancelar'
 };
 const STATUS_ACTION_COLORS={
-  budget_sent:'btn-r',account_approved:'btn-r',delivered:'btn-r',
-  account_rejected:'btn-o',cancelled:'btn-o'
+  pending_approval:'btn-r',approved:'btn-r',delivered:'btn-r',scheduled:'btn-r',
+  rejected:'btn-o',cancelled:'btn-o'
 };
 
 function showRequestDetail(id){
@@ -4245,13 +4271,14 @@ function showRequestDetail(id){
   const c=S.clients.find(cl=>cl.id===r.client_id);
   const m=S.members.find(mm=>mm.id===r.requested_by);
   const nextStatuses=STATUS_FLOW[r.status]||[];
-  // Permissões: quem pode agir em cada etapa
-  const isLeaderOrAdmin=isA()||isPL();
-  const isAccountUser=isAcc();
-  // Account pode aprovar/rejeitar quando status é budget_sent
-  // Líder/ADM age em todo o resto
-  const canAct=(r.status==='budget_sent'||r.status==='account_rejected')?(isAccountUser||isA()):isLeaderOrAdmin;
-  const canBudget=isLeaderOrAdmin;
+  // Permissões do fluxo simplificado:
+  // - quem APROVA/REJEITA: account quando pending_approval
+  // - quem ORÇA: account do PROD/admin quando requested/budgeting/rejected
+  // - quem AGENDA: idem orçador quando approved
+  const canApprove=(r.status==='pending_approval')&&canApproveBudget();
+  const canBudgetNow=['requested','budgeting','rejected','approved'].includes(r.status)&&canPrepareBudget();
+  const canAct=canApprove||canBudgetNow;
+  const canBudget=canPrepareBudget();
   // Get existing budget
   let bgt=null;
   
@@ -4296,36 +4323,60 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
       ${r.formats?`<div style="margin-bottom:14px"><div class="cl">Formatos</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${r.formats.split(',').map(f=>`<span class="bg bg-t3">${f.trim()}</span>`).join('')}</div></div>`:''}
       ${r.reference_links?`<div style="margin-bottom:14px"><div class="cl">Referências</div><div style="margin-top:4px;color:var(--txt2);font-size:13px;word-break:break-all">${r.reference_links}</div></div>`:''}
       ${r.briefing_notes?`<div style="margin-bottom:14px"><div class="cl">Briefing</div><div style="margin-top:4px;line-height:1.5">${r.briefing_notes}</div></div>`:''}
-      ${bgt?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
-        <div class="cl" style="margin-bottom:10px">Orçamento</div>
+      ${bgt&&canSeeProdFinancials()?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
+        <div class="cl" style="margin-bottom:10px">💰 Análise Financeira (valores reais)</div>
         ${(()=>{
           const price=Number(bgt.client_price)||0;
           const taxR=Number(bgt.tax_rate)||0.18;
           const taxAmt=price*taxR;
           const costs=Number(bgt.cost_crew_daily||0)+Number(bgt.cost_travel||0)+Number(bgt.cost_food||0)+Number(bgt.cost_equipment||0)+Number(bgt.cost_talent||0)+Number(bgt.cost_location||0)+Number(bgt.cost_other||0)+Number(bgt.cost_edit||0)+Number(bgt.cost_motion||0)+Number(bgt.cost_color_grade||0)+Number(bgt.cost_audio||0);
           const profit=price-taxAmt-costs;
-          const commAcc=Number(bgt.commission_account_value)||0;
-          const commLdr=Number(bgt.commission_leader_value)||0;
-          const receitaTGT=profit-commAcc-commLdr;
-          return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center">
-            <div style="background:var(--bg3);border-radius:var(--radius);padding:12px">
-              <div style="font-size:9px;color:var(--txt3);text-transform:uppercase">Preço Cliente</div>
-              <div style="font-size:20px;font-weight:900;font-family:var(--mono)">${fMoney(price)}</div>
+          // Participações (15/15/10)
+          const cProdAcc=Number(bgt.commission_prod_account_value)||0;
+          const cSol=Number(bgt.commission_solicitante_value)||0;
+          const cLdr=Number(bgt.commission_leader_value)||0;
+          const totalComm=cProdAcc+cSol+cLdr;
+          const receitaTGT=profit-totalComm;
+          // Nomes dos participantes
+          const prodAcc=S.members.find(m=>m.id===r.prod_account_id);
+          const sol=S.members.find(m=>m.id===r.requested_by);
+          const ldr=S.members.find(m=>m.id===r.prod_leader_id);
+          return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div style="background:var(--bg3);border-radius:var(--radius);padding:10px">
+              <div style="font-size:9px;color:var(--txt3);text-transform:uppercase">Valor NF Cliente</div>
+              <div style="font-size:18px;font-weight:900;font-family:var(--mono)">${fMoney(price)}</div>
+              <div style="font-size:9px;color:var(--txt3)">inclui imposto ${(taxR*100).toFixed(1)}%</div>
             </div>
-            <div style="background:var(--bg3);border-radius:var(--radius);padding:12px">
-              <div style="font-size:9px;color:var(--txt3);text-transform:uppercase">Custos + Impostos</div>
-              <div style="font-size:20px;font-weight:900;font-family:var(--mono);color:var(--pack)">${fMoney(costs+taxAmt)}</div>
+            <div style="background:var(--bg3);border-radius:var(--radius);padding:10px">
+              <div style="font-size:9px;color:var(--txt3);text-transform:uppercase">Custo Produção</div>
+              <div style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--pack)">${fMoney(costs)}</div>
+              <div style="font-size:9px;color:var(--txt3)">+ imposto ${fMoney(taxAmt)}</div>
             </div>
-            <div style="background:${receitaTGT>=0?'rgba(74,222,128,.08)':'rgba(237,28,36,.08)'};border:1px solid ${receitaTGT>=0?'rgba(74,222,128,.2)':'rgba(237,28,36,.2)'};border-radius:var(--radius);padding:12px">
-              <div style="font-size:9px;color:${receitaTGT>=0?'var(--prod)':'var(--red)'};text-transform:uppercase;font-weight:700">Receita TGT</div>
-              <div style="font-size:20px;font-weight:900;font-family:var(--mono);color:${receitaTGT>=0?'var(--prod)':'var(--red)'}">${fMoney(receitaTGT)}</div>
+          </div>
+          <div style="background:${profit>=0?'rgba(74,222,128,.06)':'rgba(237,28,36,.08)'};border:1px solid ${profit>=0?'rgba(74,222,128,.2)':'rgba(237,28,36,.2)'};border-radius:var(--radius);padding:10px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:11px;font-weight:700;color:${profit>=0?'var(--prod)':'var(--red)'}">LUCRO (base p/ comissões)</span>
+              <span style="font-size:18px;font-weight:900;font-family:var(--mono);color:${profit>=0?'var(--prod)':'var(--red)'}">${fMoney(profit)}</span>
+            </div>
+          </div>
+          <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;margin-bottom:10px">
+            <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;margin-bottom:8px">Participações sobre o lucro</div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span>📋 Account Solicitante <span style="color:var(--txt3)">(15%)</span>${sol?` · ${sol.name.split(' ')[0]}`:''}</span><b style="font-family:var(--mono)">${fMoney(cSol)}</b></div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span>🎬 Account PROD <span style="color:var(--txt3)">(15%)</span>${prodAcc?` · ${prodAcc.name.split(' ')[0]}`:''}</span><b style="font-family:var(--mono)">${fMoney(cProdAcc)}</b></div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span>🎥 Líder PROD <span style="color:var(--txt3)">(10%)</span>${ldr?` · ${ldr.name.split(' ')[0]}`:''}</span><b style="font-family:var(--mono)">${fMoney(cLdr)}</b></div>
+            <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:12px"><span style="font-weight:700">Total participações</span><b style="font-family:var(--mono)">${fMoney(totalComm)}</b></div>
+          </div>
+          <div style="background:${receitaTGT>=0?'rgba(74,222,128,.08)':'rgba(237,28,36,.08)'};border:1px solid ${receitaTGT>=0?'rgba(74,222,128,.2)':'rgba(237,28,36,.2)'};border-radius:var(--radius);padding:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:11px;font-weight:700;color:${receitaTGT>=0?'var(--prod)':'var(--red)'}">RECEITA LÍQUIDA TGT</span>
+              <span style="font-size:18px;font-weight:900;font-family:var(--mono);color:${receitaTGT>=0?'var(--prod)':'var(--red)'}">${fMoney(receitaTGT)}</span>
             </div>
           </div>
           ${bgt.suggested_capture_date||bgt.suggested_delivery_date?`<div style="display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--txt2)">${bgt.suggested_capture_date?`<span>📅 Captação: <b>${fD(bgt.suggested_capture_date)}</b></span>`:''}${bgt.suggested_delivery_date?`<span>📦 Entrega: <b>${fD(bgt.suggested_delivery_date)}</b></span>`:''}</div>`:''}
-          ${bgt.leader_notes?`<div style="margin-top:8px;font-size:12px;color:var(--txt2)"><b>Obs líder:</b> ${bgt.leader_notes}</div>`:''}
-          ${profit<=0?`<div style="margin-top:8px;padding:6px 10px;background:rgba(237,28,36,.1);border-radius:var(--radius);font-size:11px;color:var(--red);font-weight:700;text-align:center">⚠ Produção deficitária — sem comissão</div>`:''}`;
+          ${bgt.leader_notes?`<div style="margin-top:8px;font-size:12px;color:var(--txt2)"><b>Obs:</b> ${bgt.leader_notes}</div>`:''}
+          ${profit<=0?`<div style="margin-top:8px;padding:6px 10px;background:rgba(237,28,36,.1);border-radius:var(--radius);font-size:11px;color:var(--red);font-weight:700;text-align:center">⚠ Produção deficitária — sem comissão (regra de ouro)</div>`:''}`;
         })()}
-        <div style="margin-top:10px"><button class="btn btn-sm" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Baixar proposta PDF</button></div>
+        ${canSeeProdFinancials()?`<div style="margin-top:10px"><button class="btn btn-sm" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Gerar PDF da Proposta (Cliente)</button></div>`:''}
       </div>`:r.client_budget?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px"><div style="font-size:11px;color:var(--txt2)">Verba disponível: <span style="font-weight:700;color:var(--prod)">${fMoney(r.client_budget)}</span></div></div>`:''}
       ${['scheduled','in_capture','in_edit','in_review','delivered'].includes(r.status)?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
         <div class="cl" style="margin-bottom:10px">🎬 Time da Produção</div>
@@ -4343,14 +4394,24 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         <div class="cl" style="margin-bottom:10px">📦 Equipamentos</div>
         <div id="prod-equip-${r.id}" style="margin-bottom:10px"></div>
       </div>`:''}
+      ${['scheduled','delivered'].includes(r.status)&&canSeeProdFinancials()?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;margin-bottom:14px">
+        <div class="cl" style="margin-bottom:10px">\u2b50 Avaliação do Cliente</div>
+        ${r.client_rating?`<div style="background:${r.client_rating>=4?'rgba(74,222,128,.08)':'rgba(245,158,11,.08)'};border:1px solid ${r.client_rating>=4?'rgba(74,222,128,.25)':'rgba(245,158,11,.25)'};border-radius:var(--radius);padding:12px">
+          <div style="font-size:22px">${'\u2605'.repeat(r.client_rating)}${'\u2606'.repeat(5-r.client_rating)}</div>
+          <div style="font-size:12px;margin-top:4px;color:${r.client_rating>=4?'var(--prod)':'var(--pack)'};font-weight:700">${r.client_rating>=4?'\u2713 Comissões liberadas (4-5\u2605)':'\u26a0 Abaixo de 4\u2605 \u2014 comissões bloqueadas'}</div>
+        </div>`:`<div style="font-size:12px;color:var(--txt2);margin-bottom:8px">Registre a avaliação do cliente. Comissões só liberam com 4 ou 5 estrelas.</div>
+        <div style="display:flex;gap:6px">${[1,2,3,4,5].map(n=>`<button class="btn btn-sm" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border);font-size:16px;padding:6px 12px" onclick="setClientRating('${r.id}',${n})">${n}\u2605</button>`).join('')}</div>`}
+      </div>`:''}
       ${canAct&&nextStatuses.length?`<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
         <div class="cl" style="margin-bottom:10px">Ações</div>
-        ${r.status==='budget_sent'?`<div style="margin-bottom:10px;font-size:12px;color:var(--txt2)">Revise o orçamento acima e aprove ou rejeite a produção.</div>
+        ${r.status==='pending_approval'?`<div style="margin-bottom:10px;font-size:12px;color:var(--txt2)">Revise o orçamento acima (valores reais) e aprove ou rejeite a produção.</div>
         <div class="f-field" style="margin-bottom:10px"><label class="f-label">Feedback (obrigatório se rejeitar)</label><textarea class="f-area" id="rq-feedback" placeholder="Comentários sobre o orçamento..."></textarea></div>`:''}
-        ${r.status==='account_rejected'?`<div style="background:rgba(237,28,36,.06);border:1px solid rgba(237,28,36,.15);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:12px"><span style="color:var(--red);font-weight:700">Motivo da rejeição:</span> <span style="color:var(--txt2)">${r.rejection_feedback||'Não informado'}</span></div>`:''}
+        ${r.status==='rejected'?`<div style="background:rgba(237,28,36,.06);border:1px solid rgba(237,28,36,.15);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;font-size:12px"><span style="color:var(--red);font-weight:700">Motivo da rejeição:</span> <span style="color:var(--txt2)">${r.rejection_feedback||'Não informado'}</span></div>`:''}
         <div style="display:flex;flex-wrap:wrap;gap:8px">${nextStatuses.map(ns=>{
-          if(ns==='account_rejected')return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-o'}" onclick="var fb=document.getElementById('rq-feedback');if(!fb||!fb.value.trim()){toast('Informe o motivo da rejeição','error');return}rejectRequest('${r.id}',fb.value)">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
-          if(ns==='budget_sent')return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
+          if(ns==='rejected')return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-o'}" onclick="var fb=document.getElementById('rq-feedback');if(!fb||!fb.value.trim()){toast('Informe o motivo da rejeição','error');return}rejectRequest('${r.id}',fb.value)">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
+          if(ns==='approved')return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="approveRequest('${r.id}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
+          if(ns==='pending_approval')return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
+          if(ns==='budgeting'&&(r.status==='requested'||r.status==='rejected'))return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="switchReqTab('budget');toast('Preencha o orçamento na aba ao lado','info')">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
           return`<button class="btn ${STATUS_ACTION_COLORS[ns]||'btn-r'}" onclick="changeRequestStatus('${r.id}','${ns}')">${STATUS_ACTION_LABELS[ns]||ns}</button>`;
         }).join('')}</div>
       </div>`:''}
@@ -4484,13 +4545,26 @@ function renderRequestDetail(r,c,m,bgt,nextStatuses,canAct,canBudget){
         </div>
         <div id="bg-mini-calendar" style="margin-top:8px"></div>
       </div>
-      <div class="f-field"><label class="f-label">Observações do líder</label><textarea class="f-area" id="bg-notes">${bgt?.leader_notes||''}</textarea></div>
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <div class="cl" style="margin-bottom:8px">📍 Detalhes do Evento (vão para o PDF do cliente)</div>
+        <div class="f-row">
+          <div class="f-field"><label class="f-label">Data do evento</label><input class="f-input" type="date" id="bg-event-date" value="${r.event_date||''}"></div>
+          <div class="f-field"><label class="f-label">Horário</label><input class="f-input" id="bg-event-time" placeholder="Ex: 09h às 17h" value="${r.event_time||''}"></div>
+        </div>
+        <div class="f-field"><label class="f-label">Local</label><input class="f-input" id="bg-event-location" placeholder="Ex: Kerry Campinas" value="${r.event_location||''}"></div>
+        <div class="f-field"><label class="f-label">Líder da Produção *</label><select class="f-sel" id="bg-prod-leader">
+          <option value="">Selecione o líder responsável</option>
+          ${S.members.filter(mm=>mm.active!==false&&mm.is_active!==false&&(mm.access_level==='prod_leader'||mm.team==='PROD'||mm.access_level==='admin'||mm.role==='prod'||mm.role==='executor')).sort((a,b)=>a.name.localeCompare(b.name)).map(mm=>`<option value="${mm.id}" ${r.prod_leader_id===mm.id?'selected':''}>${mm.name}${mm.access_level==='prod_leader'?' (Líder)':''}</option>`).join('')}
+        </select><div style="font-size:10px;color:var(--txt3);margin-top:2px">Recebe 10% de comissão · pode ser o próprio operador</div></div>
+        <div class="f-field"><label class="f-label">Entregáveis detalhados *</label><textarea class="f-area" id="bg-deliverables-detail" placeholder="Liste tudo que será entregue, um por linha. Ex:&#10;2 vídeos verticais de 2 min (resumo Campinas + Cotia)&#10;1 vídeo institucional 16:9 de 3 min&#10;Mínimo de 100 fotos tratadas&#10;Stories de cobertura nos dois dias">${r.deliverables_detail||''}</textarea><div style="font-size:10px;color:var(--txt3);margin-top:2px">Detalhe ao máximo — quanto mais itens, mais o cliente enxerga o valor entregue</div></div>
+      </div>
+      <div class="f-field"><label class="f-label">Observações internas</label><textarea class="f-area" id="bg-notes">${bgt?.leader_notes||''}</textarea></div>
       
       ${canBudget?`<div style="display:flex;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
         <button class="btn btn-r" onclick="saveBudget('${r.id}','${bgt?.id||''}')">Salvar ${isFee?'Custos':'Orçamento'}</button>
-        ${!isFee&&(r.status==='leader_reviewing'||r.status==='pending_leader_review')?`<button class="btn btn-r" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">Salvar & Enviar ao Account</button>`:''}
-        ${bgt&&!isFee?`<button class="btn" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border)" onclick="exportBudgetPDF('${r.id}')">📄 Gerar PDF</button>`:''}
+        ${!isFee&&['requested','budgeting','rejected'].includes(r.status)?`<button class="btn btn-r" onclick="saveBudgetAndSend('${r.id}','${bgt?.id||''}')">Salvar & Enviar p/ Aprovação</button>`:''}
       </div>`:''}
+      ${bgt&&!isFee&&canSeeProdFinancials()?`<div style="margin-top:10px"><button class="btn" style="background:var(--bg3);color:var(--txt);border:1px solid var(--border);width:100%" onclick="exportBudgetPDF('${r.id}')">📄 Gerar PDF da Proposta (Cliente)</button></div>`:''}
     </div>`}`;
   
   // Calculate on load
@@ -4599,12 +4673,17 @@ async function exportBudgetPDF(reqId){
     // ═══════════ DERIVA MÉTRICAS DO BUDGET ═══════════
     const rate=(k)=>{try{return getCostRate(k)}catch(e){return 0}};
     const crewQty=bgt?.cost_crew_daily?Math.round(Number(bgt.cost_crew_daily)/(rate('crew_daily_rate')||1)):0;
-    const editHrs=bgt?.cost_edit?Math.round(Number(bgt.cost_edit)/(rate('edit_hour_rate')||1)):0;
-    const motionHrs=bgt?.cost_motion?Math.round(Number(bgt.cost_motion)/(rate('motion_hour_rate')||1)):0;
-    const qtdDeliver=r.quantity_deliverables||1;
-    // Horas estimadas de produção: equipe em campo (8h/dia padrão) + pós
-    const fieldHrs=crewQty*8; // assume 1 diária se não tiver dias salvos
-    const totalHrs=Math.max(fieldHrs+editHrs+motionHrs, editHrs+motionHrs);
+    const editHrs=Number(bgt?.refined_edit_hours)||(bgt?.cost_edit?Math.round(Number(bgt.cost_edit)/(rate('edit_hour_rate')||1)):0);
+    const motionHrs=Number(bgt?.refined_post_hours)||(bgt?.cost_motion?Math.round(Number(bgt.cost_motion)/(rate('motion_hour_rate')||1)):0);
+    // Conta entregáveis a partir do detalhamento (mais real que quantity_deliverables)
+    let qtdDeliver=r.quantity_deliverables||1;
+    if(r.deliverables_detail&&r.deliverables_detail.trim()){
+      const items=r.deliverables_detail.split(/[\n;]+/).map(s=>s.trim()).filter(Boolean);
+      if(items.length>0)qtdDeliver=items.length;
+    }
+    // Horas estimadas: captação refinada (ou equipe×8) + pós
+    const fieldHrs=Number(bgt?.refined_capture_hours)||crewQty*8;
+    const totalHrs=Math.max(fieldHrs+editHrs+motionHrs, editHrs+motionHrs, 1);
     
     // ═══════════ HEADER PRETO COM LOGO ═══════════
     doc.setFillColor(...DARK);doc.rect(0,0,PG_W,46,'F');
@@ -4649,7 +4728,7 @@ async function exportBudgetPDF(reqId){
     const bnY=y;
     const bnH=26, bnGap=5, bnW=(COL_W-bnGap*2)/3;
     const bigNums=[
-      {v:String(qtdDeliver), l:qtdDeliver>1?'ENTREGÁVEIS':'ENTREGÁVEL', s:'vídeos finalizados'},
+      {v:String(qtdDeliver), l:qtdDeliver>1?'ENTREGÁVEIS':'ENTREGÁVEL', s:'peças finalizadas'},
       {v:totalHrs>0?totalHrs+'h':'—', l:'DEDICAÇÃO', s:'horas de produção'},
       {v:crewQty>0?String(crewQty):'—', l:'EQUIPE', s:'profissionais em campo'}
     ];
@@ -4683,15 +4762,20 @@ async function exportBudgetPDF(reqId){
     colHeader(leftX,'O que vamos entregar');
     let ly=startCol+7;
     const entregas=[];
-    if(r.formats){
-      const ft={'16_9':'Vídeo horizontal 16:9','9_16':'Vídeo vertical 9:16 (Reels/Stories)','1_1':'Vídeo quadrado 1:1','still':'Fotografia still'};
-      r.formats.split(',').forEach(f=>{const lbl=ft[f.trim()];if(lbl)entregas.push(lbl)});
+    // Prioriza entregáveis detalhados (uma linha cada)
+    if(r.deliverables_detail&&r.deliverables_detail.trim()){
+      r.deliverables_detail.split(/[\n;]+/).map(s=>s.trim()).filter(Boolean).forEach(d=>entregas.push(d));
+    }else{
+      if(r.formats){
+        const ft={'16_9':'Vídeo horizontal 16:9','9_16':'Vídeo vertical 9:16 (Reels/Stories)','1_1':'Vídeo quadrado 1:1','still':'Fotografia still'};
+        r.formats.split(',').forEach(f=>{const lbl=ft[f.trim()];if(lbl)entregas.push(lbl)});
+      }
+      if(r.video_type){
+        const vt={event:'Cobertura de evento',making_of:'Making of',commercial:'Filme comercial',institutional:'Vídeo institucional',social:'Conteúdo social media',interview:'Entrevistas / depoimentos',tutorial:'Vídeo tutorial'};
+        r.video_type.split(',').forEach(v=>{const lbl=vt[v.trim()];if(lbl)entregas.push(lbl)});
+      }
+      if(entregas.length===0)entregas.push(`${qtdDeliver} vídeo${qtdDeliver>1?'s':''} finalizado${qtdDeliver>1?'s':''}`);
     }
-    if(r.video_type){
-      const vt={event:'Cobertura de evento',making_of:'Making of',commercial:'Filme comercial',institutional:'Vídeo institucional',social:'Conteúdo social media',interview:'Entrevistas / depoimentos',tutorial:'Vídeo tutorial'};
-      r.video_type.split(',').forEach(v=>{const lbl=vt[v.trim()];if(lbl)entregas.push(lbl)});
-    }
-    if(entregas.length===0)entregas.push(`${qtdDeliver} vídeo${qtdDeliver>1?'s':''} finalizado${qtdDeliver>1?'s':''}`);
     doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...TEXT);
     entregas.forEach(e=>{
       doc.setFillColor(...RED);doc.circle(leftX+1.3,ly-1.3,0.9,'F');
@@ -4699,8 +4783,16 @@ async function exportBudgetPDF(reqId){
       lines.forEach((ln,i)=>doc.text(ln,leftX+5,ly+i*4.5));
       ly+=Math.max(5.5,lines.length*4.5+1);
     });
-    if(bgt?.suggested_delivery_date){
+    // Data / hora / local do evento
+    if(r.event_date||r.event_time||r.event_location){
       ly+=2;
+      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...GRAY);
+      if(r.event_date){doc.text('Data:',leftX,ly);doc.setFont('helvetica','normal');doc.setTextColor(...DARK);doc.text(fD(r.event_date)+(r.event_time?' · '+r.event_time:''),leftX+14,ly);ly+=5;doc.setFont('helvetica','bold');doc.setTextColor(...GRAY)}
+      else if(r.event_time){doc.text('Horário:',leftX,ly);doc.setFont('helvetica','normal');doc.setTextColor(...DARK);doc.text(r.event_time,leftX+18,ly);ly+=5;doc.setFont('helvetica','bold');doc.setTextColor(...GRAY)}
+      if(r.event_location){doc.text('Local:',leftX,ly);doc.setFont('helvetica','normal');doc.setTextColor(...DARK);const llines=doc.splitTextToSize(r.event_location,colW-16);doc.text(llines[0],leftX+14,ly);ly+=5}
+    }
+    if(bgt?.suggested_delivery_date){
+      ly+=1;
       doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...GRAY);
       doc.text('Entrega prevista:',leftX,ly);
       doc.setFont('helvetica','normal');doc.setTextColor(...DARK);
@@ -4708,40 +4800,64 @@ async function exportBudgetPDF(reqId){
       ly+=5;
     }
     
-    // ── Coluna direita: O QUE ESTÁ INCLUSO ──
-    colHeader(rightX,'O que está incluso');
+    // ── Coluna direita: NOSSO PROCESSO (etapas + horas, mostra o trabalho) ──
+    colHeader(rightX,'Nosso processo');
     let ry=startCol+7;
-    const inclusos=[
-      'Direção criativa e equipe técnica',
-      'Equipamentos profissionais de captação',
-      'Pós-produção completa (edição e cor)',
-      'Tratamento de áudio e trilha',
-      'Rodadas de revisão e ajustes'
+    // Monta etapas com horas estimadas reais do orçamento
+    const captureH=Number(bgt?.refined_capture_hours)||fieldHrs||0;
+    const etapas=[
+      {t:'Pré-produção & direção',d:'Planejamento, roteiro e logística',h:Math.max(2,Math.round(totalHrs*0.12))},
+      {t:'Captação em campo',d:`Equipe${crewQty>1?` de ${crewQty}`:''} com equipamento profissional`,h:captureH},
+      {t:'Edição & montagem',d:'Cortes, ritmo e narrativa',h:editHrs||Math.round(totalHrs*0.3)},
     ];
-    doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...TEXT);
-    inclusos.forEach(s=>{
+    if(motionHrs>0)etapas.push({t:'Motion & grafismo',d:'Animações e identidade visual',h:motionHrs});
+    etapas.push({t:'Cor, áudio & finalização',d:'Tratamento e exportação final',h:Math.max(2,Math.round(totalHrs*0.1))});
+    doc.setFontSize(9);
+    etapas.forEach(et=>{
+      if(!et.h||et.h<=0)return;
       doc.setFillColor(...RED);doc.circle(rightX+1.3,ry-1.3,0.9,'F');
-      const lines=doc.splitTextToSize(s,colW-6);
-      lines.forEach((ln,i)=>doc.text(ln,rightX+5,ry+i*4.5));
-      ry+=Math.max(5.5,lines.length*4.5+1);
+      doc.setFont('helvetica','bold');doc.setTextColor(...DARK);
+      doc.text(et.t,rightX+5,ry);
+      // horas à direita
+      doc.setFont('helvetica','bold');doc.setTextColor(...RED);
+      doc.text(`${et.h}h`,rightX+colW,ry,{align:'right'});
+      ry+=4.5;
+      doc.setFont('helvetica','normal');doc.setTextColor(...GRAY);doc.setFontSize(7.5);
+      const dlines=doc.splitTextToSize(et.d,colW-6);
+      dlines.forEach((ln,i)=>doc.text(ln,rightX+5,ry+i*3.6));
+      ry+=Math.max(4.5,dlines.length*3.6+1.5);
+      doc.setFontSize(9);
     });
     
     y=Math.max(ly,ry)+8;
     
+    // ═══════════ FAIXA "O QUE ESTÁ INCLUSO" (full width, compacta) ═══════════
+    doc.setFillColor(248,248,248);doc.roundedRect(MARGIN,y,COL_W,16,2,2,'F');
+    doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...RED);
+    doc.text('TUDO INCLUSO:',MARGIN+5,y+6);
+    doc.setFont('helvetica','normal');doc.setTextColor(...TEXT);doc.setFontSize(7.5);
+    const inclusoLine='Direção criativa · Equipe técnica · Equipamentos profissionais · Pós-produção completa · Tratamento de áudio · Rodadas de revisão';
+    const incLines=doc.splitTextToSize(inclusoLine,COL_W-10);
+    incLines.slice(0,2).forEach((ln,i)=>doc.text(ln,MARGIN+5,y+10.5+i*3.5));
+    y+=22;
+    
     // ═══════════ INVESTIMENTO (faixa preta destaque) ═══════════
-    const invH=34;
+    const invH=32;
+    // Garante que investimento + condições + rodapé caibam (rodapé em PG_H-22)
+    const maxInvY=PG_H-22-4-(3*4)-invH-3; // espaço p/ 3 condições + folga
+    if(y>maxInvY)y=maxInvY;
     doc.setFillColor(...DARK);doc.roundedRect(MARGIN,y,COL_W,invH,2,2,'F');
     doc.setFillColor(...RED);doc.rect(MARGIN,y,3,invH,'F');
     // Esquerda: label
     doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...LIGHT);
     doc.text('INVESTIMENTO TOTAL',MARGIN+10,y+11);
     doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(150,150,150);
-    doc.text('Impostos inclusos · Valor único e fechado',MARGIN+10,y+27);
+    doc.text('Impostos inclusos · Valor único e fechado',MARGIN+10,y+25);
     // Direita: valor BIG
-    doc.setFontSize(30);doc.setFont('helvetica','bold');doc.setTextColor(...RED);
+    doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(...RED);
     const priceStr='R$ '+Number(price||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-    doc.text(priceStr,PG_W-MARGIN-8,y+21,{align:'right'});
-    y+=invH+7;
+    doc.text(priceStr,PG_W-MARGIN-8,y+20,{align:'right'});
+    y+=invH+6;
     
     // ═══════════ CONDIÇÕES (compacto, 1 linha cada) ═══════════
     doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GRAY);
@@ -4932,18 +5048,20 @@ async function saveBudget(reqId,budgetId){
   const taxAmt=price*taxPct;
   const profit=price-taxAmt-costs;
   
-  // Commissions based on profit (regra de ouro)
-  let commAccPct=0,commAccVal=0,commLdrPct=0,commLdrVal=0;
+  // ─── COMISSÕES 15/15/10 sobre LUCRO (regra de ouro: zero se déficit) ───
+  // Account PROD (quem orça): 15% · Account SOLICITANTE: 15% · Líder PROD: 10%
+  const req0=S.av_requests.find(r=>r.id===reqId);
+  let cProdAccPct=0,cProdAccVal=0,cSolPct=0,cSolVal=0,cLdrPct=0,cLdrVal=0;
   if(profit>0){
-    const curMonth=new Date().toISOString().substring(0,7);
-    let bestPct=0.10;
-    S.members.filter(m=>m.access_level==='account').forEach(a=>{
-      const sc=S.scores.find(s=>s.account_id===a.id&&s.month===curMonth);
-      if(sc){const p=scorePctDirect(Number(sc.final_score),sc.block_status);if(p>bestPct)bestPct=p}
-    });
-    commAccPct=bestPct;commAccVal=profit*bestPct;
-    commLdrPct=0.10;commLdrVal=profit*0.10;
+    cProdAccPct=15;cProdAccVal=profit*0.15;
+    cSolPct=15;cSolVal=profit*0.15;
+    cLdrPct=10;cLdrVal=profit*0.10;
   }
+  // Quem orça = usuário atual (account do PROD ou admin)
+  const prodAccountId=S.user.id;
+  // Líder de PROD: selecionado no dropdown (obrigatório)
+  const prodLeaderSel=$('bg-prod-leader');
+  const prodLeaderId=prodLeaderSel&&prodLeaderSel.value?prodLeaderSel.value:null;
   
   const data={
     request_id:reqId,prepared_by:S.user.id,
@@ -4953,14 +5071,24 @@ async function saveBudget(reqId,budgetId){
     cost_other:v('bg-other'),cost_other_desc:n('bg-other-desc'),
     cost_edit:editCost,cost_motion:motionCost,cost_color_grade:colorCost,cost_audio:audioCost,
     tax_rate:taxPct,
-    commission_account_pct:commAccPct,commission_account_value:commAccVal,
-    commission_leader_pct:commLdrPct,commission_leader_value:commLdrVal,
-    margin_tgt_value:profit-commAccVal-commLdrVal,
-    margin_tgt_pct:price>0?((profit-commAccVal-commLdrVal)/price)*100:0,
+    commission_prod_account_pct:cProdAccPct,commission_prod_account_value:cProdAccVal,
+    commission_solicitante_pct:cSolPct,commission_solicitante_value:cSolVal,
+    commission_leader_pct:cLdrPct,commission_leader_value:cLdrVal,
+    margin_tgt_value:profit-cProdAccVal-cSolVal-cLdrVal,
+    margin_tgt_pct:price>0?((profit-cProdAccVal-cSolVal-cLdrVal)/price)*100:0,
     leader_notes:n('bg-notes'),
     refined_capture_hours:v('bg-crew-qty')*v('bg-crew-days')*crewPeriod*8,refined_edit_hours:v('bg-edit-hrs'),refined_post_hours:v('bg-motion-hrs'),
     budget_status:'draft',updated_at:new Date().toISOString()
   };
+  // Grava prod_account_id e prod_leader_id no request (pra rastrear comissões) + detalhes de evento
+  try{
+    const evtPatch={prod_account_id:prodAccountId,prod_leader_id:prodLeaderId};
+    const evDate=n('bg-event-date');if(evDate)evtPatch.event_date=evDate;
+    const evTime=n('bg-event-time');if(evTime!==null)evtPatch.event_time=evTime;
+    const evLoc=n('bg-event-location');if(evLoc!==null)evtPatch.event_location=evLoc;
+    const evDel=n('bg-deliverables-detail');if(evDel!==null)evtPatch.deliverables_detail=evDel;
+    await sbPatch('av_requests',`id=eq.${reqId}`,evtPatch);
+  }catch(e){}
   const capDate=n('bg-cap-date');if(capDate)data.suggested_capture_date=capDate;
   const delDate=n('bg-del-date');if(delDate)data.suggested_delivery_date=delDate;
   try{
@@ -4977,26 +5105,36 @@ async function saveBudget(reqId,budgetId){
       }
     }
     toast('Orçamento salvo');
-    // Auto-advance status if still pending
+    // Auto-advance: requested → budgeting quando começa a orçar
     const req=S.av_requests.find(r=>r.id===reqId);
-    if(req&&req.status==='pending_leader_review'){
-      await sbPatch('av_requests',`id=eq.${reqId}`,{status:'leader_reviewing',updated_at:new Date().toISOString()});
+    if(req&&req.status==='requested'){
+      await sbPatch('av_requests',`id=eq.${reqId}`,{status:'budgeting',updated_at:new Date().toISOString()});
       S.av_requests=await sbGet('av_requests','order=created_at.desc');
-      if(req.monday_item_id)mondayUpdateProdStatus({...req,monday_item_id:req.monday_item_id},'leader_reviewing');
+      if(req.monday_item_id)mondayUpdateProdStatus({...req,monday_item_id:req.monday_item_id},'budgeting');
       buildNav();
     }
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
 async function saveBudgetAndSend(reqId,budgetId){
+  // Validações obrigatórias antes de enviar para aprovação
+  const leaderSel=$('bg-prod-leader');
+  if(!leaderSel||!leaderSel.value){toast('Selecione o Líder da Produção','error');switchReqTab('budget');return}
+  const delEl=$('bg-deliverables-detail');
+  const delVal=delEl?delEl.value.trim():'';
+  if(!delVal){toast('Preencha os Entregáveis detalhados','error');switchReqTab('budget');if(delEl)delEl.focus();return}
+  // Exige pelo menos 2 itens (evita orçamento simplório "1 vídeo")
+  const delItems=delVal.split(/[\n;]+/).map(s=>s.trim()).filter(Boolean);
+  if(delItems.length<2){
+    if(!confirm('Você listou apenas 1 entregável. Orçamentos com um único item passam impressão de pouco valor.\n\nRecomendamos detalhar mais (formatos, durações, fotos, stories, versões...).\n\nEnviar mesmo assim?'))return;
+  }
   await saveBudget(reqId,budgetId);
   try{
-    await sbPatch('av_requests',`id=eq.${reqId}`,{status:'budget_sent',updated_at:new Date().toISOString()});
+    await sbPatch('av_requests',`id=eq.${reqId}`,{status:'pending_approval',updated_at:new Date().toISOString()});
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
-    // Sync status to Monday
     const req=S.av_requests.find(r=>r.id===reqId);
-    if(req)mondayUpdateProdStatus(req,'budget_sent');
-    closeM('m-req');toast('Orçamento enviado ao Account');
+    if(req)mondayUpdateProdStatus(req,'pending_approval');
+    closeM('m-req');toast('Orçamento enviado para aprovação do Account');
     buildNav();
     renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
@@ -5106,11 +5244,48 @@ async function releaseProdEquipment(piId,equipId,reqId){
 
 async function rejectRequest(id,feedback){
   try{
-    await sbPatch('av_requests',`id=eq.${id}`,{status:'account_rejected',rejection_feedback:feedback,updated_at:new Date().toISOString()});
+    await sbPatch('av_requests',`id=eq.${id}`,{status:'rejected',rejection_feedback:feedback,updated_at:new Date().toISOString()});
     S.av_requests=await sbGet('av_requests','order=created_at.desc');
     const req=S.av_requests.find(r=>r.id===id);
-    if(req)mondayUpdateProdStatus(req,'account_rejected');
-    closeM('m-req');toast('Orçamento rejeitado — líder será notificado');buildNav();renderPage();
+    if(req)mondayUpdateProdStatus(req,'rejected');
+    closeM('m-req');toast('Orçamento rejeitado — voltou para orçar');buildNav();renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// Avaliação do cliente: 4-5★ libera comissões
+async function setClientRating(id,rating){
+  try{
+    const released=rating>=4;
+    await sbPatch('av_requests',`id=eq.${id}`,{
+      client_rating:rating,
+      client_rating_at:new Date().toISOString(),
+      commissions_released:released,
+      status:'delivered',
+      updated_at:new Date().toISOString()
+    });
+    S.av_requests=await sbGet('av_requests','order=created_at.desc');
+    closeM('m-req');
+    toast(released?`✓ ${rating}★ — comissões liberadas`:`${rating}★ registrado — comissões bloqueadas (mín. 4★)`,released?'success':'info');
+    buildNav();renderPage();
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+
+// Aprovação: muda status, registra quem aprovou, e AGENDA automaticamente
+async function approveRequest(id){
+  try{
+    const now=new Date().toISOString();
+    await sbPatch('av_requests',`id=eq.${id}`,{
+      status:'scheduled',  // aprovado → já entra agendado no calendário
+      approved_at:now,
+      approved_by:S.user.id,
+      updated_at:now
+    });
+    S.av_requests=await sbGet('av_requests','order=created_at.desc');
+    const req=S.av_requests.find(r=>r.id===id);
+    if(req)mondayUpdateProdStatus(req,'scheduled');
+    closeM('m-req');
+    toast('✓ Aprovado e agendado! Veja no Calendário de Produção','success');
+    buildNav();renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
@@ -5143,11 +5318,13 @@ async function pgProdCalendar(el){
   
   // Build calendar events from av_requests + av_budgets
   const STATUS_COLORS={
-    pending_leader_review:'#579bfc',leader_reviewing:'#579bfc',
-    budget_sent:'#ffcb00',account_approved:'#fdab3d',
-    scheduling:'#037f4c',scheduled:'#037f4c',
-    in_capture:'#e63946',in_edit:'#9d50dd',in_review:'#ff007f',
-    delivered:'#00c875',cancelled:'#df2f4a'
+    requested:'#579bfc',budgeting:'#a25ddc',
+    pending_approval:'#ffcb00',approved:'#fdab3d',
+    scheduled:'#037f4c',delivered:'#00c875',cancelled:'#df2f4a',
+    // legados
+    pending_leader_review:'#579bfc',leader_reviewing:'#a25ddc',
+    budget_sent:'#ffcb00',account_approved:'#fdab3d',scheduling:'#037f4c',
+    in_capture:'#e63946',in_edit:'#9d50dd',in_review:'#ff007f'
   };
   const events=[];
   S.av_requests.filter(r=>r.status!=='cancelled').forEach(r=>{
@@ -5155,7 +5332,8 @@ async function pgProdCalendar(el){
     const captDate=bgt?.suggested_capture_date?.substring(0,10);
     const delDate=bgt?.suggested_delivery_date?.substring(0,10);
     const deadline=r.desired_deadline?.substring(0,10);
-    const date=captDate||deadline;
+    const evtDate=r.event_date?.substring(0,10);
+    const date=evtDate||captDate||deadline;
     if(date)events.push({date,title:r.title,status:r.status,id:r.id,type:'captação',color:STATUS_COLORS[r.status]||'#9d9d9c'});
     if(delDate&&delDate!==date)events.push({date:delDate,title:r.title,status:r.status,id:r.id,type:'entrega',color:'#00c875'});
   });
