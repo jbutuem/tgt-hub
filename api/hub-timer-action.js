@@ -26,7 +26,8 @@ const BOARDS = {
   '18309098296': { exec_col: 'multiple_person_mm31e586' }, // NOVONESIS
   '4911421503':  { exec_col: 'multiple_person_mm31xq3y' }, // BAPTISTELLA
   '7033792227':  { exec_col: 'multiple_person_mm318epv' }, // KERRY RH
-  '4530656213':  { exec_col: 'multiple_person_mm31fa0a' }, // KERRY INST
+  '18322032773': { exec_col: 'multiple_person_mm48nhx1' }, // KERRY INSTITUCIONAL COMM
+  '4530656213':  { exec_col: 'multiple_person_mm31fa0a' }, // KERRY MKT ATIVAÇÃO
   '4711581849':  { exec_col: 'multiple_person_mm319y9p' }, // KERRY BRANDS
   '18395709707': { exec_col: 'multiple_person_mm31q6g7' }, // KERRY H&T
   '8824474984':  { exec_col: 'multiple_person_mm31b038' }, // KERRY PACKAGING
