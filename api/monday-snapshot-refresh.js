@@ -68,6 +68,27 @@ async function sbRequest(method, path, body) {
   return r.status === 204 ? null : r.json().catch(() => null);
 }
 
+// Upsert em LOTE (um POST para N linhas) — evita centenas de chamadas sequenciais
+async function sbUpsertBatch(rows) {
+  if (!rows || !rows.length) return 0;
+  let done = 0;
+  const CHUNK = 200;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
+    const r = await fetch(`${SB_URL}/rest/v1/tt_monday_hot_items?on_conflict=monday_item_id`, {
+      method: 'POST',
+      headers: { ...HDR_SB, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(slice)
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(`Supabase bulk upsert: ${r.status} ${txt.substring(0,200)}`);
+    }
+    done += slice.length;
+  }
+  return done;
+}
+
 async function loadDeadlineCols() {
   if (DEADLINE_COLS_CACHE && (Date.now() - DEADLINE_COLS_LOADED_AT) < 5 * 60 * 1000) {
     return DEADLINE_COLS_CACHE;
@@ -204,6 +225,7 @@ async function scanBoard(board, cols, groupRules, hoursMap, results) {
   if (!cfg || (!cfg.deadline_col_id && !cfg.status_col_id)) {
     cfg = await autoDetectCols(board.board_id);
   }
+  const batch = [];
   let cursor = null, pages = 0;
   do {
     const q = `query {
@@ -243,7 +265,7 @@ async function scanBoard(board, cols, groupRules, hoursMap, results) {
       //  - item pendente (não-done) que tenha prazo definido
       if (!(hours > 0 || (!isDone && deadline))) continue;
 
-      const payload = {
+      batch.push({
         monday_item_id: Number(item.id),
         monday_board_id: board.board_id,
         client_id: board.client_id,
@@ -260,18 +282,19 @@ async function scanBoard(board, cols, groupRules, hoursMap, results) {
         last_activity_at: h ? h.last : null,
         is_done: isDone,
         updated_at: new Date().toISOString()
-      };
-      try {
-        await sbRequest('POST', 'tt_monday_hot_items?on_conflict=monday_item_id', payload);
-        results.upserted++;
-      } catch (e) {
-        console.error(`[scanBoard ${board.board_id}] upsert ${item.id}:`, e.message);
-        results.errors++;
-      }
+      });
     }
     pages++;
-    await new Promise(r => setTimeout(r, PAGE_DELAY_MS));
   } while (cursor && pages < MAX_PAGES_PER_BOARD);
+
+  // Um único upsert em lote por board
+  try {
+    const n = await sbUpsertBatch(batch);
+    results.upserted += n;
+  } catch (e) {
+    console.error(`[scanBoard ${board.board_id}] bulk upsert:`, e.message);
+    results.errors++;
+  }
 }
 
 async function fullRefresh(cols) {
@@ -292,13 +315,17 @@ async function fullRefresh(cols) {
     console.error('[fullRefresh] cleanup:', e.message);
   }
 
-  for (const b of boards) {
-    try {
-      await scanBoard(b, cols, groupRules, hoursMap, results);
-    } catch (e) {
-      console.error(`[fullRefresh] board ${b.board_id}:`, e.message);
-      results.errors++;
-    }
+  // Varre os boards em PARALELO (blocos) — reduz drasticamente o tempo total,
+  // já que cada board é uma consulta lenta ao Monday.
+  const CONCURRENCY = 5;
+  for (let i = 0; i < boards.length; i += CONCURRENCY) {
+    const chunk = boards.slice(i, i + CONCURRENCY);
+    await Promise.all(chunk.map(b =>
+      scanBoard(b, cols, groupRules, hoursMap, results).catch(e => {
+        console.error(`[fullRefresh] board ${b.board_id}:`, e.message);
+        results.errors++;
+      })
+    ));
   }
   console.log('[fullRefresh] done:', JSON.stringify(results));
   return results;
@@ -368,7 +395,7 @@ async function refreshOneItem(boardId, itemId, cols, aggregateData, groupRules) 
     is_done: inferDone(statusLabel),
     updated_at: new Date().toISOString()
   };
-  await sbRequest('POST', 'tt_monday_hot_items?on_conflict=monday_item_id', payload);
+  await sbUpsertBatch([payload]);
   return { itemId, action: 'upserted', is_done: payload.is_done };
 }
 

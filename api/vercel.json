@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/monday-snapshot-refresh.js": {
+      "maxDuration": 60
+    }
+  }
+}
