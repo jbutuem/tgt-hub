@@ -175,7 +175,18 @@ export default async function handler(req, res) {
       }
       const member = ms[0];
 
-      // 1. Busca cards onde esse user está executando atualmente (em todos os boards)
+      // 0. IDEMPOTÊNCIA: já existe timer ABERTO desse membro NESTE card?
+      //    Se sim, não faz nada (evita a duplicata gêmea de webhook reenviado).
+      const dupRes = await sbFetch(
+        `/tt_time_entries?member_id=eq.${member.id}&monday_item_id=eq.${pulseId}&is_running=eq.true&select=id&limit=1`
+      );
+      const dup = await dupRes.json();
+      if (Array.isArray(dup) && dup.length > 0) {
+        results.added.push({ user: mondayUserId, name: member.name, ok: true, idempotent: 'already_running' });
+        continue;
+      }
+
+      // 1. Busca cards onde esse user está executando atualmente (outros cards)
       const runningRes = await sbFetch(
         `/tt_time_entries?member_id=eq.${member.id}&is_running=eq.true&monday_item_id=not.is.null&monday_item_id=neq.${pulseId}&select=monday_item_id,monday_board_id`
       );
@@ -193,13 +204,16 @@ export default async function handler(req, res) {
         removedFrom.push({ item: oldItemId, ok: r.ok, err: r.err });
       }
 
-      // 3. Fecha todas as entries abertas desse user no Supabase
+      // 3. Fecha todas as entries abertas desse user (dos outros cards) no Supabase
       await sbFetch(`/tt_time_entries?member_id=eq.${member.id}&is_running=eq.true`, {
         method: 'PATCH',
         body: JSON.stringify({ is_running: false, ended_at: nowIso }),
       });
 
-      // 4. Cria nova entry pra este card
+      // 4. Cria nova entry pra este card.
+      //    A trava única (member_id, monday_item_id) WHERE is_running garante
+      //    no banco que não haverá duas abertas; se houver corrida, vem 409 e
+      //    tratamos como idempotente (a outra execução já criou).
       const createRes = await sbFetch('/tt_time_entries', {
         method: 'POST',
         body: JSON.stringify({
@@ -219,6 +233,10 @@ export default async function handler(req, res) {
           monday_item_name: pulseName,
         }),
       });
+      if (createRes.status === 409) {
+        results.added.push({ user: mondayUserId, name: member.name, ok: true, idempotent: 'conflict_guard' });
+        continue;
+      }
       const created = await createRes.json();
 
       results.added.push({
