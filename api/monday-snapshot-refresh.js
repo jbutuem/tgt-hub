@@ -435,6 +435,31 @@ module.exports = async (req, res) => {
       return res.status(200).json(result);
     }
 
+    // ── Modo LISTA: retorna boards ativos + limpa órfãos (rápido, sem Monday) ──
+    //    O front usa isto pra saber quais boards varrer, um a um.
+    if (req.method === 'POST' && req.body?.list) {
+      const boards = await loadActiveBoards();
+      try {
+        const activeIds = boards.map(b => b.board_id);
+        if (activeIds.length) {
+          await sbRequest('DELETE', `tt_monday_hot_items?monday_board_id=not.in.(${activeIds.join(',')})`);
+        }
+      } catch (e) { console.error('[list] cleanup:', e.message); }
+      return res.status(200).json({ ok: true, boards });
+    }
+
+    // ── Modo BOARD ÚNICO: varre só 1 board (evita o timeout do full refresh) ──
+    if (req.method === 'POST' && req.body?.board_id) {
+      const groupRules = await loadGroupRules();
+      const hoursMap = await buildHoursMap();
+      const results = { upserted: 0, errors: 0 };
+      await scanBoard(
+        { board_id: Number(req.body.board_id), client_id: req.body.client_id || null, name: null },
+        cols, groupRules, hoursMap, results
+      );
+      return res.status(200).json({ ok: true, ...results });
+    }
+
     if (req.method === 'GET' || req.body?.force) {
       const results = await fullRefresh(cols);
       return res.status(200).json({ ok: true, ...results });
