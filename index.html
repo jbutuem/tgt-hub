@@ -186,6 +186,37 @@ tr:hover td{background:var(--bg3)}
 
 /* TIMER */
 .timer-display{font-size:60px;font-weight:800;font-family:var(--mono);text-align:center;margin:24px 0;letter-spacing:2px}
+/* ===== Painel de acesso rápido (timer) ===== */
+.qp{max-width:600px;margin:18px auto 0;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.qp-head{font-size:12px;font-weight:800;letter-spacing:.3px;color:var(--txt);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.qp-hint{font-size:10px;font-weight:500;color:var(--txt3);letter-spacing:0}
+.qp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.qp-client{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:74px;padding:10px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;cursor:pointer;color:var(--txt);transition:.12s;font-family:inherit}
+.qp-client:hover{border-color:var(--red);background:rgba(237,28,36,.05)}
+.qp-client:active{transform:scale(.97)}
+.qp-ini{width:30px;height:30px;border-radius:8px;background:rgba(237,28,36,.12);color:var(--red);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+.qp-name{font-size:11px;font-weight:600;text-align:center;line-height:1.15;max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.qp-on{border-color:var(--red);background:rgba(237,28,36,.1)}
+.qp-live{position:absolute;top:5px;right:6px;font-size:8px;font-weight:800;color:var(--red);letter-spacing:.3px}
+.qp-empty{font-size:12px;color:var(--txt3);text-align:center;padding:10px}
+.qp-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;animation:qpFade .15s ease}
+.qp-sheet{width:100%;max-width:440px;background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.qp-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.qp-sheet-title{font-size:17px;font-weight:800;color:var(--txt)}
+.qp-x{background:var(--bg3);border:1px solid var(--border);color:var(--txt2);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:14px;font-family:inherit}
+.qp-sheet-hint{font-size:11px;color:var(--txt3);margin-bottom:14px}
+.qp-actions{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.qp-act{display:flex;flex-direction:column;align-items:center;gap:7px;min-height:78px;justify-content:center;padding:12px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;cursor:pointer;color:var(--txt);transition:.12s;font-family:inherit}
+.qp-act:hover{border-color:var(--red);background:rgba(237,28,36,.06)}
+.qp-act:active{transform:scale(.96)}
+.qp-act-ic{font-size:24px;line-height:1}
+.qp-act-lb{font-size:12px;font-weight:700}
+@keyframes qpFade{from{opacity:0}to{opacity:1}}
+@media(max-width:600px){
+  .qp-ov{align-items:flex-end;padding:0}
+  .qp-sheet{max-width:none;border-radius:18px 18px 0 0;padding:18px 16px 26px}
+  .qp-grid{grid-template-columns:repeat(auto-fill,minmax(84px,1fr))}
+}
 .timer-display.running{color:var(--red);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
 .timer-controls{display:flex;gap:12px;justify-content:center;margin-bottom:24px}
@@ -686,6 +717,18 @@ const HDR={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'appl
 const HDR_R={'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
 
 const ACTIONS=['Análise Estratégica','Reunião','Digital Comm','Design Gráfico','Webdesign','Apresentação','Embalagem','Branding','Campanha/Tráfego','Produção AV','Evento','Brand Review','ADM'];
+// Ações de acesso rápido — as que mais escapam do registro (rápidas / equipe em movimento)
+const QUICK_ACTIONS=[
+  {ic:'🤝',label:'Reunião',action:'Reunião'},
+  {ic:'📞',label:'Call',action:'Call'},
+  {ic:'💬',label:'Mensagens',action:'Mensagens'},
+  {ic:'🚗',label:'Deslocamento',action:'Deslocamento'},
+  {ic:'📍',label:'Visita',action:'Visita'},
+  {ic:'📋',label:'Briefing',action:'Briefing'},
+  {ic:'✅',label:'Aprovação',action:'Aprovação'},
+  {ic:'⚙️',label:'Prod',action:'Produção'},
+];
+const qpIni=n=>(n||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
 const PROD_TYPES={fee_prod:'Fee Prod',extra_prod:'Extra Prod',single_project:'Single Project',package:'Pacote'};
 const AV_STATUSES={
   requested:'Solicitado',
@@ -731,7 +774,7 @@ function workingOnHTML(entry,opts){
 // ═══════════════════════════════════════════════
 // VERSÃO
 // ═══════════════════════════════════════════════
-const HUB_VERSION='0.71.0';
+const HUB_VERSION='0.73.0';
 const TGT_LOGO_B64='data:image/jpeg;base64,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';
 const TGT_LOGO_ASPECT=3.175; // largura/altura
 
@@ -789,6 +832,8 @@ const fMoneyMasked=v=>canSeeClientFinancials()?fMoney(v):'•••';
 
 // Membros ativos (excluindo inativados manualmente)
 const getActiveMembers=()=>S.members.filter(m=>m.is_active!==false);
+// Mapa member_id → fator de cobertura por pessoa (account 1,15 / produção 1,20 / execução 1,10 / sem fator 1,00)
+const buildMemberFactor=()=>{const MF={};(S.members||[]).forEach(m=>{MF[m.id]=(m.coverage_factor!=null)?Number(m.coverage_factor):1.0;});return MF;};
 const isMemberActive=(m)=>m&&m.is_active!==false;
 
 // ═══════════════════════════════════════════════════════════════
@@ -996,6 +1041,17 @@ function visibleClientIds(){
 function canSeeClient(clientId){
   const ids=visibleClientIds();
   return ids===null||ids.includes(clientId);
+}
+// Clientes no escopo do usuário pelo organograma (times da pessoa) + clientes onde já lançou tempo
+function myScopedClients(){
+  const all=(S.clients||[]).filter(c=>c.is_active!==false);
+  if(isA())return all.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const teams=new Set((typeof getTeamsOfMember==='function'?getTeamsOfMember(S.user.id):[]).map(mt=>mt.team));
+  if(S.user.team)teams.add(S.user.team);
+  const cutoff=new Date(Date.now()-45*86400000).toISOString().substring(0,10);
+  const worked=new Set((S.entries||[]).filter(e=>e.member_id===S.user.id&&(e.started_at||'').substring(0,10)>=cutoff).map(e=>e.client_id));
+  return all.filter(c=>(c.team&&teams.has(c.team))||worked.has(c.id))
+            .sort((a,b)=>a.name.localeCompare(b.name));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1741,7 +1797,15 @@ async function pgTimer(el){
   
   const myEntries=S.entries.filter(e=>e.member_id===S.user.id&&!e.is_running);
   const todayH=myEntries.filter(e=>e.started_at&&e.started_at.substring(0,10)===new Date().toISOString().substring(0,10)).reduce((s,e)=>s+(e.hours||0),0);
-  
+
+  // Painel de acesso rápido — clientes no escopo do organograma + ações que mais escapam
+  const _qpClients=myScopedClients();
+  const _qpRunCid=(running&&re)?re.client_id:null;
+  const qpHtml=`<div class="qp">
+    <div class="qp-head">⚡ Acesso rápido <span class="qp-hint">toque no cliente e escolha a ação — interrompe qualquer outro timer aberto</span></div>
+    ${_qpClients.length?`<div class="qp-grid">${_qpClients.map(c=>`<button class="qp-client ${_qpRunCid===c.id?'qp-on':''}" onclick="openQuickActions('${c.id}')"><div class="qp-ini">${qpIni(c.name)}</div><div class="qp-name">${escapeHtml(c.name)}</div>${_qpRunCid===c.id?'<span class="qp-live">● ativo</span>':''}</button>`).join('')}</div>`:`<div class="qp-empty">Nenhum cliente no seu escopo ainda — fale com o admin pra ajustar seu time no organograma.</div>`}
+  </div>`;
+
   // Coworkers on same Monday item
   let coworkersHtml='';
   if(running&&re&&re.monday_item_id){
@@ -1760,6 +1824,7 @@ async function pgTimer(el){
     </div>
     <div id="tclock" class="timer-display ${running?'running':''}">00:00:00</div>
     ${coworkersHtml}
+    ${qpHtml}
     <div style="max-width:500px;margin:0 auto">
       <div class="f-field"><label class="f-label">Descrição</label><input class="f-input" id="t-desc" placeholder="O que você está fazendo?" value="${running&&re?re.description||'':''}"></div>
       <div class="f-row">
@@ -2021,6 +2086,39 @@ async function startTimer(){
   }catch(e){toast('Erro: '+e.message,'error')}
 }
 
+// ===== Acesso rápido: inicia timer pra cliente+ação e interrompe qualquer outro aberto =====
+async function quickLog(clientId,action,label){
+  try{
+    const existing=S.entries.find(e=>e.is_running&&e.member_id===S.user.id);
+    if(existing){activeEntryId=existing.id;await stopTimer(true);}
+    const now=new Date().toISOString();
+    const data={member_id:S.user.id,client_id:clientId,action:action,description:label||action,started_at:now,is_running:true,source:'quick',last_activity_at:now};
+    const res=await sbPost('tt_time_entries',data);
+    activeEntryId=res[0].id;timerStart=new Date();running=true;timerSec=0;lastActivityLocal=Date.now();
+    startActivityTracking();
+    await loadEntries();
+    closeQuickActions();
+    const c=S.clients.find(x=>x.id===clientId);
+    toast(`${label||action} iniciado${c?' · '+c.name:''}`,'success');
+    buildNav();
+    if(curPage==='timer')nav('timer');
+  }catch(e){toast('Erro: '+e.message,'error')}
+}
+function openQuickActions(clientId){
+  const c=S.clients.find(x=>x.id===clientId);if(!c)return;
+  closeQuickActions();
+  const ov=document.createElement('div');
+  ov.className='qp-ov';ov.id='qp-ov';
+  ov.addEventListener('click',e=>{if(e.target===ov)closeQuickActions();});
+  ov.innerHTML=`<div class="qp-sheet">
+    <div class="qp-sheet-head"><div class="qp-sheet-title">${escapeHtml(c.name)}</div><button class="qp-x" onclick="closeQuickActions()">✕</button></div>
+    <div class="qp-sheet-hint">Inicia o timer nesta ação e interrompe qualquer outro timer aberto.</div>
+    <div class="qp-actions">${QUICK_ACTIONS.map(a=>`<button class="qp-act" onclick="quickLog('${clientId}','${a.action}','${a.label}')"><span class="qp-act-ic">${a.ic}</span><span class="qp-act-lb">${a.label}</span></button>`).join('')}</div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function closeQuickActions(){const o=$('qp-ov');if(o)o.remove();}
+
 // ═══════════════════════════════════════════════
 // MONDAY SYNC v0.18 — People column "Executando"
 // O Hub apenas chama o endpoint /api/hub-timer-action
@@ -2155,7 +2253,7 @@ function showManualEntry(opts){
       <div class="f-field"><label class="f-label">Cliente</label><select class="f-sel" id="me-client"><option value="">Selecione</option>${S.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
       <div class="f-field"><label class="f-label">Ação</label><select class="f-sel" id="me-action"><option value="">Selecione</option>${ACTIONS.map(a=>`<option value="${a}">${a}</option>`).join('')}</select></div>
     </div>
-    ${canApproveTime()?`<div class="f-field"><label class="f-label">Pessoa</label><select class="f-sel" id="me-member">${S.members.map(m=>`<option value="${m.id}" ${m.id===(opts.memberId||S.user.id)?'selected':''}>${m.name}</option>`).join('')}</select></div>`:''}`;
+    ${canApproveTime()?`<div class="f-field"><label class="f-label">Pessoa</label><select class="f-sel" id="me-member">${S.members.filter(m=>m.active!==false&&m.is_active!==false).map(m=>`<option value="${m.id}" ${m.id===(opts.memberId||S.user.id)?'selected':''}>${m.name}${m.team?` · ${m.team}`:''}</option>`).join('')}</select></div>`:''}`;
   
   // Default: início 09:00, fim 10:00
   $('me-h-in').value='09';$('me-m-in').value='00';
@@ -2415,7 +2513,7 @@ async function saveManualEntry(){
     const startStr=`${date}T${String(hIn).padStart(2,'0')}:${String(mIn).padStart(2,'0')}:00`;
     const endStr=`${date}T${String(hOut).padStart(2,'0')}:${String(mOut).padStart(2,'0')}:00`;
     const started=new Date(startStr);const ended=new Date(endStr);
-    await sbPost('tt_time_entries',{member_id:memberId,client_id:client,action:action||null,description:desc,started_at:started.toISOString(),ended_at:ended.toISOString(),is_running:false,hours:hours,duration_minutes:Math.round(hours*60)});
+    await sbPost('tt_time_entries',{member_id:memberId,client_id:client,action:action||null,description:desc,started_at:started.toISOString(),ended_at:ended.toISOString(),is_running:false,is_manual:true,source:'manual',hours:hours,duration_minutes:Math.round(hours*60)});
     closeM('m-entry');await loadEntries();toast('Lançamento salvo');renderPage();
   }catch(e){toast('Erro: '+e.message,'error')}
 }
@@ -3995,11 +4093,13 @@ async function pgDashClient(el){
   const ids=visibleClientIds();
   const entries=S.entries.filter(e=>!e.is_running&&(ids===null||ids.includes(e.client_id)));
   const runningInScope=S.entries.filter(e=>e.is_running&&(ids===null||ids.includes(e.client_id)));
+  const MF=buildMemberFactor();
   const byClient={};
   entries.forEach(e=>{
     const c=S.clients.find(cl=>cl.id===e.client_id);if(!c)return;
-    if(!byClient[c.id])byClient[c.id]={id:c.id,name:c.name,team:c.team,target:Number(c.target_hours_month)||0,fee:Number(c.fee_monthly)||0,hours:0,factor:Number(c.coverage_factor)||1.30,profile:c.coverage_profile||'padrao'};
+    if(!byClient[c.id])byClient[c.id]={id:c.id,name:c.name,team:c.team,target:Number(c.target_hours_month)||0,fee:Number(c.fee_monthly)||0,hours:0,efetivo:0};
     byClient[c.id].hours+=(e.hours||0);
+    byClient[c.id].efetivo+=(e.hours||0)*(MF[e.member_id]??1.0);
   });
   const cls=Object.values(byClient).sort((a,b)=>b.hours-a.hours);
   const scopeNote=(isAcc()||isPL())?`<div style="margin-bottom:12px;color:var(--txt3);font-size:12px;font-family:var(--mono)">→ Escopo do time ${S.user.team}</div>`:'';
@@ -4040,7 +4140,7 @@ async function pgDashClient(el){
   
   el.innerHTML=datePillsHTML()+scopeNote+attHTML+`
     <div class="tbl"><div class="tbl-h"><h3>Consumo por Cliente</h3><span style="font-size:11px;color:var(--txt3);font-weight:600">Clique numa linha para detalhar →</span></div>
-    <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta</th><th class="rt">Consumido</th><th class="rt" title="Execução × fator de cobertura = horas dedicadas à conta (o que o cliente enxerga)">Atendimento</th><th class="rt">%</th><th>Ritmo</th><th style="width:200px">Progresso</th><th style="width:90px;text-align:center">Visão</th></tr></thead>
+    <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta</th><th class="rt" title="Tempo de teclado — execução medida pelo timer">Tempo de teclado</th><th class="rt" title="Tempo efetivo — exibido ao cliente (tempo de teclado × fator por pessoa: account 1,15 / produção 1,20 / execução 1,10)">Tempo efetivo</th><th class="rt">%</th><th>Ritmo</th><th style="width:200px">Progresso</th><th style="width:90px;text-align:center">Visão</th></tr></thead>
     <tbody>${clsWithAlerts.map(c=>{
       const pct=c.target>0?c.hours/c.target*100:0;
       const color=pct>100?'pbar-red':pct>80?'pbar-amber':'pbar-green';
@@ -4051,7 +4151,7 @@ async function pgDashClient(el){
         <td><span class="bg ${TBC(c.team)}">${TB(c.team)}</span></td>
         <td class="rt">${c.target?fH(c.target):'—'}</td>
         <td class="rt" style="font-weight:700;font-family:var(--mono)">${fH(c.hours)}</td>
-        <td class="rt" style="font-weight:700;font-family:var(--mono);color:var(--t1)" title="Perfil: ${c.profile} · fator ×${c.factor}">${fH(c.hours*c.factor)}<span style="font-size:9px;color:var(--txt3);margin-left:3px">×${c.factor}</span></td>
+        <td class="rt" style="font-weight:700;font-family:var(--mono);color:var(--t1)" title="Tempo efetivo = soma de horas × fator de cada pessoa que lançou">${fH(c.efetivo)}<span style="font-size:9px;color:var(--txt3);margin-left:3px">×${(c.efetivo/(c.hours||1)).toFixed(2)}</span></td>
         <td class="rt" style="font-weight:700;color:${colorTxt}">${pct.toFixed(0)}%</td>
         <td>${alertBadgeHTML(c.alert)}</td>
         <td><div class="pbar"><div class="pbar-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div></td>
@@ -9197,6 +9297,14 @@ function showMemberModal(id){
       <div class="f-field"><label class="f-label">Custo hora (R$)</label><input class="f-input" type="number" id="mb-cost" step="1" min="0" value="${m?Number(m.hourly_cost||0):0}"></div>
       <div class="f-field"><label class="f-label">Senha login</label><input class="f-input" id="mb-pass" value="${m?m.login_password||'':'TGTtime2026'}" placeholder="TGTtime2026"></div>
     </div>
+    <div class="f-field"><label class="f-label">Fator de cobertura <span style="font-size:10px;color:var(--txt3);font-weight:400">— calibra o tempo efetivo exibido ao cliente</span></label>
+      <select class="f-sel" id="mb-cov">
+        <option value="1.10" ${(!m||m.coverage_factor==null||Number(m.coverage_factor)===1.10)?'selected':''}>Execução ×1,10</option>
+        <option value="1.15" ${m&&Number(m.coverage_factor)===1.15?'selected':''}>Account ×1,15</option>
+        <option value="1.20" ${m&&Number(m.coverage_factor)===1.20?'selected':''}>Produção ×1,20</option>
+        <option value="1.00" ${m&&Number(m.coverage_factor)===1.00?'selected':''}>Sem fator ×1,00</option>
+      </select>
+    </div>
     <div class="f-field" style="margin-top:8px;padding:12px;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--border)">
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
         <input type="checkbox" id="mb-qc" ${m?.qc_reviewer===true?'checked':''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--red)">
@@ -9303,6 +9411,7 @@ async function saveMember(){
     capacity_hours:totalCap,
     hourly_cost:parseFloat($('mb-cost')?.value)||0,
     login_password:$('mb-pass')?.value||'TGTtime2026',
+    coverage_factor:parseFloat($('mb-cov')?.value)||1.10,
     client_id:role==='client'?($('mb-client-id')?.value||null):null,
     qc_reviewer:$('mb-qc')?.checked===true,
     performance_panel_enabled:$('mb-perf')?.checked===true,
@@ -9341,13 +9450,12 @@ async function pgClients(el){
   if(!isA()){el.innerHTML='<div class="empty">Acesso restrito</div>';return}
   el.innerHTML=`
     <div class="tbl"><div class="tbl-h"><h3>Clientes (${S.clients.length})</h3><button class="btn btn-r btn-sm" onclick="showClientModal()">${ICONS.plus} Adicionar</button></div>
-    <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta h/mês</th><th>Modelo</th><th class="rt">Fee mensal</th><th class="rt">Cobertura</th><th></th></tr></thead>
+    <div class="tbl-r"><table><thead><tr><th>Cliente</th><th>Time</th><th class="rt">Meta h/mês</th><th>Modelo</th><th class="rt">Fee mensal</th><th></th></tr></thead>
     <tbody>${S.clients.map(c=>`<tr>
       <td style="font-weight:600">${c.name}</td><td><span class="bg ${TBC(c.team)}">${c.team?TB(c.team):'—'}</span></td>
       <td class="rt" style="font-family:var(--mono)">${c.target_hours_month?Number(c.target_hours_month).toFixed(0)+'h':'—'}</td>
       <td>${c.is_fee?'<span class="bg bg-t1">Fee</span>':'<span class="bg bg-adm">Pontual</span>'}</td>
       <td class="rt" style="font-family:var(--mono)">${c.is_fee&&Number(c.fee_monthly)>0?fMoneyMasked(c.fee_monthly):'—'}</td>
-      <td class="rt" style="font-family:var(--mono);font-size:11px" title="Perfil ${c.coverage_profile||'padrao'}${c.coverage_presencial&&c.coverage_presencial!=='nenhum'?' + presencial '+c.coverage_presencial:''}">×${c.coverage_factor||'1.30'}</td>
       <td><button class="btn-icon" onclick="showClientModal('${c.id}')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></td>
     </tr>`).join('')}</tbody></table></div></div>`;
 }
@@ -9365,24 +9473,6 @@ function showClientModal(id){
       ${seeFee?`<div class="f-field"><label class="f-label">É Fee?</label><select class="f-sel" id="cl-isfee" onchange="document.getElementById('cl-fee-wrap').style.display=this.value==='1'?'block':'none'"><option value="0" ${!c?.is_fee?'selected':''}>Não</option><option value="1" ${c?.is_fee?'selected':''}>Sim</option></select></div>`:`<input type="hidden" id="cl-isfee" value="${c?.is_fee?'1':'0'}">`}
     </div>
     ${seeFee?`<div class="f-field" id="cl-fee-wrap" style="display:${c?.is_fee?'block':'none'};margin-top:12px"><label class="f-label">Valor do Fee mensal (R$)</label><input class="f-input" type="number" id="cl-fee" min="0" step="any" inputmode="decimal" value="${c&&c.is_fee?Number(c.fee_monthly)||'':''}"></div>`:`<input type="hidden" id="cl-fee" value="${c?.fee_monthly||0}">`}`;
-  $('m-client-body').insertAdjacentHTML('beforeend', `
-    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-      <label class="f-label" style="display:block;margin-bottom:8px">Cobertura de atendimento <span style="color:var(--txt3);font-weight:400">— calibra o que o cliente vê (call, mensagem, deslocamento, visita não captados pelo timer)</span></label>
-      <div style="display:flex;gap:12px">
-        <div class="f-field" style="flex:1"><label class="f-label">Perfil</label><select class="f-sel" id="cl-cov-profile">
-          <option value="leve" ${c&&c.coverage_profile==='leve'?'selected':''}>Leve (×1,15)</option>
-          <option value="padrao" ${(!c||!c.coverage_profile||c.coverage_profile==='padrao')?'selected':''}>Padrão (×1,30)</option>
-          <option value="proximo" ${c&&c.coverage_profile==='proximo'?'selected':''}>Próximo (×1,45)</option>
-        </select></div>
-        <div class="f-field" style="flex:1"><label class="f-label">Presencial</label><select class="f-sel" id="cl-cov-presencial">
-          <option value="nenhum" ${(!c||!c.coverage_presencial||c.coverage_presencial==='nenhum')?'selected':''}>Nenhum (+0)</option>
-          <option value="esporadico" ${c&&c.coverage_presencial==='esporadico'?'selected':''}>Esporádico (+0,10)</option>
-          <option value="mensal" ${c&&c.coverage_presencial==='mensal'?'selected':''}>Mensal (+0,20)</option>
-          <option value="frequente" ${c&&c.coverage_presencial==='frequente'?'selected':''}>Frequente (+0,30)</option>
-        </select></div>
-      </div>
-      ${c?`<div style="font-size:11px;color:var(--txt3);margin-top:6px;font-family:var(--mono)">Fator atual: ×${c.coverage_factor||'1.30'} · recalculado ao salvar (teto ×1,60)</div>`:''}
-    </div>`);
   $('m-client-save').onclick=saveClient;
   openM('m-client');
 }
@@ -9391,7 +9481,7 @@ async function saveClient(){
   const id=$('cl-id')?.value,name=$('cl-name')?.value;
   if(!name){toast('Preencha o nome','error');return}
   const isFee=$('cl-isfee')?.value==='1';
-  const data={name,team:$('cl-team')?.value||null,target_hours_month:parseFloat($('cl-target')?.value)||0,is_fee:isFee,fee_monthly:isFee?(parseFloat($('cl-fee')?.value)||0):0,coverage_profile:$('cl-cov-profile')?.value||'padrao',coverage_presencial:$('cl-cov-presencial')?.value||'nenhum'};
+  const data={name,team:$('cl-team')?.value||null,target_hours_month:parseFloat($('cl-target')?.value)||0,is_fee:isFee,fee_monthly:isFee?(parseFloat($('cl-fee')?.value)||0):0};
   try{
     if(id)await sbPatch('tt_clients',`id=eq.${id}`,data);
     else{data.is_active=true;await sbPost('tt_clients',data)}
@@ -9496,12 +9586,12 @@ async function pgClientView(el){
   const monthStart=curMonth+'-01';
   
   // ─── TIME ENTRIES ───
-  // Visão do cliente mostra "horas dedicadas à conta" = execução medida calibrada pelo
-  // fator de cobertura do cliente (cobre call/mensagem/deslocamento/visita que o timer não capta).
-  // Aplica o fator UMA vez, clonando as entries, para que TODA agregação abaixo saia calibrada e consistente.
-  const COV=Number(clientCompany.coverage_factor)||1.30;
+  // Visão do cliente mostra TEMPO EFETIVO = tempo de teclado calibrado pelo fator de cobertura
+  // de CADA pessoa que lançou (account ×1,15 / produção ×1,20 / execução ×1,10 / sem fator ×1,00).
+  // Aplica o fator por pessoa na origem, clonando as entries, para toda agregação sair efetiva e consistente.
+  const MF=buildMemberFactor();
   const myEntriesRaw=S.entries.filter(e=>e.client_id===effClientId&&!e.is_running);
-  const myEntries=myEntriesRaw.map(e=>({...e,hours:(e.hours||0)*COV}));
+  const myEntries=myEntriesRaw.map(e=>({...e,hours:(e.hours||0)*(MF[e.member_id]??1.0)}));
   const totalH=myEntries.reduce((s,e)=>s+(e.hours||0),0);
   const entriesEsteMes=myEntries.filter(e=>(e.started_at||'').substring(0,10)>=monthStart);
   const hMes=entriesEsteMes.reduce((s,e)=>s+(e.hours||0),0);
@@ -9710,7 +9800,7 @@ async function pgClientView(el){
       </div>
       <div style="text-align:right">
         <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700;margin-bottom:3px">${curMonth.split('-').reverse().slice(0,2).join('/')}</div>
-        <div style="font-size:22px;font-weight:800;color:var(--red);font-family:var(--mono)">${fH(hMes)}<span style="font-size:13px;color:var(--txt3);font-weight:400;margin-left:4px">investidas</span></div>
+        <div style="font-size:22px;font-weight:800;color:var(--red);font-family:var(--mono)">${fH(hMes)}<span style="font-size:13px;color:var(--txt3);font-weight:400;margin-left:4px">efetivas</span></div>
       </div>
     </div>
     
@@ -9747,7 +9837,7 @@ async function pgClientView(el){
         <div style="font-size:11px;color:var(--txt3);margin-top:5px"><b style="color:var(--prod)">+${acoesEsteMes}</b> este mês</div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--pack);border-radius:10px;padding:16px">
-        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">HORAS DEDICADAS</div>
+        <div style="font-size:10px;color:var(--txt3);letter-spacing:1.5px;font-weight:700">TEMPO EFETIVO</div>
         <div style="font-size:30px;font-weight:800;font-family:var(--mono);line-height:1;margin-top:6px">${fH(totalH)}</div>
         <div style="font-size:11px;color:var(--txt3);margin-top:5px">${diasComAtividade} dia${diasComAtividade!==1?'s':''} com atividade</div>
       </div>
@@ -11112,7 +11202,7 @@ function renderClientDetail(clientId){
         <button class="btn btn-sm" onclick="toggleClient('${clientId}')" style="font-size:11px">✕ Fechar</button>
       </div>
       ${bigNumbers([
-        {label:'Consumido',value:fH(totalH),color:targetColor,sub:target?`${pct.toFixed(0)}% de ${target}h`:'sem meta'},
+        {label:'Tempo de teclado',value:fH(totalH),color:targetColor,sub:target?`${pct.toFixed(0)}% de ${target}h`:'sem meta'},
         {label:'Meta mensal',value:target?fH(target):'—',color:'#455E6E'},
         {label:'Pessoas envolvidas',value:peopleCount,color:'#9D9D9C'},
         {label:'Dias trabalhados',value:dias,color:'#E2DBCE'},
