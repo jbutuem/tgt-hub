@@ -48,6 +48,7 @@ const BOARDS = {
   '18411508578': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'ADM_TGT',          exec_col: 'multiple_person_mm31hm2w' },
   '18412983620': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'TRAFEGO_PERFORMANCE', exec_col: 'multiple_person_mm3axhyp' },
   '18405089667': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'TGT_BOUTIQUE',     exec_col: 'multiple_person_mm3asaag' },
+  '5809098456':  { client_id: '554ab38e-906f-4783-b41f-7e58ceb52391', project: 'PRODUCAO_AV',      exec_col: 'multiple_person_mm3fbw5f' },
 };
 
 const SB_HEADERS = {
