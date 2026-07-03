@@ -175,7 +175,7 @@ function inferGroupCategory(boardId, groupTitle, rules) {
   if (/em aprovaç[aã]o|client review|aprovação 1|aprovação cliente|avaliação.*\(pro\)|cliente review/i.test(t)) return 'client_review';
   if (/finaliz|completed|publicado|arquivo final|done|conclu[íi]d|encerrad/i.test(t)) return 'done';
   if (/on hold|cancelad|pausad|stand[ ]?by/i.test(t)) return 'ignore';
-  if (/backlog|sprint|solicit|banco de conte[úu]dos|desenvolv|fechamento|postagen|material|website|a fazer|configur|planejamento|redes sociais|social\s*[-—]/i.test(t)) return 'active';
+  if (/backlog|sprint|solicit|banco de conte[úu]dos|desenvolv|fechamento|postagen|material|website|a fazer|configur|planejamento|redes sociais|social\s*[-—]|retrabalho|design|edi[çc]|artwork|development|request/i.test(t)) return 'active';
   return 'unclassified';
 }
 
@@ -227,6 +227,7 @@ async function scanBoard(board, cols, groupRules, hoursMap, results) {
   }
   const batch = [];
   let cursor = null, pages = 0;
+  let scanOk = true;   // vira false se alguma página falhar → scan incompleto, não reconcilia
   do {
     const q = `query {
       boards(ids: [${board.board_id}]) {
@@ -238,7 +239,7 @@ async function scanBoard(board, cols, groupRules, hoursMap, results) {
     }`;
     const data = await mondayQuery(q, `board_${board.board_id}`);
     const page = data?.boards?.[0]?.items_page;
-    if (!page) break;
+    if (!page) { scanOk = false; break; }   // consulta falhou → scan incompleto
     cursor = page.cursor;
 
     for (const item of (page.items || [])) {
@@ -287,13 +288,38 @@ async function scanBoard(board, cols, groupRules, hoursMap, results) {
     pages++;
   } while (cursor && pages < MAX_PAGES_PER_BOARD);
 
+  // Se bateu o teto de páginas e ainda havia cursor, o board não foi lido inteiro.
+  const truncated = !!(cursor && pages >= MAX_PAGES_PER_BOARD);
+
   // Um único upsert em lote por board
+  let upsertOk = false;
   try {
     const n = await sbUpsertBatch(batch);
     results.upserted += n;
+    upsertOk = true;
   } catch (e) {
     console.error(`[scanBoard ${board.board_id}] bulk upsert:`, e.message);
     results.errors++;
+  }
+
+  // ── RECONCILIAÇÃO ────────────────────────────────────────────────
+  // Remove do snapshot os itens DESTE board que não vieram mais no scan
+  // (finalizados sem horas, sem prazo, arquivados ou movidos). Assim o
+  // Radar "esquece" o que saiu do Monday em vez de mostrar fantasmas.
+  // Só roda com scan COMPLETO (sem erro, sem truncagem) e upsert OK —
+  // nunca apaga baseado em varredura parcial. É auto-corretivo: item
+  // ainda ativo volta no próximo scan.
+  if (scanOk && !truncated && upsertOk) {
+    try {
+      const keepIds = batch.map(b => b.monday_item_id);
+      const path = keepIds.length
+        ? `tt_monday_hot_items?monday_board_id=eq.${board.board_id}&monday_item_id=not.in.(${keepIds.join(',')})`
+        : `tt_monday_hot_items?monday_board_id=eq.${board.board_id}`;
+      await sbRequest('DELETE', path);
+      results.reconciled = (results.reconciled || 0) + 1;
+    } catch (e) {
+      console.error(`[scanBoard ${board.board_id}] reconcile:`, e.message);
+    }
   }
 }
 
