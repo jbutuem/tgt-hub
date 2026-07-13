@@ -47,6 +47,7 @@ const BOARDS = {
   '18405089667': { exec_col: 'multiple_person_mm3asaag' }, // TGT BOUTIQUE
   '18395075001': { exec_col: 'multiple_person_mm4v1n7r' }, // TEAM 4 ADM
   '5809098456':  { exec_col: 'multiple_person_mm3fbw5f' }, // PRODUÇÃO TGT STUDIO
+  '18421100621': { exec_col: 'multiple_person_mm31b038' }, // DE MARCHI EMBALAGENS (Packaging)
 };
 
 const MONDAY_HEADERS = {

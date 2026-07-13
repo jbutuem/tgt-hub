@@ -50,6 +50,7 @@ const BOARDS = {
   '18405089667': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'TGT_BOUTIQUE',     exec_col: 'multiple_person_mm3asaag' },
   '18395075001': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'TEAM4_ADM',        exec_col: 'multiple_person_mm4v1n7r' },
   '5809098456':  { client_id: '554ab38e-906f-4783-b41f-7e58ceb52391', project: 'PRODUCAO_AV',      exec_col: 'multiple_person_mm3fbw5f' },
+  '18421100621': { client_id: '5a6d6509-a129-4f96-b73b-e89a69455eae', project: 'DE_MARCHI_PACKAGING', exec_col: 'multiple_person_mm31b038' },
 };
 
 const SB_HEADERS = {
