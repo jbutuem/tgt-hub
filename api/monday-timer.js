@@ -49,7 +49,7 @@ const BOARDS = {
   '18412983620': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'TRAFEGO_PERFORMANCE', exec_col: 'multiple_person_mm3axhyp' },
   '18405089667': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'TGT_BOUTIQUE',     exec_col: 'multiple_person_mm3asaag' },
   '18395075001': { client_id: '82c5fee7-6383-4567-b435-3da6b3e06191', project: 'TEAM4_ADM',        exec_col: 'multiple_person_mm4v1n7r' },
-  '5809098456':  { client_id: '554ab38e-906f-4783-b41f-7e58ceb52391', project: 'PRODUCAO_AV',      exec_col: 'multiple_person_mm3fbw5f' },
+  '5809098456':  { client_id: '554ab38e-906f-4783-b41f-7e58ceb52391', project: 'PRODUCAO_AV',      exec_col: 'multiple_person_mm3fbw5f', client_col: 'status_16' },
   '18421100621': { client_id: '5a6d6509-a129-4f96-b73b-e89a69455eae', project: 'DE_MARCHI_PACKAGING', exec_col: 'multiple_person_mm31b038' },
 };
 
@@ -104,6 +104,25 @@ async function mondayRemovePersonFromCard(boardId, itemId, columnId, personIdToR
   const mut = `mutation{ change_column_value(board_id:${boardId}, item_id:${itemId}, column_id:"${columnId}", value:"${escapedVal}"){id} }`;
   const r2 = await mondayQuery(mut);
   return { ok: !!r2?.data?.change_column_value?.id, err: r2?.errors?.[0]?.message };
+}
+
+// Resolve o cliente a partir de uma coluna Status (ex.: "Cliente" no board de Produção).
+// Lê o label no Monday e mapeia via tabela tt_prod_client_map. Se vazio/sem match,
+// retorna o fallback (client_id padrão do board).
+async function resolveClientFromColumn(itemId, columnId, fallbackClientId) {
+  try {
+    const q = `query{ items(ids:[${itemId}]){ column_values(ids:["${columnId}"]){ text } } }`;
+    const r = await mondayQuery(q);
+    const label = (r?.data?.items?.[0]?.column_values?.[0]?.text || '').trim();
+    if (!label) return fallbackClientId;
+    const enc = encodeURIComponent(label);
+    const mRes = await sbFetch(`/tt_prod_client_map?monday_label=eq.${enc}&select=client_id&limit=1`);
+    const rows = await mRes.json();
+    if (Array.isArray(rows) && rows.length && rows[0].client_id) return rows[0].client_id;
+    return fallbackClientId;
+  } catch {
+    return fallbackClientId;
+  }
 }
 
 export default async function handler(req, res) {
@@ -214,14 +233,16 @@ export default async function handler(req, res) {
       });
 
       // 4. Cria nova entry pra este card.
-      //    A trava única (member_id, monday_item_id) WHERE is_running garante
-      //    no banco que não haverá duas abertas; se houver corrida, vem 409 e
-      //    tratamos como idempotente (a outra execução já criou).
+      //    Se o board resolve cliente por coluna (ex.: Produção → coluna "Cliente"),
+      //    usa o cliente da tag; senão, o client_id fixo do board.
+      const effectiveClientId = boardCfg.client_col
+        ? await resolveClientFromColumn(pulseId, boardCfg.client_col, boardCfg.client_id)
+        : boardCfg.client_id;
       const createRes = await sbFetch('/tt_time_entries', {
         method: 'POST',
         body: JSON.stringify({
           member_id: member.id,
-          client_id: boardCfg.client_id,
+          client_id: effectiveClientId,
           description: pulseName,
           action: null,
           project: boardCfg.project,
