@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ ok: false, error: 'Método não permitido.' });
     }
 
-    const { text, today, weekday, user_name, access_level, clients } = req.body || {};
+    const { text, today, weekday, user_name, access_level, clients, history } = req.body || {};
     if (!text || !today || !Array.isArray(clients)) {
       return res.status(400).json({ ok: false, error: 'Faltam parâmetros (text, today, clients).' });
     }
@@ -63,6 +63,8 @@ SCHEMA DA RESPOSTA:
 }
 
 REGRAS:
+0. O texto vem de TRANSCRIÇÃO DE VOZ (speech-to-text) e pode ter erros fonéticos em pt-BR. Faça matching FONÉTICO/aproximado com a lista de clientes: "Acelera"→Celera, "Selera"→Celera, "Now"/"Nou"→NOU, "Lesafre"/"Le Safre"→Lesaffre, "Gamer Rute"/"Gamer Rut"→Gamer Hut, "Batistela"→Baptistella, "Nôno"/"Emporio Nono"→Empório Nono, "Lev"→Llev, "Uvi Line"/"UV Láine"→UV Line, "Pronutrição"→PRO Pronutrition, "Pão do Cambui"→Pão do Cambuí, "De Márqui"→De Marchi. Se só UM cliente é foneticamente próximo, use-o direto com ambiguous=false. Só marque ambiguous quando houver mais de um match plausível.
+0b. CONTEXTO: use o histórico da conversa. Se o usuário corrigir ou completar um pedido anterior ("na verdade foram 4 horas", "isso foi anteontem", "pode ser de manhã", "o cliente é o Celera"), COMBINE com o pedido pendente e retorne o log_time completo atualizado.
 1. Resolva datas relativas ("ontem", "anteontem", "sexta passada", "hoje de manhã") usando a data de hoje. Sem menção de data = hoje.
 2. "meia hora"=0.5, "1h30"=1.5, "das 14 às 16"=2 horas com start_time "14:00".
 2b. start_time: horário explícito → use-o. "de manhã"/"pela manhã" → "09:00". "meio-dia"/"na hora do almoço" → "12:00". "à tarde"/"de tarde" → "14:00". "fim do dia"/"final da tarde" → "16:00". Se o usuário NÃO indicar período nem horário → start_time = null (o app perguntará).
@@ -71,6 +73,24 @@ REGRAS:
 5. Se não houver horas nem cliente reconhecível, action="unknown" e reply explicando o que faltou, com um exemplo de comando.
 6. reply para log_time: frase natural confirmando o que será lançado (ex.: "Lançar 3h em Kerry Institucional COMM ontem (28/07) — Ajuste de website blog").
 7. Nunca invente client_id fora da lista. Nunca produza nada além do JSON.`;
+
+    const msgs = [];
+    if (Array.isArray(history)) {
+      for (const h of history.slice(-8)) {
+        if (h && (h.role === 'user' || h.role === 'assistant') && h.content) {
+          const c = String(h.content).slice(0, 400);
+          if (msgs.length && msgs[msgs.length - 1].role === h.role) {
+            msgs[msgs.length - 1].content += '\n' + c;  // mescla consecutivos (API exige alternância)
+          } else {
+            msgs.push({ role: h.role, content: c });
+          }
+        }
+      }
+    }
+    // A API exige alternância começando por 'user': se o 1º for assistant, descarta
+    while (msgs.length && msgs[0].role === 'assistant') msgs.shift();
+    if (msgs.length && msgs[msgs.length - 1].role === 'user') { msgs[msgs.length - 1].content += '\n' + text; }
+    else msgs.push({ role: 'user', content: text });
 
     const r = await fetch(ANTHROPIC_API, {
       method: 'POST',
@@ -83,7 +103,7 @@ REGRAS:
         model: 'claude-sonnet-4-6',
         max_tokens: 600,
         system,
-        messages: [{ role: 'user', content: text }],
+        messages: msgs,
       }),
     });
 
