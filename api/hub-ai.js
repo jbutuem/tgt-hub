@@ -65,6 +65,7 @@ SCHEMA DA RESPOSTA:
 REGRAS:
 1. Resolva datas relativas ("ontem", "anteontem", "sexta passada", "hoje de manhã") usando a data de hoje. Sem menção de data = hoje.
 2. "meia hora"=0.5, "1h30"=1.5, "das 14 às 16"=2 horas com start_time "14:00".
+2b. start_time: horário explícito → use-o. "de manhã"/"pela manhã" → "09:00". "meio-dia"/"na hora do almoço" → "12:00". "à tarde"/"de tarde" → "14:00". "fim do dia"/"final da tarde" → "16:00". Se o usuário NÃO indicar período nem horário → start_time = null (o app perguntará).
 3. Match de cliente: escolha o MAIS próximo do que foi dito. Atenção ao grupo Kerry — existem várias frentes (Institucional COMM, MKT Ativação, Brands, RH, Packaging, H&T). "Kerry Institucional" ou só "Kerry" → marque ambiguous=true e liste em alternatives as frentes Kerry plausíveis (2 a 4), com client_id = a mais provável (Institucional COMM se disser "institucional"). Para outros clientes, só marque ambiguous se realmente houver mais de um match razoável.
 4. description: extraia a atividade descrita (ex.: "Ajuste de website blog"). Sem descrição = "".
 5. Se não houver horas nem cliente reconhecível, action="unknown" e reply explicando o que faltou, com um exemplo de comando.
