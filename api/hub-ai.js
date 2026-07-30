@@ -29,6 +29,28 @@ export default async function handler(req, res) {
     }
 
     const { text, today, weekday, user_name, access_level, clients, history } = req.body || {};
+
+    // ── MODO INSIGHTS DE TIME (alertas de apontamento p/ heads/accounts) ──
+    if (req.body && req.body.mode === 'team_insights') {
+      const d = req.body.data || {};
+      const sys = `Você é o analista de operação da TGT Studio (agência, Campinas-SP). Receberá um JSON com o apontamento de horas do mês por pessoa (horas lançadas vs esperado pro-rata, % do mês decorrido, dias sem lançar) e o nº de entregas atrasadas no radar.
+Gere de 3 a 5 insights CURTOS e ACIONÁVEIS em pt-BR para a head de accounts. Diretrizes:
+- Diferencie padrão coletivo (time inteiro abaixo = problema de processo/apontamento) de caso individual (1 pessoa = conversa direta).
+- Cruze horas baixas com entregas atrasadas quando fizer sentido (risco de entrega lenta).
+- Considere que horas baixas podem ser FALTA DE APONTAMENTO, não ociosidade — recomende verificar antes de cobrar.
+- 1 ação prática por insight.
+- Formato: cada insight numa linha começando com "• ". Sem preâmbulo, sem conclusão, sem markdown além do "•".`;
+      const rr = await fetch(ANTHROPIC_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
+      });
+      if (!rr.ok) return res.status(200).json({ ok: false, error: 'Falha na análise. Tente novamente.' });
+      const dd = await rr.json();
+      const insights = (dd?.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+      return res.status(200).json({ ok: true, insights });
+    }
+
     if (!text || !today || !Array.isArray(clients)) {
       return res.status(400).json({ ok: false, error: 'Faltam parâmetros (text, today, clients).' });
     }
