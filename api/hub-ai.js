@@ -33,13 +33,12 @@ export default async function handler(req, res) {
     // ── MODO INSIGHTS DE TIME (alertas de apontamento p/ heads/accounts) ──
     if (req.body && req.body.mode === 'team_insights') {
       const d = req.body.data || {};
-      const sys = `Você é o analista de operação da TGT Studio (agência, Campinas-SP). Receberá um JSON com o apontamento de horas do mês por pessoa (horas lançadas vs esperado pro-rata, % do mês decorrido, dias sem lançar) e o nº de entregas atrasadas no radar.
-Gere de 3 a 5 insights CURTOS e ACIONÁVEIS em pt-BR para a head de accounts. Diretrizes:
-- Diferencie padrão coletivo (time inteiro abaixo = problema de processo/apontamento) de caso individual (1 pessoa = conversa direta).
-- Cruze horas baixas com entregas atrasadas quando fizer sentido (risco de entrega lenta).
-- Considere que horas baixas podem ser FALTA DE APONTAMENTO, não ociosidade — recomende verificar antes de cobrar.
-- 1 ação prática por insight.
-- Formato: cada insight numa linha começando com "• ". Sem preâmbulo, sem conclusão, sem markdown além do "•".`;
+      const sys = `Você é o consultor de operação da TGT Studio (agência, Campinas-SP). Receberá um JSON com: apontamento de horas do mês por pessoa (horas vs esperado pro-rata, dias sem lançar), carteira de CLIENTES do account (horas consumidas vs meta mensal, entregas atrasadas por cliente) e atrasos totais no radar.
+Gere de 3 a 6 insights CURTOS e ACIONÁVEIS em pt-BR para o account/head responsável. Diretrizes:
+- PESSOAS: diferencie padrão coletivo (time inteiro abaixo = processo) de caso individual (conversa direta). Horas baixas podem ser FALTA DE APONTAMENTO, não ociosidade — recomende verificar antes de cobrar.
+- CLIENTES: aponte sobreconsumo (horas muito acima da meta = conta dando prejuízo ou escopo estourado) e subatendimento (muito abaixo da meta = cliente esquecido, risco de churn). Cruze com entregas atrasadas do cliente.
+- MELHORIAS: onde houver padrão, sugira 1 melhoria de processo concreta (ex.: ritual de apontamento diário, redistribuir demanda entre pessoas, renegociar escopo).
+- 1 ação prática por insight. Formato: cada insight numa linha começando com "• ". Sem preâmbulo, sem conclusão.`;
       const rr = await fetch(ANTHROPIC_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
