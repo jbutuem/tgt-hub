@@ -30,6 +30,31 @@ export default async function handler(req, res) {
 
     const { text, today, weekday, user_name, access_level, clients, history } = req.body || {};
 
+    // ── MODO CONSOLIDAÇÃO (auditoria de consistência do financeiro) ──
+    if (req.body && req.body.mode === 'consolidate') {
+      const d = req.body.data || {};
+      const sys = `Você é o AUDITOR DE CONSOLIDAÇÃO do TGT Hub (agência TGT Studio). Receberá um dossiê JSON do financeiro: pessoas (ativas/inativas, contratos, custo/h, capacidade, organograma, horas do mês corrente e anterior, presença na fotografia de competência), clientes (fee/projeto, valores, times, organograma, divisões de budget, fee da fotografia vs atual), custos fixos e uma lista de CHECAGENS AUTOMÁTICAS já detectadas pelo sistema.
+Sua tarefa: consolidar a auditoria apontando discrepâncias e riscos, priorizados por impacto financeiro.
+REGRAS:
+- Use os checks automáticos como base factual — NÃO invente números; cite os valores do dossiê.
+- Mudanças de fee/contrato entre fotografia e cadastro atual NÃO são erro (competência funciona assim) — liste como "mudanças do mês" informativas, pedindo só confirmação de intencionalidade.
+- Estruture EXATAMENTE assim (pule seções vazias):
+🔴 CRÍTICO — corrigir agora: itens com impacto direto no resultado (1 linha cada: problema → impacto → onde corrigir no Hub).
+🟡 ATENÇÃO — verificar: inconsistências menores ou pendências.
+📋 MUDANÇAS DO MÊS: alterações intencionais detectadas (fees, contratos, entradas/saídas de pessoas).
+✅ CONSOLIDADO: 1 linha resumindo o que está consistente (folha, fees, organograma, fotografia).
+- Máximo ~14 linhas no total. Sem preâmbulo, sem conclusão. pt-BR.`;
+      const rr = await fetch(ANTHROPIC_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 900, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
+      });
+      if (!rr.ok) return res.status(200).json({ ok: false, error: 'Falha na auditoria. Tente novamente.' });
+      const dd = await rr.json();
+      const report = (dd?.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+      return res.status(200).json({ ok: true, report });
+    }
+
     // ── MODO INSIGHTS DE TIME (alertas de apontamento p/ heads/accounts) ──
     if (req.body && req.body.mode === 'team_insights') {
       const d = req.body.data || {};
