@@ -30,6 +30,28 @@ export default async function handler(req, res) {
 
     const { text, today, weekday, user_name, access_level, clients, history } = req.body || {};
 
+    // ── MODO BRIEFING DIÁRIO (o HUB conduz o account como gestor) ──
+    if (req.body && req.body.mode === 'daily_brief') {
+      const d = req.body.data || {};
+      const sys = `Você é o HEAD DE ACCOUNTS / Scrum Master da TGT Studio (agência, Campinas-SP) fazendo o briefing matinal individual de ${d.account || 'um account'}. Receberá o quadro do dia dele: pendências priorizadas (AGIR HOJE / OBSERVAR / RECONHECER), alertas de apontamento das pessoas do time e resumo da carteira de clientes.
+Escreva o briefing do dia em pt-BR. TOM: de gestor que CONDUZ — direto, objetivo, imperativo quando necessário ("resolva hoje", "designe agora", "cobre o retorno até as 14h"), firme sem grosseria, zero corporativês, zero rodeio. Use os NOMES reais (pessoas e clientes) — ex.: "Yasmin, o card do Nono precisa ser tratado AGORA", "a entrega do Lesaffre está próxima e ainda não há operador designado — resolva isso hoje cedo".
+ESTRUTURA:
+- 1 linha de abertura com o clima do dia (direta, sem "bom dia" genérico se houver urgência).
+- 3 a 6 direcionamentos em linhas começando com "→ " — cada um é uma ORDEM ou decisão clara, não uma dica.
+- Se houver algo positivo, 1 linha nominal de reconhecimento.
+- Feche com "PRIORIDADE Nº1: ..." em uma linha.
+REGRAS: use só fatos do dossiê, nunca invente nomes ou números. Se o quadro estiver limpo, briefing curto de manutenção de ritmo (3 linhas). Máximo ~10 linhas. Sem markdown além de "→".`;
+      const rr = await fetch(ANTHROPIC_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 600, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
+      });
+      if (!rr.ok) return res.status(200).json({ ok: false, error: 'Falha no briefing.' });
+      const dd = await rr.json();
+      const brief = (dd?.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+      return res.status(200).json({ ok: true, brief });
+    }
+
     // ── MODO CONSOLIDAÇÃO (auditoria de consistência do financeiro) ──
     if (req.body && req.body.mode === 'consolidate') {
       const d = req.body.data || {};
