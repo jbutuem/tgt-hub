@@ -1,7 +1,8 @@
 {
-  "functions": {
-    "api/monday-snapshot-refresh.js": {
-      "maxDuration": 60
+  "crons": [
+    {
+      "path": "/api/hub-daily",
+      "schedule": "0 10 * * 1-5"
     }
-  }
+  ]
 }
