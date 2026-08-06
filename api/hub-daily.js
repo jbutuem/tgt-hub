@@ -15,6 +15,8 @@
    Chamada manual: GET /api/hub-daily?key=<CRON_SECRET>
    ============================================================ */
 
+export const config = { maxDuration: 300 };   // a varredura completa leva ~2min
+
 const SB   = process.env.SUPABASE_URL;
 const SKEY = process.env.SUPABASE_SERVICE_KEY;
 const AKEY = process.env.ANTHROPIC_API_KEY;
@@ -254,12 +256,18 @@ Use nomes reais e números do dossiê. Nunca invente dados.
 IMPORTANTE: se quase todo o time está com apontamento baixo e o mês tem poucos dias úteis decorridos, trate como padrão de PROCESSO, não como falha individual.
 ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e quantos vencem hoje); 3 a 5 direcionamentos começando com "→ ", cada um no formato: o quê · quem · ATÉ QUANDO · consequência se aplicável; se houver demanda aberta hoje com informação faltando, inclua 1 linha começando com "📋 " apontando o que completar e por quê; 1 linha de reconhecimento se houver algo bom; feche com "PRIORIDADE Nº1: ..." incluindo o horário limite. Máximo 11 linhas.`;
         const sys = modo === 'tarde' ? sysTarde : sysManha;
-        const rr = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': AKEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 600, system: sys, messages: [{ role: 'user', content: JSON.stringify(dossie) }] }),
-        });
-        if (rr.ok) {
+        let rr = null;
+        for (let tent = 0; tent < 3; tent++) {
+          rr = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': AKEY, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 600, system: sys, messages: [{ role: 'user', content: JSON.stringify(dossie) }] }),
+          });
+          if (rr.ok) break;
+          if (rr.status !== 429 && rr.status < 500) break;      // erro definitivo: não insiste
+          await new Promise(r => setTimeout(r, 1500 * (tent + 1)));   // 1,5s · 3s · 4,5s
+        }
+        if (rr && rr.ok) {
           const dd = await rr.json();
           const brief = (dd?.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
           if (brief) {
@@ -269,8 +277,9 @@ ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e qu
               : brief;
             await sbUpsert('tt_ai_briefings', [{ member_id: acc.id, brief_date: hoje, content }], 'member_id,brief_date'); briefs++;
           }
-        } else { console.error('anthropic', acc.name, rr.status); }
+        } else { console.error('anthropic', acc.name, rr && rr.status); log.steps.push(`⚠️ sem briefing: ${acc.name} (${rr && rr.status})`); }
       } catch (e) { console.error('brief', acc.name, e.message); }
+      await new Promise(r => setTimeout(r, 400));
     }
     log.steps.push(`briefings: ${briefs} gerados`);
 
