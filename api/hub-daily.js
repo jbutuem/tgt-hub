@@ -84,7 +84,7 @@ export default async function handler(req, res) {
     const diasUteis = bizDays(ms, d);
 
     // ── 1) ESTADO ──
-    const [members, clients, mteams, cteams, items, entries, avs, scores, healthHist, aliases, extras, acksHoje, frentes] = await Promise.all([
+    const [members, clients, mteams, cteams, items, entries, avs, scores, healthHist, aliases, extras, acksHoje, frentes, teamsCfg] = await Promise.all([
       sb('tt_members?select=id,name,email,team,access_level,is_active,capacity_hours,monthly_cost&access_level=neq.client'),
       sb('tt_clients?select=id,name,team,is_active,is_internal,target_hours_month,started_at,primary_account_id&is_active=eq.true'),
       sb('tt_member_teams?select=member_id,team,capacity_hours,is_leader'),
@@ -98,9 +98,11 @@ export default async function handler(req, res) {
       sb(`tt_extras?select=account_id,client_id,valor_bruto,valor_account,status,created_at&created_at=gte.${mo}-01`),
       sb(`tt_focus_ack?select=member_id,day,item_id,kind,ref,title&day=eq.${today()}`),
       sb('tt_frente_owners?select=member_id,scope_type,scope_ref'),
+      sb('tt_teams?select=key,is_service'),
     ]);
     log.steps.push(`estado: ${members.length} pessoas, ${clients.length} clientes, ${items.length} itens, ${entries.length} lançamentos`);
 
+    const servico = new Set((teamsCfg || []).filter(t => t.is_service).map(t => t.key).concat(['PROD']));
     const activos = members.filter(m => m.is_active !== false);
     const cliById = Object.fromEntries(clients.map(c => [c.id, c]));
     const teamsOfClient = cid => cteams.filter(x => x.client_id === cid).map(x => x.team);
@@ -200,7 +202,7 @@ export default async function handler(req, res) {
       const minhas = frentes.filter(f => f.member_id === acc.id);
       const fCli = new Set(minhas.filter(f => f.scope_type === 'client').map(f => String(f.scope_ref)));
       // times LIDERADOS vêm do organograma (derivado, sempre atual)
-      const fTime = new Set(mteams.filter(x => x.member_id === acc.id && x.is_leader === true).map(x => x.team));
+      const fTime = new Set(mteams.filter(x => x.member_id === acc.id && x.is_leader === true && !servico.has(x.team)).map(x => x.team));
       const fBoard = new Set(minhas.filter(f => f.scope_type === 'board').map(f => String(f.scope_ref)));
       const meusClientes = (minhas.length || fTime.size)
         ? clients.filter(c => fCli.has(String(c.id)) || (fTime.size && (teamsOfClient(c.id).some(t => fTime.has(t)) || fTime.has(c.team))))
@@ -301,7 +303,7 @@ ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e qu
       const mf = frentes.filter(f => f.member_id === acc.id);
       const fBoardScore = new Set(mf.filter(f => f.scope_type === 'board').map(f => String(f.scope_ref)));
       const sCli = new Set(mf.filter(f => f.scope_type === 'client').map(f => String(f.scope_ref)));
-      const sTime = new Set(mteams.filter(x => x.member_id === acc.id && x.is_leader === true).map(x => x.team));
+      const sTime = new Set(mteams.filter(x => x.member_id === acc.id && x.is_leader === true && !servico.has(x.team)).map(x => x.team));
       const meus = ((mf.length || sTime.size)
         ? clients.filter(c => sCli.has(String(c.id)) || (sTime.size && (teamsOfClient(c.id).some(t => sTime.has(t)) || sTime.has(c.team))))
         : clients.filter(c => teamsOfClient(c.id).some(t => myTeams.has(t) && t !== 'PROD'))
