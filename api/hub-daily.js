@@ -87,7 +87,7 @@ export default async function handler(req, res) {
     const [members, clients, mteams, cteams, items, entries, avs, scores, healthHist, aliases, extras, acksHoje, frentes] = await Promise.all([
       sb('tt_members?select=id,name,email,team,access_level,is_active,capacity_hours,monthly_cost&access_level=neq.client'),
       sb('tt_clients?select=id,name,team,is_active,is_internal,target_hours_month,started_at,primary_account_id&is_active=eq.true'),
-      sb('tt_member_teams?select=member_id,team,capacity_hours'),
+      sb('tt_member_teams?select=member_id,team,capacity_hours,is_leader'),
       sb('tt_client_teams?select=client_id,team,is_primary'),
       sb('tt_monday_hot_items?select=monday_item_id,client_id,item_name,item_url,status_label,priority_label,deadline_date,hours_invested,is_done,group_category,last_activity_at,responsible_names,first_seen_at'),
       sb(`tt_time_entries?select=member_id,client_id,hours,started_at,created_at,is_running&started_at=gte.${mo}-01`),
@@ -199,9 +199,10 @@ export default async function handler(req, res) {
       const isAdmin = acc.access_level === 'admin';
       const minhas = frentes.filter(f => f.member_id === acc.id);
       const fCli = new Set(minhas.filter(f => f.scope_type === 'client').map(f => String(f.scope_ref)));
-      const fTime = new Set(minhas.filter(f => f.scope_type === 'team').map(f => f.scope_ref));
+      // times LIDERADOS vêm do organograma (derivado, sempre atual)
+      const fTime = new Set(mteams.filter(x => x.member_id === acc.id && x.is_leader === true).map(x => x.team));
       const fBoard = new Set(minhas.filter(f => f.scope_type === 'board').map(f => String(f.scope_ref)));
-      const meusClientes = minhas.length
+      const meusClientes = (minhas.length || fTime.size)
         ? clients.filter(c => fCli.has(String(c.id)) || (fTime.size && (teamsOfClient(c.id).some(t => fTime.has(t)) || fTime.has(c.team))))
         : clients.filter(c => c.is_internal !== true && teamsOfClient(c.id).some(t => myTeams.has(t) && t !== 'PROD'));
       if (!meusClientes.length) continue;
@@ -300,8 +301,8 @@ ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e qu
       const mf = frentes.filter(f => f.member_id === acc.id);
       const fBoardScore = new Set(mf.filter(f => f.scope_type === 'board').map(f => String(f.scope_ref)));
       const sCli = new Set(mf.filter(f => f.scope_type === 'client').map(f => String(f.scope_ref)));
-      const sTime = new Set(mf.filter(f => f.scope_type === 'team').map(f => f.scope_ref));
-      const meus = (mf.length
+      const sTime = new Set(mteams.filter(x => x.member_id === acc.id && x.is_leader === true).map(x => x.team));
+      const meus = ((mf.length || sTime.size)
         ? clients.filter(c => sCli.has(String(c.id)) || (sTime.size && (teamsOfClient(c.id).some(t => sTime.has(t)) || sTime.has(c.team))))
         : clients.filter(c => teamsOfClient(c.id).some(t => myTeams.has(t) && t !== 'PROD'))
       ).filter(c => c.is_internal !== true);
