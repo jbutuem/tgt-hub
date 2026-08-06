@@ -84,9 +84,9 @@ export default async function handler(req, res) {
     const diasUteis = bizDays(ms, d);
 
     // ── 1) ESTADO ──
-    const [members, clients, mteams, cteams, items, entries, avs, scores, healthHist, aliases, extras, acksHoje] = await Promise.all([
+    const [members, clients, mteams, cteams, items, entries, avs, scores, healthHist, aliases, extras, acksHoje, frentes] = await Promise.all([
       sb('tt_members?select=id,name,email,team,access_level,is_active,capacity_hours,monthly_cost&access_level=neq.client'),
-      sb('tt_clients?select=id,name,team,is_active,is_internal,target_hours_month,started_at&is_active=eq.true'),
+      sb('tt_clients?select=id,name,team,is_active,is_internal,target_hours_month,started_at,primary_account_id&is_active=eq.true'),
       sb('tt_member_teams?select=member_id,team,capacity_hours'),
       sb('tt_client_teams?select=client_id,team,is_primary'),
       sb('tt_monday_hot_items?select=monday_item_id,client_id,item_name,item_url,status_label,priority_label,deadline_date,hours_invested,is_done,group_category,last_activity_at,responsible_names,first_seen_at'),
@@ -97,6 +97,7 @@ export default async function handler(req, res) {
       sb('tt_monday_aliases?select=alias,member_id'),
       sb(`tt_extras?select=account_id,client_id,valor_bruto,valor_account,status,created_at&created_at=gte.${mo}-01`),
       sb(`tt_focus_ack?select=member_id,day,item_id,kind,ref,title&day=eq.${today()}`),
+      sb('tt_frente_owners?select=member_id,scope_type,scope_ref'),
     ]);
     log.steps.push(`estado: ${members.length} pessoas, ${clients.length} clientes, ${items.length} itens, ${entries.length} lançamentos`);
 
@@ -196,7 +197,13 @@ export default async function handler(req, res) {
     for (const acc of accounts) {
       const myTeams = new Set(teamsOfMember(acc.id).concat(acc.team ? [acc.team] : []));
       const isAdmin = acc.access_level === 'admin';
-      const meusClientes = clients.filter(c => c.is_internal !== true && (isAdmin || teamsOfClient(c.id).some(t => myTeams.has(t))));
+      const minhas = frentes.filter(f => f.member_id === acc.id);
+      const fCli = new Set(minhas.filter(f => f.scope_type === 'client').map(f => String(f.scope_ref)));
+      const fTime = new Set(minhas.filter(f => f.scope_type === 'team').map(f => f.scope_ref));
+      const fBoard = new Set(minhas.filter(f => f.scope_type === 'board').map(f => String(f.scope_ref)));
+      const meusClientes = minhas.length
+        ? clients.filter(c => fCli.has(String(c.id)) || (fTime.size && (teamsOfClient(c.id).some(t => fTime.has(t)) || fTime.has(c.team))))
+        : clients.filter(c => c.is_internal !== true && teamsOfClient(c.id).some(t => myTeams.has(t) && t !== 'PROD'));
       if (!meusClientes.length) continue;
 
       const saude = meusClientes.map(c => healthByClient[c.id]).filter(Boolean).sort((a, b) => a.score - b.score).slice(0, 8)
@@ -290,10 +297,17 @@ ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e qu
     for (const acc of accounts) {
       const myTeams = new Set(teamsOfMember(acc.id).concat(acc.team ? [acc.team] : []));
       const isAdmin = acc.access_level === 'admin';
-      const meus = clients.filter(c => c.is_internal !== true && (isAdmin || teamsOfClient(c.id).some(t => myTeams.has(t))));
+      const mf = frentes.filter(f => f.member_id === acc.id);
+      const fBoardScore = new Set(mf.filter(f => f.scope_type === 'board').map(f => String(f.scope_ref)));
+      const sCli = new Set(mf.filter(f => f.scope_type === 'client').map(f => String(f.scope_ref)));
+      const sTime = new Set(mf.filter(f => f.scope_type === 'team').map(f => f.scope_ref));
+      const meus = (mf.length
+        ? clients.filter(c => sCli.has(String(c.id)) || (sTime.size && (teamsOfClient(c.id).some(t => sTime.has(t)) || sTime.has(c.team))))
+        : clients.filter(c => teamsOfClient(c.id).some(t => myTeams.has(t) && t !== 'PROD'))
+      ).filter(c => c.is_internal !== true);
       if (!meus.length) continue;
       const ids = new Set(meus.map(c => c.id));
-      const its = items.filter(h => ids.has(h.client_id) && !h.is_done && (h.group_category || 'unclassified') === 'active');
+      const its = items.filter(h => (ids.has(h.client_id) || (fBoardScore && fBoardScore.has(String(h.monday_board_id)))) && !h.is_done && (h.group_category || 'unclassified') === 'active');
       const hs = meus.map(c => healthByClient[c.id]).filter(Boolean);
 
       // P1 · Estratégia & Planejamento — organização e antecipação
