@@ -70,7 +70,10 @@ export default async function handler(req, res) {
   const isCron = !!req.headers?.['x-vercel-cron'];
   if (!isCron && SECRET && auth !== SECRET) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
-  const log = { started: new Date().toISOString(), steps: [] };
+  // MODO: manhã (varredura geral) ou tarde (fechar o dia + revisar o que foi aberto)
+  const horaBRT = Number(new Date().toLocaleString('en-US', { timeZone: TZ, hour: '2-digit', hour12: false }));
+  const modo = (req.query?.mode) || (horaBRT >= 12 ? 'tarde' : 'manha');
+  const log = { started: new Date().toISOString(), modo, steps: [] };
   try {
     const hoje = today(), mo = hoje.slice(0, 7);
     const d = new Date();
@@ -79,18 +82,19 @@ export default async function handler(req, res) {
     const diasUteis = bizDays(ms, d);
 
     // ── 1) ESTADO ──
-    const [members, clients, mteams, cteams, items, entries, avs, scores, healthHist, aliases, extras] = await Promise.all([
+    const [members, clients, mteams, cteams, items, entries, avs, scores, healthHist, aliases, extras, acksHoje] = await Promise.all([
       sb('tt_members?select=id,name,email,team,access_level,is_active,capacity_hours,monthly_cost&access_level=neq.client'),
       sb('tt_clients?select=id,name,team,is_active,is_internal,target_hours_month,started_at&is_active=eq.true'),
       sb('tt_member_teams?select=member_id,team,capacity_hours'),
       sb('tt_client_teams?select=client_id,team,is_primary'),
-      sb('tt_monday_hot_items?select=monday_item_id,client_id,item_name,item_url,status_label,deadline_date,hours_invested,is_done,group_category,last_activity_at,responsible_names'),
+      sb('tt_monday_hot_items?select=monday_item_id,client_id,item_name,item_url,status_label,priority_label,deadline_date,hours_invested,is_done,group_category,last_activity_at,responsible_names,first_seen_at'),
       sb(`tt_time_entries?select=member_id,client_id,hours,started_at,created_at,is_running&started_at=gte.${mo}-01`),
       sb('av_requests?select=id,title,client_id,stage,requested_by,archived_at,commissions_released,delivered_at,deadline_agreed,desired_deadline'),
       sb('score_adm?select=account_id,month,p1_score,p2_score,p3_score,p4_score,final_score&order=month.desc'),
       sb('tt_client_health?select=client_id,month,score&order=month.desc'),
       sb('tt_monday_aliases?select=alias,member_id'),
       sb(`tt_extras?select=account_id,client_id,valor_bruto,valor_account,status,created_at&created_at=gte.${mo}-01`),
+      sb(`tt_focus_ack?select=member_id,day,item_id,kind,ref,title&day=eq.${today()}`),
     ]);
     log.steps.push(`estado: ${members.length} pessoas, ${clients.length} clientes, ${items.length} itens, ${entries.length} lançamentos`);
 
@@ -136,7 +140,7 @@ export default async function handler(req, res) {
       healthByClient[c.id] = { name: c.name, score, atrasados, travados, dias, horas, meta, quedas, novo: c.started_at ? Math.floor((Date.now() - new Date(c.started_at + 'T12:00:00')) / 86400000) : null };
       healthRows.push({ client_id: c.id, month: mo, score, s_prazo: Math.round(s_prazo), s_fluxo: Math.round(s_fluxo), s_meta: Math.round(s_meta), s_atencao: s_at, horas: Number(horas.toFixed(1)), meta_horas: meta, atrasados, parados_cliente: travados });
     }
-    await sbUpsert('tt_client_health', healthRows, 'client_id,month');
+    if (modo !== 'tarde') await sbUpsert('tt_client_health', healthRows, 'client_id,month');
     log.steps.push(`health: ${healthRows.length} clientes fotografados`);
 
     // ── 3) SINAIS CRÍTICOS (log de vigilância) ──
@@ -172,6 +176,18 @@ export default async function handler(req, res) {
     await sbUpsert('tt_hub_watch', watch, 'day,kind,ref');
     log.steps.push(`vigilância: ${watch.length} sinais registrados`);
 
+    // ── 3b) DEMANDAS ABERTAS HOJE (qualidade do briefing) — rodada da tarde ──
+    const novasHoje = items.filter(h => String(h.first_seen_at || '').slice(0, 10) === hoje && !h.is_done);
+    const novasComFalha = novasHoje.map(h => {
+      const falta = [];
+      if (!h.deadline_date) falta.push('prazo de entrega');
+      if (!String(h.responsible_names || '').trim()) falta.push('responsável');
+      if (!h.priority_label) falta.push('prioridade');
+      if (String(h.item_name || '').trim().length < 12) falta.push('título descritivo');
+      return falta.length ? { item: h.item_name, cliente: (cliById[h.client_id] || {}).name || '—', client_id: h.client_id, falta, url: h.item_url } : null;
+    }).filter(Boolean);
+    log.steps.push(`demandas abertas hoje: ${novasHoje.length} (${novasComFalha.length} incompletas)`);
+
     // ── 4) BRIEFING POR ACCOUNT (IA) ──
     const accounts = activos.filter(m => ['admin', 'account', 'account_aux'].includes(m.access_level));
     let briefs = 0;
@@ -199,13 +215,33 @@ export default async function handler(req, res) {
         .map(w => ({ sinal: w.message, gravidade: w.severity, prazo: w.sla_label, vence_em: w.due_date }));
       const vencidos = watch.filter(w => meusClientes.some(c => c.id === w.ref) && w.due_date < hoje).length;
 
-      const dossie = { account: acc.name, data: hoje, dia_util_do_mes: diasUteis, pct_mes_decorrido: Math.round(frac * 100),
-        sinais_com_prazo: meusWatch.slice(0, 12), sinais_vencidos: vencidos,
-        saude_dos_clientes: saude, pessoas, score_do_account: perfil,
-        aviso_score_automatico: 'A partir do próximo mês a avaliação considera estes indicadores de Monday + HUB.' };
+      const tratados = acksHoje.filter(a => a.member_id === acc.id);
+      const emAberto = meusWatch.filter(w => !tratados.some(t => String(t.ref || '') === String(watch.find(x => x.message === w.sinal)?.ref || '')));
+      const minhasNovas = novasComFalha.filter(n => meusClientes.some(c => c.id === n.client_id));
+
+      const dossie = modo === 'tarde'
+        ? { account: acc.name, data: hoje, momento: 'fim de tarde',
+            tratados_hoje: tratados.length, tratados_titulos: tratados.map(t => t.title).filter(Boolean).slice(0, 8),
+            ainda_em_aberto: emAberto.slice(0, 10), vencem_hoje: meusWatch.filter(w => w.vence_em === hoje).length,
+            demandas_abertas_hoje_incompletas: minhasNovas.slice(0, 6),
+            saude_dos_clientes: saude.slice(0, 5) }
+        : { account: acc.name, data: hoje, momento: 'início do dia', dia_util_do_mes: diasUteis, pct_mes_decorrido: Math.round(frac * 100),
+            sinais_com_prazo: meusWatch.slice(0, 12), sinais_vencidos: vencidos,
+            saude_dos_clientes: saude, pessoas, score_do_account: perfil,
+            demandas_abertas_hoje_incompletas: minhasNovas.slice(0, 4),
+            aviso_score_automatico: 'A partir do próximo mês a avaliação considera estes indicadores de Monday + HUB.' };
 
       try {
-        const sys = `Você é o HEAD DE ACCOUNTS / Scrum Master da TGT Studio (agência, Campinas-SP) fazendo o briefing matinal de ${acc.name}.
+        const sysTarde = `Você é o HEAD DE ACCOUNTS da TGT Studio fazendo o CHECK DE FIM DE TARDE com ${acc.name}. São ~14h. O objetivo é UM só: não deixar nada do que foi apontado de manhã virar problema de amanhã.
+TOM: curto, cirúrgico, cobrando fechamento. Sem repetir contexto, sem preâmbulo. A pessoa já leu o briefing da manhã.
+ESTRUTURA (máximo 8 linhas):
+- 1 linha de placar: quantos tratou hoje e quantos ainda estão em aberto. Se tratou tudo, reconheça e seja breve.
+- Para cada item ainda em aberto (máx 4), uma linha começando com "→ " dizendo o que fazer e ATÉ QUE HORAS de hoje. Priorize o que vence hoje.
+- Se houver demandas abertas hoje com informação faltando (campo demandas_abertas_hoje_incompletas), inclua até 2 linhas começando com "📋 " no formato: nome da demanda · cliente · o que falta preencher · por que isso melhora a assertividade da execução. Exemplo do tom: "📋 'Post lançamento linha X' (Kerry) foi aberto sem prazo nem responsável — sem isso o job não entra no radar de ninguém e chega em cima da hora. Complete antes de sair."
+- Feche com "ANTES DE SAIR HOJE: ..." apontando o único item mais importante.
+REGRAS: use nomes e números do dossiê, nunca invente. Firme sem grosseria. Se não houver nada em aberto e nada incompleto, responda em 2 linhas reconhecendo e sugerindo o que adiantar para amanhã.`;
+
+        const sysManha = `Você é o HEAD DE ACCOUNTS / Scrum Master da TGT Studio (agência, Campinas-SP) fazendo o briefing matinal de ${acc.name}.
 MISSÃO: proteger e crescer o negócio. A nota do account é CONSEQUÊNCIA — nunca diga "faça isso para subir sua nota".
 PRIORIDADE: (1) proteger a receita existente, (2) proteger a margem, (3) crescer dentro da base.
 CONTEXTO DE MERCADO (use como raciocínio, sem citar fontes): insatisfação com a ENTREGA é hoje a causa nº1 de perda de conta, comunicação fraca vem em seguida e preço só depois; ~43% das saídas se decidem nos primeiros 90 dias; queda consecutiva na saúde da conta antecede a saída; vender para a base é ~3x mais provável que conquistar cliente novo; margem de agência gira em torno de 13%, então escopo estourado que não vira extra é margem perdida.
@@ -216,16 +252,23 @@ CONSEQUÊNCIA: quando o item for crítico, diga em uma frase curta o que acontec
 AVISO IMPORTANTE PARA O ACCOUNT: a partir do próximo mês a avaliação de desempenho passa a considerar estes indicadores de Monday + HUB. Mencione isso NO MÁXIMO uma vez, e só quando houver item crítico vencido — como informação, nunca como ameaça.
 Use nomes reais e números do dossiê. Nunca invente dados.
 IMPORTANTE: se quase todo o time está com apontamento baixo e o mês tem poucos dias úteis decorridos, trate como padrão de PROCESSO, não como falha individual.
-ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e quantos vencem hoje); 3 a 5 direcionamentos começando com "→ ", cada um no formato: o quê · quem · ATÉ QUANDO · consequência se aplicável; 1 linha de reconhecimento se houver algo bom; feche com "PRIORIDADE Nº1: ..." incluindo o horário limite. Máximo 11 linhas.`;
+ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e quantos vencem hoje); 3 a 5 direcionamentos começando com "→ ", cada um no formato: o quê · quem · ATÉ QUANDO · consequência se aplicável; se houver demanda aberta hoje com informação faltando, inclua 1 linha começando com "📋 " apontando o que completar e por quê; 1 linha de reconhecimento se houver algo bom; feche com "PRIORIDADE Nº1: ..." incluindo o horário limite. Máximo 11 linhas.`;
+        const sys = modo === 'tarde' ? sysTarde : sysManha;
         const rr = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': AKEY, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 600, system: sys, messages: [{ role: 'user', content: JSON.stringify(dossie) }] }),
+          body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 600, system: sys, messages: [{ role: 'user', content: JSON.stringify(dossie) }] }),
         });
         if (rr.ok) {
           const dd = await rr.json();
           const brief = (dd?.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
-          if (brief) { await sbUpsert('tt_ai_briefings', [{ member_id: acc.id, brief_date: hoje, content: brief }], 'member_id,brief_date'); briefs++; }
+          if (brief) {
+            const prev = modo === 'tarde' ? (await sb(`tt_ai_briefings?select=content&member_id=eq.${acc.id}&brief_date=eq.${hoje}`).catch(() => []))[0]?.content : null;
+            const content = modo === 'tarde' && prev
+              ? `${prev}\n\n──────────\n🕑 CHECK DE FIM DE TARDE\n${brief}`
+              : brief;
+            await sbUpsert('tt_ai_briefings', [{ member_id: acc.id, brief_date: hoje, content }], 'member_id,brief_date'); briefs++;
+          }
         } else { console.error('anthropic', acc.name, rr.status); }
       } catch (e) { console.error('brief', acc.name, e.message); }
     }
@@ -297,7 +340,7 @@ ESTRUTURA: 1 linha de abertura com o placar do dia (quantos itens críticos e qu
           p4: { saude_media_das_contas: Math.round(p4_saude * 100), entregas_paradas_no_cliente: travTot, contas_sem_contato_14d: mudos },
         } });
     }
-    await sbUpsert('score_auto', scoreRows, 'account_id,month');
+    if (modo !== 'tarde') await sbUpsert('score_auto', scoreRows, 'account_id,month');
     log.steps.push(`score automático: ${scoreRows.length} accounts calculados`);
 
     // ── 5) NOTIFICAÇÃO NO MONDAY (só crítico, só quem tem dono) ──

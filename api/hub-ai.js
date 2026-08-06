@@ -50,7 +50,7 @@ REGRAS: use só fatos do dossiê, nunca invente nomes ou números. Se o quadro e
       const rr = await fetch(ANTHROPIC_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 600, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
+        body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 600, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
       });
       if (!rr.ok) return res.status(200).json({ ok: false, error: 'Falha no briefing.' });
       const dd = await rr.json();
@@ -75,7 +75,7 @@ REGRAS:
       const rr = await fetch(ANTHROPIC_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 900, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
+        body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 900, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
       });
       if (!rr.ok) return res.status(200).json({ ok: false, error: 'Falha na auditoria. Tente novamente.' });
       const dd = await rr.json();
@@ -95,7 +95,7 @@ Gere de 3 a 6 insights CURTOS e ACIONÁVEIS em pt-BR para o account/head respons
       const rr = await fetch(ANTHROPIC_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
+        body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 500, system: sys, messages: [{ role: 'user', content: JSON.stringify(d) }] }),
       });
       if (!rr.ok) return res.status(200).json({ ok: false, error: 'Falha na análise. Tente novamente.' });
       const dd = await rr.json();
@@ -176,7 +176,7 @@ REGRAS:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         max_tokens: 600,
         system,
         messages: msgs,

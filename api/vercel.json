@@ -1,8 +1,6 @@
 {
   "crons": [
-    {
-      "path": "/api/hub-daily",
-      "schedule": "0 10 * * 1-5"
-    }
+    { "path": "/api/hub-daily?mode=manha", "schedule": "0 10 * * 1-5" },
+    { "path": "/api/hub-daily?mode=tarde", "schedule": "50 16 * * 1-5" }
   ]
 }
