@@ -90,6 +90,8 @@ REGRAS:
 Gere de 3 a 6 insights CURTOS e ACIONÁVEIS em pt-BR para o account/head responsável. Diretrizes:
 - PESSOAS: diferencie padrão coletivo (time inteiro abaixo = processo) de caso individual (conversa direta). Horas baixas podem ser FALTA DE APONTAMENTO, não ociosidade — recomende verificar antes de cobrar.
 - CLIENTES: aponte sobreconsumo (horas muito acima da meta = conta dando prejuízo ou escopo estourado) e subatendimento (muito abaixo da meta = cliente esquecido, risco de churn). Cruze com entregas atrasadas do cliente.
+- CAPACIDADE (campo capacidade_do_time): tempo contratado que não vira trabalho é folha sem receita. Se houver gente com sobra projetada relevante e o mês já passou da metade, direcione para UMA das duas saídas, sempre no ângulo do ganho do próprio account: preencher a ociosidade (prospectar conta nova, propor projeto a cliente existente, ativar frente parada) ou redimensionar (rever contrato/carga com o Head). Se houver alguém acima de 125% do ritmo, aponte redistribuição ou transformação do excedente em extra.
+- RITUAIS QUE SUSTENTAM RELACIONAMENTO: nas últimas semanas do mês, cobre o envio de report de resultado à carteira; para conta sem contato recente, cobre agendamento de call de status. Justifique pelo efeito (cliente que recebe leitura de resultado renova mais e questiona menos preço), nunca pelo protocolo.
 - MELHORIAS: onde houver padrão, sugira 1 melhoria de processo concreta (ex.: ritual de apontamento diário, redistribuir demanda entre pessoas, renegociar escopo).
 - 1 ação prática por insight. Formato: cada insight numa linha começando com "• ". Sem preâmbulo, sem conclusão.`;
       const rr = await fetch(ANTHROPIC_API, {

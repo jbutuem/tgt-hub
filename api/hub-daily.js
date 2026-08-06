@@ -220,6 +220,25 @@ export default async function handler(req, res) {
           return { nome: m.name, time: m.team, horas: Number(hrs.toFixed(1)), esperado: Number(exp.toFixed(1)), pct: Math.round(hrs / exp * 100) };
         }).filter(Boolean);
 
+      // Capacidade do time liderado: sobra projetada = folha sem receita
+      const meuTime = activos.filter(m => m.id !== acc.id && Number(m.capacity_hours) > 0
+        && (mteams.some(x => x.member_id === m.id && fTime.has(x.team)) || m.reports_to_account_id === acc.id));
+      const capRows = meuTime.map(m => {
+        const cap = Number(m.capacity_hours) || 0;
+        const hrs = entries.filter(e => !e.is_running && e.member_id === m.id && monthOf(e.started_at || e.created_at) === mo).reduce((s, e) => s + Number(e.hours || 0), 0);
+        const proj = frac > 0 ? hrs / frac : 0;
+        return { nome: m.name, capacidade: cap, horas_ate_agora: Number(hrs.toFixed(1)),
+          ritmo_pct: cap * frac > 0 ? Math.round(hrs / (cap * frac) * 100) : null,
+          sobra_projetada: Number(Math.max(0, cap - proj).toFixed(1)), custo_hora: Number(m.hourly_cost) || 0 };
+      });
+      const sobraTot = capRows.reduce((s, r) => s + r.sobra_projetada, 0);
+      const capacidade = capRows.length ? {
+        pct_mes_decorrido: Math.round(frac * 100),
+        horas_sobrando_projetadas: Number(sobraTot.toFixed(1)),
+        valor_folha_sem_receita: Math.round(capRows.reduce((s, r) => s + r.sobra_projetada * r.custo_hora, 0)),
+        pessoas: capRows.sort((a, b) => b.sobra_projetada - a.sobra_projetada).slice(0, 8),
+      } : null;
+
       const sc = scores.find(s => s.account_id === acc.id && s.final_score != null);
       const perfil = sc ? { mes: sc.month, nota_final: Number(sc.final_score), notas: { estrategia_planejamento: sc.p1_score, eficiencia_operacional: sc.p2_score, rentabilidade_comercial: sc.p3_score, relacionamento_comunicacao: sc.p4_score } } : null;
 
@@ -239,7 +258,7 @@ export default async function handler(req, res) {
             saude_dos_clientes: saude.slice(0, 5) }
         : { account: acc.name, data: hoje, momento: 'início do dia', dia_util_do_mes: diasUteis, pct_mes_decorrido: Math.round(frac * 100),
             sinais_com_prazo: meusWatch.slice(0, 12), sinais_vencidos: vencidos,
-            saude_dos_clientes: saude, pessoas, score_do_account: perfil,
+            saude_dos_clientes: saude, pessoas, capacidade_do_time: capacidade, score_do_account: perfil,
             demandas_abertas_hoje_incompletas: minhasNovas.slice(0, 4),
             aviso_score_automatico: 'A partir do próximo mês a avaliação considera estes indicadores de Monday + HUB.' };
 
@@ -256,6 +275,8 @@ REGRAS: use nomes e números do dossiê, nunca invente. Firme sem grosseria. Se 
         const sysManha = `Você é o HEAD DE ACCOUNTS / Scrum Master da TGT Studio (agência, Campinas-SP) fazendo o briefing matinal de ${acc.name}.
 MISSÃO: proteger e crescer o negócio. A nota do account é CONSEQUÊNCIA — nunca diga "faça isso para subir sua nota".
 PRIORIDADE: (1) proteger a receita existente, (2) proteger a margem, (3) crescer dentro da base.
+CAPACIDADE (campo capacidade_do_time): tempo contratado que não vira trabalho é folha sem receita. Passada a metade do mês, se houver sobra projetada relevante, direcione para UMA das duas saídas, sempre pelo ganho do próprio account: preencher (prospectar conta nova, propor projeto a cliente existente) ou redimensionar (rever contrato/carga com o Head). Quem estiver acima de 125% do ritmo: redistribuir ou transformar excedente em extra.
+RITUAIS: nas últimas semanas do mês, cobre o report de resultado para a carteira; para conta sem contato recente, cobre call de status. Justifique pelo efeito no cliente, nunca pelo protocolo.
 CONTEXTO DE MERCADO (use como raciocínio, sem citar fontes): insatisfação com a ENTREGA é hoje a causa nº1 de perda de conta, comunicação fraca vem em seguida e preço só depois; ~43% das saídas se decidem nos primeiros 90 dias; queda consecutiva na saúde da conta antecede a saída; vender para a base é ~3x mais provável que conquistar cliente novo; margem de agência gira em torno de 13%, então escopo estourado que não vira extra é margem perdida.
 TOM: gestor sênior que COBRA. Firme, direto, imperativo. Sem corporativês, sem "seria interessante", sem "talvez", sem "considere". Diga o que fazer, com quem e ATÉ QUANDO. Nada de grosseria ou ironia — firmeza é clareza e prazo, não agressividade.
 PRAZO OBRIGATÓRIO: todo direcionamento termina com um prazo explícito, usando o campo prazo/sla de cada sinal quando existir (ex.: "até as 12h de hoje", "até amanhã 18h", "até sexta"). Direcionamento sem prazo não serve.
