@@ -243,11 +243,16 @@ export default async function handler(req, res) {
       const perfil = sc ? { mes: sc.month, nota_final: Number(sc.final_score), notas: { estrategia_planejamento: sc.p1_score, eficiencia_operacional: sc.p2_score, rentabilidade_comercial: sc.p3_score, relacionamento_comunicacao: sc.p4_score } } : null;
 
       const meusWatch = watch.filter(w => meusClientes.some(c => c.id === w.ref))
-        .map(w => ({ sinal: w.message, gravidade: w.severity, prazo: w.sla_label, vence_em: w.due_date }));
+        .map(w => ({ sinal: w.message, gravidade: w.severity, prazo: w.sla_label, vence_em: w.due_date, _ref: w.ref, _kind: w.kind }));
       const vencidos = watch.filter(w => meusClientes.some(c => c.id === w.ref) && w.due_date < hoje).length;
 
       const tratados = acksHoje.filter(a => a.member_id === acc.id);
-      const emAberto = meusWatch.filter(w => !tratados.some(t => String(t.ref || '') === String(watch.find(x => x.message === w.sinal)?.ref || '')));
+      // Só considera tratado quando há correspondência REAL de cliente ou de tipo.
+      // (antes, um "já tratei" sem cliente marcava tudo como resolvido)
+      const emAberto = meusWatch.filter(w => !tratados.some(t =>
+        (t.ref && w._ref && String(t.ref) === String(w._ref)) ||
+        (t.kind && w._kind && String(t.kind) === String(w._kind))
+      )).map(({ _ref, _kind, ...rest }) => rest);
       const minhasNovas = novasComFalha.filter(n => meusClientes.some(c => c.id === n.client_id));
 
       const dossie = modo === 'tarde'
